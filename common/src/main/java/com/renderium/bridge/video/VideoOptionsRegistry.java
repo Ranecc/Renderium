@@ -59,8 +59,8 @@ public final class VideoOptionsRegistry {
     /** 已修改但未保存的选项集合（线程安全） */
     private final Set<RendererOption> modifiedOptions = Collections.synchronizedSet(new HashSet<>());
 
-    /** 变更监听器列表（线程安全） */
-    private final Set<Consumer<RendererOption>> changeListeners = ConcurrentHashMap.newKeySet();
+    /** 变更监听器列表（线程安全，接收已变更的选项集合） */
+    private final Set<Consumer<Set<RendererOption>>> changeListeners = ConcurrentHashMap.newKeySet();
 
     /**
      * 创建新的视频选项注册表实例
@@ -148,13 +148,16 @@ public final class VideoOptionsRegistry {
                 }
             }
 
+            // 清除脏标记前创建不可变副本用于通知
+            Set<RendererOption> appliedOptions = Collections.unmodifiableSet(new HashSet<>(modifiedOptions));
+
             // 清除脏标记
             modifiedOptions.clear();
 
-            // 通知所有变更监听器
-            for (Consumer<RendererOption> listener : changeListeners) {
+            // 通知所有变更监听器，传递实际变更的选项集合
+            for (Consumer<Set<RendererOption>> listener : changeListeners) {
                 try {
-                    listener.accept(null);
+                    listener.accept(appliedOptions);
                 } catch (Exception e) {
                     LOGGER.warn("Change listener threw exception: {}", e.getMessage());
                 }
@@ -203,9 +206,9 @@ public final class VideoOptionsRegistry {
 
     /**
      * 添加变更监听器
-     * @param listener 监听器函数，参数为变更的选项（批量应用时为 null）
+     * @param listener 监听器函数，参数为已变更的选项集合（不可变）
      */
-    public void addChangeListener(Consumer<RendererOption> listener) {
+    public void addChangeListener(Consumer<Set<RendererOption>> listener) {
         if (listener != null) {
             changeListeners.add(listener);
         }
@@ -215,7 +218,7 @@ public final class VideoOptionsRegistry {
      * 移除变更监听器
      * @param listener 要移除的监听器
      */
-    public void removeChangeListener(Consumer<RendererOption> listener) {
+    public void removeChangeListener(Consumer<Set<RendererOption>> listener) {
         changeListeners.remove(listener);
     }
 
