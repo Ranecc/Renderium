@@ -86,8 +86,15 @@ public final class RenderiumAccelerator implements AutoCloseable {
                 MethodHandle mh = loader.get("accel_initialize",
                     FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT));
                 int rc = (int) mh.invokeExact(3);
-                if (rc != 0) throw new RuntimeException("原生初始化失败，返回码: " + rc);
+                if (rc != 0) {
+                    LOGGER.severe("原生初始化失败，错误码: " + rc + ", 模块: " + getModuleName(rc));
+                    throw new RuntimeException("原生初始化失败，错误码: " + rc);
+                }
+            } catch (UnsatisfiedLinkError e) {
+                LOGGER.warning("原生库不可用，降级到软件实现: " + e.getMessage());
+                return;
             } catch (Throwable e) {
+                LOGGER.severe("原生初始化异常: " + e.getMessage());
                 throw new IllegalStateException("原生初始化失败", e);
             }
 
@@ -280,5 +287,25 @@ public final class RenderiumAccelerator implements AutoCloseable {
         if (!initialized.get()) {
             throw new IllegalStateException("加速器尚未初始化，请先调用 initialize()");
         }
+    }
+
+    /**
+     * 根据错误码获取对应的模块名称
+     * @param errorCode 原生初始化返回的错误码
+     * @return 模块名称描述
+     */
+    private String getModuleName(int errorCode) {
+        return switch (errorCode) {
+            case 1 -> "BFS遮挡剔除模块";
+            case 2 -> "LOD距离计算模块";
+            case 3 -> "Lyapunov质量评估模块";
+            case 4 -> "Kahan高精度累加模块";
+            case 5 -> "收敛监控模块";
+            case 6 -> "共享内存模块";
+            case -1 -> "内存分配失败";
+            case -2 -> "GPU初始化失败";
+            case -3 -> "线程池初始化失败";
+            default -> "未知模块(错误码:" + errorCode + ")";
+        };
     }
 }

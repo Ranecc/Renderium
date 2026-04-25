@@ -1,0 +1,42 @@
+; Renderium Accelerator - Windows 导出定义文件
+; 列出所有需要导出的符号（MSVC链接器使用）
+
+LIBRARY renderium_accel
+EXPORTS
+    accel_initialize
+    accel_shutdown
+    accel_getVersion
+    accel_getSystemInfo
+    
+    accel_sharedMemory_create
+    accel_sharedMemory_getAddress
+    accel_sharedMemory_destroy
+    
+    accel_bfs_createContext
+    accel_bfs_initGraph
+    accel_bfs_setNeighbors
+    accel_bfs_findVisible
+    accel_bfs_destroyContext
+    
+    accel_lod_createContext
+    accel_lod_batchCompute
+    accel_lod_updateThresholds
+    accel_lod_destroyContext
+    
+    accel_lyapunov_createContext
+    accel_lyapunov_evaluate
+    accel_lyapunov_reset
+    accel_lyapunov_destroyContext
+    
+    accel_kahan_createContext
+    accel_kahan_add
+    accel_kahan_batchAdd
+    accel_kahan_getState
+    accel_kahan_reset
+    accel_kahan_destroyContext
+    
+    accel_convergence_createContext
+    accel_convergence_check
+    accel_convergence_getState
+    accel_convergence_reset
+    accel_convergence_destroyContext

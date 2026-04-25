@@ -1,46 +1,83 @@
 # Renderium
 
-Modern Minecraft rendering extension with Vulkan, DLSS, and advanced culling.
+Modern Minecraft rendering extension with Vulkan, DLSS, and advanced optimization technologies.
 
 ## Features
 
 - **Extension Points**: Extends Minecraft 26.2+ official Vulkan renderer
-- **DLSS Support**: NVIDIA DLSS 4, Frame Generation, and alternative super resolution (XeSS, FSR3)
-- **Advanced Culling**: Frustum culling, occlusion culling, and distance culling
+- **Super Resolution**: NVIDIA DLSS, Intel XeSS, AMD FSR support via NVIDIA Streamline SDK
+- **Frame Generation**: DLSS Frame Generation and FSR Frame Generation support
+- **NVIDIA Reflex**: Low latency mode support for competitive gaming
+- **Advanced Culling**: Frustum culling, occlusion culling (BFS-based), and GPU-driven LOD
 - **Custom Post-Processing**: Insert custom post-processing effects into the render pipeline
 - **Dual Platform**: Supports both NeoForge and Fabric
-
-### Dual Mode
-
-- **Independently Mode** : Runs independently
-- **Compatibility Mode** (With Sodium): Extends Sodium settings interface via Mixin injection, dynamic linking mode, compatible with other mod ecosystem
+- **Dual Mode**: Independent mode and Sodium compatibility mode
+- **C++ Acceleration**: Optional native library for performance-critical algorithms
 
 ## Requirements
 
 - Java 25+
-- Minecraft 26.2+
-- NeoForge 26.2+ or Fabric Loader 0.18.4+
-- NVIDIA RTX / AMD RDNA2+ / Intel Arc GPU (for super resolution)
+- Minecraft 26.2-snapshot-3+
+- NeoForge 21.11.0-beta+ or Fabric Loader 0.18.5+
+- NVIDIA RTX / AMD RDNA2+ / Intel Arc GPU (for super resolution features)
 - Vulkan-compatible GPU and drivers
 
 ## Project Structure
 
 ```
 Renderium/
-├── common/                  # Platform-independent core
+├── common/                          # Platform-independent core
 │   └── src/main/java/com/renderium/
-│       ├── api/             # Extension interfaces
-│       ├── core/            # Core manager
-│       ├── dlss/            # DLSS integration
-│       └── culling/         # Culling algorithms
-├── fabric/                  # Fabric-specific implementation
+│       ├── api/                     # Extension interfaces
+│       │   ├── RenderExtension.java # Main extension point
+│       │   ├── FrustumCuller.java   # Custom culling interface
+│       │   └── PostProcessor.java   # Post-processing interface
+│       ├── core/                    # Core manager
+│       │   ├── RenderiumCore.java   # Central manager
+│       │   ├── RenderiumDualModeManager.java
+│       │   └── RenderiumMode.java
+│       ├── config/                  # Configuration system
+│       │   ├── RenderiumConfig.java
+│       │   └── structure/           # Option types
+│       ├── dlss/                    # DLSS integration
+│       │   └── DLSSManager.java
+│       ├── superres/                # Super resolution adapters
+│       │   ├── SuperResolutionManager.java
+│       │   ├── DLSSAdapter.java
+│       │   ├── FSRAdapter.java
+│       │   └── XeSSAdapter.java
+│       ├── framegen/                # Frame generation
+│       │   ├── FrameGeneratorManager.java
+│       │   ├── DLSSFGAdapter.java
+│       │   └── FSRFGAdapter.java
+│       ├── culling/                 # Culling system
+│       │   └── CullingController.java
+│       ├── streamline/              # NVIDIA Streamline SDK integration
+│       │   ├── SLContext.java
+│       │   └── VulkanStreamlineBridge.java
+│       ├── reflex/                  # NVIDIA Reflex
+│       │   └── ReflexManager.java
+│       ├── accel/                   # C++ accelerator
+│       │   └── RenderiumAccelerator.java
+│       ├── pipeline/                # Async render pipeline
+│       │   └── AsyncRenderPipeline.java
+│       ├── optimization/            # Performance optimizations
+│       ├── interception/            # Render interception layer
+│       ├── graphics/                # Graphics backend
+│       ├── shader/                  # Shader system
+│       ├── bridge/                  # Minecraft bridge
+│       ├── mixin/                   # Mixin hooks
+│       └── ui/                      # Settings UI
+├── fabric/                          # Fabric-specific implementation
 │   └── src/main/java/com/renderium/fabric/
-│       ├── FabricEntry.java
-│       └── mixin/
-└── neoforge/                # NeoForge-specific implementation
+│       ├── RenderiumMod.java
+│       ├── mixin/
+│       └── platform/
+└── neoforge/                        # NeoForge-specific implementation
     └── src/main/java/com/renderium/neoforge/
-        ├── NeoForgeEntry.java
-        └── mixin/
+        ├── RenderiumMod.java
+        ├── mixin/
+        └── platform/
 ```
 
 ## Setup
@@ -54,9 +91,6 @@ Ensure you have:
 ### 2. Build
 
 ```bash
-# Generate Gradle wrapper
-gradle wrapper --gradle-version=9.4.0
-
 # Build all modules
 ./gradlew build
 
@@ -89,6 +123,16 @@ public class MyExtension implements RenderExtension {
     }
 
     @Override
+    public int getPriority() {
+        return 500; // Lower = earlier execution
+    }
+
+    @Override
+    public void onVulkanPipelineInit(long vulkanDevice) {
+        // Called after Vulkan pipeline initialization
+    }
+
+    @Override
     public void onFrameBegin(int frameNumber, float deltaTime) {
         // Called at the start of each frame
     }
@@ -96,6 +140,16 @@ public class MyExtension implements RenderExtension {
     @Override
     public void onOpaquePassRendered(long commandBuffer, long depthTexture, long colorTexture) {
         // Called after opaque rendering, before post-processing
+    }
+
+    @Override
+    public void onPostProcessingBegin(long commandBuffer, long sceneTexture) {
+        // Called at the start of post-processing
+    }
+
+    @Override
+    public void onBeforeOutput(long commandBuffer, long outputTexture, int displayWidth, int displayHeight) {
+        // Called before final output to screen
     }
 }
 ```
@@ -118,10 +172,23 @@ public class MyCuller implements FrustumCuller {
     }
 
     @Override
+    public void updateCamera(float cameraX, float cameraY, float cameraZ,
+                            float pitch, float yaw, float fov) {
+        // Update camera frustum
+    }
+
+    @Override
     public boolean isVisible(float minX, float minY, float minZ,
                             float maxX, float maxY, float maxZ) {
         // Custom visibility test
         return true;
+    }
+
+    @Override
+    public List<Integer> computeVisibleChunks(List<ChunkBounds> chunks,
+                                               float cameraX, float cameraY, float cameraZ) {
+        // Return visible chunk indices
+        return List.of();
     }
 }
 ```
@@ -138,6 +205,11 @@ public class MyEffect implements PostProcessor {
     }
 
     @Override
+    public int getOrder() {
+        return 500; // Execution order
+    }
+
+    @Override
     public void process(long commandBuffer, TextureInputs inputs,
                        TextureOutput output, int width, int height) {
         // Apply custom post-processing
@@ -149,23 +221,58 @@ public class MyEffect implements PostProcessor {
 
 ### Core Classes
 
-- `RenderiumCore` - Central manager for all extensions
+- `RenderiumCore` - Central manager for all extensions and rendering technologies
 - `RenderExtension` - Extension point interface
 - `FrustumCuller` - Custom culling interface
 - `PostProcessor` - Post-processing effect interface
 
-### DLSS Integration
+### Super Resolution
 
-- `DLSSManager` - Manages DLSS and super resolution technologies
-- `DLSSMode` - DLSS operation mode
-- `DLSSQuality` - Quality presets
+- `SuperResolutionManager` - Manages DLSS/FSR/XeSS technologies
+- `DLSSAdapter` - NVIDIA DLSS integration
+- `FSRAdapter` - AMD FSR integration
+- `XeSSAdapter` - Intel XeSS integration
+
+### Frame Generation
+
+- `FrameGeneratorManager` - Manages frame generation technologies
+- `DLSSFGAdapter` - DLSS Frame Generation
+- `FSRFGAdapter` - FSR Frame Generation
+
+### Reflex Low Latency
+
+- `ReflexManager` - NVIDIA Reflex low latency mode
 
 ### Culling
 
 - `CullingController` - Coordinates multiple culling strategies
-- `CullingStrategy` - Base interface for culling algorithms
-- `FrustumCullingStrategy` - Default frustum culling
-- `DistanceCullingStrategy` - Distance-based culling
+- `BfsOcclusion` - BFS-based occlusion culling
+
+### Streamline SDK
+
+- `SLContext` - Streamline SDK context management
+- `VulkanStreamlineBridge` - Vulkan-Streamline integration
+
+### Configuration
+
+- `RenderiumConfig` - Main configuration class
+- Config file location: `<game_dir>/config/renderium.properties`
+
+## Dual Mode System
+
+### Independent Mode
+Runs independently without Sodium, full feature set available.
+
+### Compatibility Mode (with Sodium)
+Extends Sodium settings interface via Mixin injection, dynamic linking mode, compatible with other mod ecosystem.
+
+Mode detection:
+```java
+RenderiumDualModeManager dualMode = RenderiumDualModeManager.getInstance();
+if (dualMode.isPerformanceModPresent()) {
+    // Sodium is present, running in compatibility mode
+}
+```
 
 ## Integration with Minecraft 26.2
 
@@ -176,24 +283,23 @@ Minecraft 26.2+ includes official Vulkan support. Renderium extends this by:
 3. **Resource Access**: Provides access to Vulkan textures and command buffers
 4. **Pipeline Extension**: Allows inserting custom render passes
 
-## Roadmap
+## Debug Mode
 
-- [x] Project structure setup
-- [x] Core API design
-- [x] Extension interfaces
-- [ ] Mixin implementation
-- [ ] DLSS integration (NVIDIA Streamline SDK)
-- [ ] Advanced culling algorithms
-- [ ] Post-processing pipeline
-- [ ] Performance optimization
+Enable debug logging with JVM arguments:
+
+```bash
+# Basic debug output
+-Drenderium.debug=true
+
+# Verbose tracing
+-Drenderium.debug.verbose=true
+```
 
 ## License & Compliance
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
 ### Third-Party Components
-
-This mod includes the following third-party software components:
 
 | Component | License | Purpose |
 |-----------|---------|---------|
@@ -205,16 +311,9 @@ This mod includes the following third-party software components:
 
 ### Compliance Statement
 
-This mod complies with all third-party license requirements:
-
-- **Streamline SDK**: DLL files are distributed in their original, unmodified form with complete copyright and license notices. See [THIRD-PARTY-NOTICES.md](renderium/common/src/main/resources/THIRD-PARTY-NOTICES.md) for full details.
-- **DLSS/DLSS-G**: Governed by the NVIDIA RTX SDKs License. This mod distributes these components as part of an application with substantial functionality.
-- **Sodium** (Optional): This mod has an optional dependency on Sodium and is not a derivative work. In Full Performance Mode (without Sodium), there is zero contact with Sodium. In Compatibility Mode (with Sodium), Renderium extends Sodium's settings interface via Mixin injection, which constitutes "dynamic linking" explicitly permitted under LGPL-3.0 Section 4. All code is independently written without including any Sodium source code. See: https://github.com/CaffeineMC/sodium-fabric
-- All DLL files are official NVIDIA originals, without any modification or reverse engineering.
-
-For complete third-party license information:
-- Source repository: [THIRD-PARTY-NOTICES.md](renderium/common/src/main/resources/THIRD-PARTY-NOTICES.md)
-- Inside mod JAR: `META-INF/THIRD-PARTY-NOTICES.md`
+- **Streamline SDK**: Distributed in original, unmodified form with complete copyright notices
+- **DLSS/DLSS-G**: Governed by NVIDIA RTX SDKs License, distributed as part of an application with substantial functionality
+- **Sodium**: Optional dependency, not a derivative work. Dynamic linking permitted under LGPL-3.0 Section 4
 
 ## Disclaimer
 
