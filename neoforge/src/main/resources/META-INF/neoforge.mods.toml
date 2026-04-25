@@ -1,0 +1,30 @@
+modLoader = "javafml"
+loaderVersion = "[26,)"
+license = "MIT"
+issueTrackerURL = ""
+
+[[mods]]
+modId = "renderium"
+version = "${file.jarVersion}"
+displayName = "Renderium"
+description = '''
+Modern Minecraft rendering extension with Vulkan, DLSS, and advanced culling.
+Features:
+- Extension points for Minecraft's Vulkan renderer
+- DLSS and super resolution support
+- Advanced frustum and occlusion culling
+- Custom post-processing pipeline
+'''
+authors = "Renderium Team"
+[[dependencies.renderium]]
+modId = "neoforge"
+type = "required"
+versionRange = "[26.2,)"
+ordering = "NONE"
+side = "CLIENT"
+[[dependencies.renderium]]
+modId = "minecraft"
+type = "required"
+versionRange = "[26.2,)"
+ordering = "NONE"
+side = "CLIENT"

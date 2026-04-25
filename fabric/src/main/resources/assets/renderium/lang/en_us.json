@@ -1,0 +1,87 @@
+{
+  "modmenu.nameTranslation.renderium": "Renderium",
+  "modmenu.descriptionTranslation.renderium": "Modern Minecraft rendering extension with Vulkan, DLSS, and advanced culling",
+  
+  "category.renderium": "Renderium",
+  "key.renderium.open_settings": "Open Settings",
+  
+  "renderium.config.title": "Renderium Settings",
+  "renderium.config.category.general": "General",
+  "renderium.config.category.super_resolution": "Super Resolution",
+  "renderium.config.category.frame_generation": "Frame Generation",
+  "renderium.config.category.reflex": "NVIDIA Reflex",
+  "renderium.config.category.culling": "Culling",
+  "renderium.config.category.performance": "Performance",
+  
+  "renderium.config.open_settings": "Renderium Settings",
+  "renderium.config.save": "Save",
+  "renderium.config.reset": "Reset",
+  "renderium.config.disabled": "Disabled",
+  
+  "renderium.config.mode": "Mode",
+  "renderium.config.mode.compatibility": "Compatibility",
+  "renderium.config.mode.aggressive": "Aggressive",
+  
+  "renderium.config.enabled": "Enabled",
+  "renderium.config.disabled": "Disabled",
+  
+  "renderium.config.debug.enabled": "Debug: ON",
+  "renderium.config.debug.disabled": "Debug: OFF",
+  
+  "renderium.config.quality": "Quality",
+  "renderium.config.quality.auto": "Auto",
+  "renderium.config.quality.performance": "Performance",
+  "renderium.config.quality.balanced": "Balanced",
+  "renderium.config.quality.quality": "Quality",
+  "renderium.config.quality.ultra_performance": "Ultra Performance",
+  
+  "renderium.config.technology": "Technology",
+  "renderium.config.technology.auto": "Auto Detect",
+  "renderium.config.technology.dlss": "NVIDIA DLSS",
+  "renderium.config.technology.fsr": "AMD FSR",
+  "renderium.config.technology.xess": "Intel XeSS",
+  
+  "renderium.config.frame_generation": "Frame Generation",
+  "renderium.config.frame_generation_mode": "Mode",
+  "renderium.config.frame_generation_mode.dlss": "DLSS Frame Generation",
+  "renderium.config.frame_generation_mode.fsr": "FSR Frame Generation",
+  
+  "renderium.config.reflex": "NVIDIA Reflex Low Latency",
+  "renderium.config.reflex_mode": "Mode",
+  "renderium.config.reflex_mode.low_latency": "Low Latency",
+  "renderium.config.reflex_mode.low_latency_boost": "Low Latency + Boost",
+  "renderium.config.reflex_mode.on": "On",
+  
+  "renderium.config.culling.occlusion.enabled": "Occlusion Culling: ON",
+  "renderium.config.culling.occlusion.disabled": "Occlusion Culling: OFF",
+  "renderium.config.culling.frustum.enabled": "Frustum Culling: ON",
+  "renderium.config.culling.frustum.disabled": "Frustum Culling: OFF",
+  "renderium.config.culling.neighbor.enabled": "Neighbor Face Culling: ON",
+  "renderium.config.culling.neighbor.disabled": "Neighbor Face Culling: OFF",
+  
+  "renderium.config.performance.frame_graph.enabled": "Frame Graph: ON",
+  "renderium.config.performance.frame_graph.disabled": "Frame Graph: OFF",
+  "renderium.config.performance.vulkan_command.enabled": "Vulkan Command: ON",
+  "renderium.config.performance.vulkan_command.disabled": "Vulkan Command: OFF",
+  "renderium.config.performance.memory.enabled": "Memory Optimization: ON",
+  "renderium.config.performance.memory.disabled": "Memory Optimization: OFF",
+  "renderium.config.performance.shader_pipeline.enabled": "Shader Pipeline: ON",
+  "renderium.config.performance.shader_pipeline.disabled": "Shader Pipeline: OFF",
+  "renderium.config.performance.vma.enabled": "VMA Enhancement: ON",
+  "renderium.config.performance.vma.disabled": "VMA Enhancement: OFF",
+  "renderium.config.performance.aggressive.enabled": "Aggressive Optimization: ON",
+  "renderium.config.performance.aggressive.disabled": "Aggressive Optimization: OFF",
+  "renderium.config.performance.modern_arch.enabled": "Modern Architecture: ON",
+  "renderium.config.performance.modern_arch.disabled": "Modern Architecture: OFF",
+  "renderium.config.performance.gpu_transform.enabled": "GPU Transform: ON",
+  "renderium.config.performance.gpu_transform.disabled": "GPU Transform: OFF",
+  
+  "renderium.status.initializing": "Initializing Renderium...",
+  "renderium.status.ready": "Renderium Ready",
+  "renderium.status.error": "Renderium Error: %s",
+  
+  "renderium.notification.dlss_available": "NVIDIA DLSS is available",
+  "renderium.notification.dlss_unavailable": "NVIDIA DLSS is not available on this system",
+  "renderium.notification.fsr_available": "AMD FSR is available",
+  "renderium.notification.xess_available": "Intel XeSS is available"
+}

@@ -1,0 +1,87 @@
+{
+  "modmenu.nameTranslation.renderium": "Renderium",
+  "modmenu.descriptionTranslation.renderium": "现代 Minecraft 渲染扩展，支持 Vulkan、DLSS 和高级剔除",
+  
+  "category.renderium": "Renderium",
+  "key.renderium.open_settings": "打开设置",
+  
+  "renderium.config.title": "Renderium 设置",
+  "renderium.config.category.general": "常规",
+  "renderium.config.category.super_resolution": "超分辨率",
+  "renderium.config.category.frame_generation": "帧生成",
+  "renderium.config.category.reflex": "NVIDIA Reflex",
+  "renderium.config.category.culling": "剔除",
+  "renderium.config.category.performance": "性能",
+  
+  "renderium.config.open_settings": "Renderium 设置",
+  "renderium.config.save": "保存",
+  "renderium.config.reset": "重置",
+  "renderium.config.disabled": "禁用",
+  
+  "renderium.config.mode": "运行模式",
+  "renderium.config.mode.compatibility": "兼容模式",
+  "renderium.config.mode.aggressive": "狂暴模式",
+  
+  "renderium.config.enabled": "启用",
+  "renderium.config.disabled": "禁用",
+  
+  "renderium.config.debug.enabled": "调试模式：开",
+  "renderium.config.debug.disabled": "调试模式：关",
+  
+  "renderium.config.quality": "画质",
+  "renderium.config.quality.auto": "自动",
+  "renderium.config.quality.performance": "性能",
+  "renderium.config.quality.balanced": "平衡",
+  "renderium.config.quality.quality": "画质",
+  "renderium.config.quality.ultra_performance": "超高性能",
+  
+  "renderium.config.technology": "技术",
+  "renderium.config.technology.auto": "自动检测",
+  "renderium.config.technology.dlss": "NVIDIA DLSS",
+  "renderium.config.technology.fsr": "AMD FSR",
+  "renderium.config.technology.xess": "Intel XeSS",
+  
+  "renderium.config.frame_generation": "帧生成",
+  "renderium.config.frame_generation_mode": "模式",
+  "renderium.config.frame_generation_mode.dlss": "DLSS 帧生成",
+  "renderium.config.frame_generation_mode.fsr": "FSR 帧生成",
+  
+  "renderium.config.reflex": "NVIDIA Reflex 低延迟",
+  "renderium.config.reflex_mode": "模式",
+  "renderium.config.reflex_mode.low_latency": "低延迟",
+  "renderium.config.reflex_mode.low_latency_boost": "低延迟 + 加速",
+  "renderium.config.reflex_mode.on": "开启",
+  
+  "renderium.config.culling.occlusion.enabled": "遮挡剔除：开",
+  "renderium.config.culling.occlusion.disabled": "遮挡剔除：关",
+  "renderium.config.culling.frustum.enabled": "视锥剔除：开",
+  "renderium.config.culling.frustum.disabled": "视锥剔除：关",
+  "renderium.config.culling.neighbor.enabled": "邻居面剔除：开",
+  "renderium.config.culling.neighbor.disabled": "邻居面剔除：关",
+  
+  "renderium.config.performance.frame_graph.enabled": "帧图优化：开",
+  "renderium.config.performance.frame_graph.disabled": "帧图优化：关",
+  "renderium.config.performance.vulkan_command.enabled": "Vulkan 命令优化：开",
+  "renderium.config.performance.vulkan_command.disabled": "Vulkan 命令优化：关",
+  "renderium.config.performance.memory.enabled": "内存优化：开",
+  "renderium.config.performance.memory.disabled": "内存优化：关",
+  "renderium.config.performance.shader_pipeline.enabled": "着色器管线优化：开",
+  "renderium.config.performance.shader_pipeline.disabled": "着色器管线优化：关",
+  "renderium.config.performance.vma.enabled": "VMA 增强：开",
+  "renderium.config.performance.vma.disabled": "VMA 增强：关",
+  "renderium.config.performance.aggressive.enabled": "激进优化：开",
+  "renderium.config.performance.aggressive.disabled": "激进优化：关",
+  "renderium.config.performance.modern_arch.enabled": "现代渲染架构：开",
+  "renderium.config.performance.modern_arch.disabled": "现代渲染架构：关",
+  "renderium.config.performance.gpu_transform.enabled": "GPU 变换合并：开",
+  "renderium.config.performance.gpu_transform.disabled": "GPU 变换合并：关",
+  
+  "renderium.status.initializing": "正在初始化 Renderium...",
+  "renderium.status.ready": "Renderium 就绪",
+  "renderium.status.error": "Renderium 错误：%s",
+  
+  "renderium.notification.dlss_available": "NVIDIA DLSS 可用",
+  "renderium.notification.dlss_unavailable": "此系统不支持 NVIDIA DLSS",
+  "renderium.notification.fsr_available": "AMD FSR 可用",
+  "renderium.notification.xess_available": "Intel XeSS 可用"
+}

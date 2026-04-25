@@ -1,0 +1,52 @@
+{
+  "mod.renderium.name": "Renderium",
+  "mod.renderium.description": "现代 Minecraft 渲染扩展，支持 Vulkan、DLSS 和高级剔除",
+  
+  "category.renderium": "Renderium",
+  "key.renderium.open_settings": "打开设置",
+  
+  "renderium.config.title": "Renderium 设置",
+  "renderium.config.category.general": "常规",
+  "renderium.config.category.super_resolution": "超分辨率",
+  "renderium.config.category.frame_generation": "帧生成",
+  "renderium.config.category.reflex": "NVIDIA Reflex",
+  "renderium.config.category.culling": "剔除",
+  
+  "renderium.config.enabled": "启用",
+  "renderium.config.quality": "画质",
+  "renderium.config.quality.auto": "自动",
+  "renderium.config.quality.performance": "性能",
+  "renderium.config.quality.balanced": "平衡",
+  "renderium.config.quality.quality": "画质",
+  "renderium.config.quality.ultra_performance": "超高性能",
+  
+  "renderium.config.technology": "技术",
+  "renderium.config.technology.auto": "自动检测",
+  "renderium.config.technology.dlss": "NVIDIA DLSS",
+  "renderium.config.technology.fsr": "AMD FSR",
+  "renderium.config.technology.xess": "Intel XeSS",
+  
+  "renderium.config.frame_generation": "帧生成",
+  "renderium.config.frame_generation_mode": "模式",
+  "renderium.config.frame_generation_mode.dlss": "DLSS 帧生成",
+  "renderium.config.frame_generation_mode.fsr": "FSR 帧生成",
+  
+  "renderium.config.reflex": "NVIDIA Reflex 低延迟",
+  "renderium.config.reflex_mode": "模式",
+  "renderium.config.reflex_mode.off": "关闭",
+  "renderium.config.reflex_mode.on": "开启",
+  "renderium.config.reflex_mode.on_plus_boost": "开启 + 加速",
+  
+  "renderium.config.frustum_culling": "视锥剔除",
+  "renderium.config.occlusion_culling": "遮挡剔除",
+  "renderium.config.culling_aggressiveness": "剔除激进程度",
+  
+  "renderium.status.initializing": "正在初始化 Renderium...",
+  "renderium.status.ready": "Renderium 就绪",
+  "renderium.status.error": "Renderium 错误：%s",
+  
+  "renderium.notification.dlss_available": "NVIDIA DLSS 可用",
+  "renderium.notification.dlss_unavailable": "此系统不支持 NVIDIA DLSS",
+  "renderium.notification.fsr_available": "AMD FSR 可用",
+  "renderium.notification.xess_available": "Intel XeSS 可用"
+}

@@ -1,0 +1,52 @@
+{
+  "mod.renderium.name": "Renderium",
+  "mod.renderium.description": "Modern Minecraft rendering extension with Vulkan, DLSS, and advanced culling",
+  
+  "category.renderium": "Renderium",
+  "key.renderium.open_settings": "Open Settings",
+  
+  "renderium.config.title": "Renderium Settings",
+  "renderium.config.category.general": "General",
+  "renderium.config.category.super_resolution": "Super Resolution",
+  "renderium.config.category.frame_generation": "Frame Generation",
+  "renderium.config.category.reflex": "NVIDIA Reflex",
+  "renderium.config.category.culling": "Culling",
+  
+  "renderium.config.enabled": "Enabled",
+  "renderium.config.quality": "Quality",
+  "renderium.config.quality.auto": "Auto",
+  "renderium.config.quality.performance": "Performance",
+  "renderium.config.quality.balanced": "Balanced",
+  "renderium.config.quality.quality": "Quality",
+  "renderium.config.quality.ultra_performance": "Ultra Performance",
+  
+  "renderium.config.technology": "Technology",
+  "renderium.config.technology.auto": "Auto Detect",
+  "renderium.config.technology.dlss": "NVIDIA DLSS",
+  "renderium.config.technology.fsr": "AMD FSR",
+  "renderium.config.technology.xess": "Intel XeSS",
+  
+  "renderium.config.frame_generation": "Frame Generation",
+  "renderium.config.frame_generation_mode": "Mode",
+  "renderium.config.frame_generation_mode.dlss": "DLSS Frame Generation",
+  "renderium.config.frame_generation_mode.fsr": "FSR Frame Generation",
+  
+  "renderium.config.reflex": "NVIDIA Reflex Low Latency",
+  "renderium.config.reflex_mode": "Mode",
+  "renderium.config.reflex_mode.off": "Off",
+  "renderium.config.reflex_mode.on": "On",
+  "renderium.config.reflex_mode.on_plus_boost": "On + Boost",
+  
+  "renderium.config.frustum_culling": "Frustum Culling",
+  "renderium.config.occlusion_culling": "Occlusion Culling",
+  "renderium.config.culling_aggressiveness": "Culling Aggressiveness",
+  
+  "renderium.status.initializing": "Initializing Renderium...",
+  "renderium.status.ready": "Renderium Ready",
+  "renderium.status.error": "Renderium Error: %s",
+  
+  "renderium.notification.dlss_available": "NVIDIA DLSS is available",
+  "renderium.notification.dlss_unavailable": "NVIDIA DLSS is not available on this system",
+  "renderium.notification.fsr_available": "AMD FSR is available",
+  "renderium.notification.xess_available": "Intel XeSS is available"
+}

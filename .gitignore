@@ -6,6 +6,9 @@ build/
 gradlew
 gradlew.bat
 
+# C++
+build*/
+
 # IDE
 .idea/
 *.iml
@@ -20,6 +23,7 @@ gradlew.bat
 # Minecraft
 env/
 *.jar
+run/
 
 # OS
 .DS_Store
@@ -45,17 +49,12 @@ desktop.ini
 
 # Other
 /.context/
-/.trae/
-**/.trae/
 **/crash-reports/
 /mods/
-**/build_test/
 **/reports/
-/vulkan-backport/
-**/build*/
-**/archived/
-/hal_test_build/
-**/__pycache__/
+archived/
+__pycache__/
 **/results/
 **/test_baked/
 /output/
+cmake/
