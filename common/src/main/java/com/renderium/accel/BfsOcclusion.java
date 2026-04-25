@@ -121,8 +121,9 @@ public final class BfsOcclusion {
             // 保守估计: Minecraft 渲染距离 32 区块 ≈ 32768 区块截面
             // 使用 65536 作为安全上限，对应 resultSize = 16 + 65536/8 = 8200 bytes
             int estimatedNodeCount = Math.max(8192, (int)(renderDistance * renderDistance * 4));
-            int bitmapSizeWords = (estimatedNodeCount + 31) / 32;
-            int resultSize = 16 + bitmapSizeWords * 4;  // VisibilityResult header(16) + bitmap
+            // 使用 long 计算避免整数溢出，然后安全转换为 int
+            int bitmapSizeWords = Math.toIntExact((estimatedNodeCount + 31L) / 32);
+            int resultSize = 16 + Math.toIntExact((long) bitmapSizeWords * 4);
 
             MemorySegment result = arena.allocate(resultSize);
 

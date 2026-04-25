@@ -1,7 +1,15 @@
 package com.renderium.bridge.video;
 
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Consumer;
+
+import com.renderium.config.structure.RendererOption;
+import com.renderium.config.structure.RendererOptionPage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,6 +52,15 @@ public final class VideoOptionsRegistry {
 
     /** 读写锁（写少读多场景优化） */
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+
+    /** 已注册的选项页面集合（线程安全） */
+    private final Set<RendererOptionPage> registeredPages = ConcurrentHashMap.newKeySet();
+
+    /** 已修改但未保存的选项集合（线程安全） */
+    private final Set<RendererOption> modifiedOptions = Collections.synchronizedSet(new HashSet<>());
+
+    /** 变更监听器列表（线程安全） */
+    private final Set<Consumer<RendererOption>> changeListeners = ConcurrentHashMap.newKeySet();
 
     /**
      * 创建新的视频选项注册表实例
@@ -107,15 +124,115 @@ public final class VideoOptionsRegistry {
     public void applyChanges() {
         lock.writeLock().lock();
         try {
-            // TODO: Task 2.1 - 实现变更应用逻辑
-            // 1. 遍历 modifiedOptions
-            // 2. 写入配置存储
-            // 3. 清除脏标记
-            // 4. 通知监听器
-            LOGGER.debug("applyChanges() called - pending Task 2.1 implementation");
+            if (modifiedOptions.isEmpty()) {
+                LOGGER.debug("applyChanges() called - no modifications to apply");
+                return;
+            }
+
+            int appliedCount = 0;
+            int errorCount = 0;
+
+            // 遍历所有已修改的选项
+            for (RendererOption option : modifiedOptions) {
+                try {
+                    // 触发选项的存储处理器（如果存在）
+                    Object handler = getStorageHandler(option);
+                    if (handler instanceof StorageHandler storageHandler) {
+                        storageHandler.save();
+                    }
+                    appliedCount++;
+                } catch (Exception e) {
+                    LOGGER.error("Failed to apply option '{}': {}", 
+                        option.getId(), e.getMessage(), e);
+                    errorCount++;
+                }
+            }
+
+            // 清除脏标记
+            modifiedOptions.clear();
+
+            // 通知所有变更监听器
+            for (Consumer<RendererOption> listener : changeListeners) {
+                try {
+                    listener.accept(null);
+                } catch (Exception e) {
+                    LOGGER.warn("Change listener threw exception: {}", e.getMessage());
+                }
+            }
+
+            LOGGER.info("applyChanges() completed - applied: {}, errors: {}", 
+                appliedCount, errorCount);
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    /**
+     * 获取选项的存储处理器
+     * @param option 选项实例
+     * @return 存储处理器对象，可能为 null
+     */
+    private Object getStorageHandler(RendererOption option) {
+        if (option instanceof com.renderium.config.structure.BooleanOption boolOpt) {
+            return boolOpt.getStorageHandler();
+        }
+        return null;
+    }
+
+    /**
+     * 标记选项为已修改
+     * @param option 被修改的选项
+     */
+    public void markModified(RendererOption option) {
+        if (option != null) {
+            modifiedOptions.add(option);
+            LOGGER.debug("Option '{}' marked as modified", option.getId());
+        }
+    }
+
+    /**
+     * 注册选项页面
+     * @param page 选项页面实例
+     */
+    public void registerPage(RendererOptionPage page) {
+        if (page != null) {
+            registeredPages.add(page);
+            LOGGER.debug("Registered option page: {}", page.name().getString());
+        }
+    }
+
+    /**
+     * 添加变更监听器
+     * @param listener 监听器函数，参数为变更的选项（批量应用时为 null）
+     */
+    public void addChangeListener(Consumer<RendererOption> listener) {
+        if (listener != null) {
+            changeListeners.add(listener);
+        }
+    }
+
+    /**
+     * 移除变更监听器
+     * @param listener 要移除的监听器
+     */
+    public void removeChangeListener(Consumer<RendererOption> listener) {
+        changeListeners.remove(listener);
+    }
+
+    /**
+     * 检查是否有未保存的修改
+     * @return true 如果存在未保存的修改
+     */
+    public boolean hasUnsavedChanges() {
+        return !modifiedOptions.isEmpty();
+    }
+
+    /**
+     * 获取未保存修改的数量
+     * @return 未保存选项的数量
+     */
+    public int getUnsavedChangesCount() {
+        return modifiedOptions.size();
     }
 
     /**
@@ -134,11 +251,27 @@ public final class VideoOptionsRegistry {
     public void resetToDefaults() {
         lock.writeLock().lock();
         try {
-            // TODO: Task 2.1 - 实现重置逻辑
-            // 1. 从配置存储加载默认值
-            // 2. 清除脏标记
-            // 3. 触发 UI 刷新
-            LOGGER.debug("resetToDefaults() called - pending Task 2.1 implementation");
+            int resetCount = 0;
+
+            // 遍历所有已注册页面中的选项，重置为默认值
+            for (RendererOptionPage page : registeredPages) {
+                for (var group : page.groups()) {
+                    for (RendererOption option : group.options()) {
+                        try {
+                            option.resetToDefault();
+                            resetCount++;
+                        } catch (Exception e) {
+                            LOGGER.warn("Failed to reset option '{}': {}", 
+                                option.getId(), e.getMessage());
+                        }
+                    }
+                }
+            }
+
+            // 清除脏标记
+            modifiedOptions.clear();
+
+            LOGGER.info("resetToDefaults() completed - reset {} options", resetCount);
         } finally {
             lock.writeLock().unlock();
         }
