@@ -4,10 +4,14 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
 import com.renderium.config.structure.BooleanOption;
+import com.renderium.config.structure.OptionImpact;
+import com.renderium.config.structure.OptionFlag;
+import com.renderium.config.structure.EnabledProvider;
+import com.renderium.config.structure.ApplyHook;
 
+import java.util.EnumSet;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -79,13 +83,16 @@ public class BooleanOptionBuilder {
     private OptionImpact impact = OptionImpact.LOW;
 
     /** 选项变更标志集合 */
-    private Set<OptionFlag> flags = Collections.emptySet();
+    private EnumSet<OptionFlag> flags = EnumSet.noneOf(OptionFlag.class);
 
     /** 启用状态提供者（可选，默认为始终启用） */
-    private Supplier<Boolean> enabledProvider = () -> true;
+    private EnabledProvider enabledProvider = () -> true;
+
+    /** 应用钩子（可选，值变更时触发副作用） */
+    private ApplyHook applyHook = null;
 
     /** 存储事件处理器（可选） */
-    private StorageHandler storageHandler = null;
+    private Object storageHandler = null;
 
     /**
      * 创建新的布尔选项构建器
@@ -211,7 +218,7 @@ public class BooleanOptionBuilder {
                 throw new IllegalArgumentException("Flag must not be null");
             }
         }
-        this.flags = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(flags)));
+        this.flags = EnumSet.copyOf(Arrays.asList(flags));
         return this;
     }
 
@@ -220,19 +227,12 @@ public class BooleanOptionBuilder {
      * <p>
      * 用于根据运行时条件动态控制选项是否可用（可交互）。
      * 当返回 false 时，选项将变灰且不可编辑。
-     * <p>
-     * 典型用途：
-     * <ul>
-     *   <li>依赖其他选项的状态（如：仅在某功能开启时可用）</li>
-     *   <li>依赖硬件能力（如：仅在支持 GPU 时可用）</li>
-     *   <li>依赖游戏状态（如：仅在游戏中可用）</li>
-     * </ul>
      *
      * @param enabledProvider 启用状态提供者函数（不能为 null）
      * @return 当前构建器实例（支持链式调用）
      * @throws IllegalArgumentException 如果 enabledProvider 为 null
      */
-    public BooleanOptionBuilder setEnabledProvider(Supplier<Boolean> enabledProvider) {
+    public BooleanOptionBuilder setEnabledProvider(EnabledProvider enabledProvider) {
         if (enabledProvider == null) {
             throw new IllegalArgumentException("Enabled provider must not be null");
         }
@@ -242,14 +242,11 @@ public class BooleanOptionBuilder {
 
     /**
      * 设置存储事件处理器（高级功能）
-     * <p>
-     * 在选项值保存到绑定后调用的回调函数。
-     * 典型用途包括刷新配置到磁盘、通知其他模块等。
      *
      * @param storageHandler 存储处理器（可以为 null 表示不需要）
      * @return 当前构建器实例（支持链式调用）
      */
-    public BooleanOptionBuilder setStorageHandler(StorageHandler storageHandler) {
+    public BooleanOptionBuilder setStorageHandler(Object storageHandler) {
         this.storageHandler = storageHandler;
         return this;
     }

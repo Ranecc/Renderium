@@ -39,6 +39,8 @@
 
 package com.renderium.core.quality;
 
+import com.renderium.core.RenderiumCore;
+
 /**
  * Lyapunov 无参考质量检验器
  * <p>

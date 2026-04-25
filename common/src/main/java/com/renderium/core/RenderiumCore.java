@@ -30,14 +30,22 @@ import com.renderium.api.PostProcessor;
 import com.renderium.backend.BackendInterceptor;
 import com.renderium.backend.FrameData;
 import com.renderium.config.RenderiumConfig;
-import com.renderium.component.*;
+import com.renderium.core.component.*;
 import com.renderium.core.memory.FrameDataArena;
 import com.renderium.core.phase.PhaseTransitionDetector;
 import com.renderium.core.quality.LyapunovQualityChecker;
 import com.renderium.core.precision.AdaptivePrecisionManager;
 import com.renderium.core.quality.ConvergenceMonitor;
 import com.renderium.pipeline.AdaptivePathSelector;
+import com.renderium.pipeline.AsyncRenderPipeline;
 import com.renderium.platform.PlatformHelper;
+import com.renderium.interception.post.SuperResolutionManager;
+import com.renderium.framegen.FrameGeneratorManager;
+import com.renderium.reflex.ReflexManager;
+import com.renderium.streamline.SLContext;
+import com.renderium.streamline.VulkanStreamlineBridge;
+import com.renderium.streamline.FrameEvaluator;
+import com.renderium.accel.RenderiumAccelerator;
 
 import java.nio.file.Path;
 import java.util.*;
@@ -171,7 +179,7 @@ public final class RenderiumCore implements AutoCloseable {
         this.cullers = new ConcurrentHashMap<>();
         this.postProcessors = new CopyOnWriteArrayList<>();
         this.currentTextures = new TextureHolder();
-        this.frameDataArena = new FrameDataArena(4);
+        this.frameDataArena = new FrameDataArena(DEFAULT_RENDER_WIDTH, DEFAULT_RENDER_HEIGHT);
         this.qualityAssurance = new QualityAssuranceManager();
     }
 
@@ -271,7 +279,70 @@ public final class RenderiumCore implements AutoCloseable {
         // 初始化所有扩展
         notifyExtensionsVulkanReady();
 
+        // 验证所有子组件初始化状态（确保系统健壮性）
+        validateComponentInitialization();
+
         LOGGER.info("Renderium initialized successfully (v6.0 refactored)");
+    }
+
+    /**
+     * 验证所有子组件的初始化状态
+     * <p>
+     * 在 initialize() 末尾调用，确保关键组件都已成功初始化。
+     * 如果某些可选组件失败，系统会优雅降级而非崩溃。
+     *
+     * <h3>验证策略</h3>
+     * <ul>
+     *   <li><b>必需组件</b>: QualityAssuranceManager（核心质量保障）</li>
+     *   <li><b>重要组件</b>: StreamlineInitializer, ModernTechManager（影响主要功能）</li>
+     *   <li><b>可选组件</b>: NativeAcceleratorIntegration（可回退到纯Java）</li>
+     * </ul>
+     */
+    private void validateComponentInitialization() {
+        List<String> failedComponents = new ArrayList<>();
+        List<String> degradedComponents = new ArrayList<>();
+
+        // 验证必需组件
+        if (qualityAssurance == null) {
+            failedComponents.add("QualityAssuranceManager");
+        }
+
+        // 验证重要组件
+        if (streamlineInit == null || !streamlineInit.isInitialized()) {
+            degradedComponents.add("StreamlineInitializer");
+        }
+        if (techManager == null) {
+            degradedComponents.add("ModernTechManager");
+        }
+
+        // 验证可选组件
+        if (nativeAccel == null || !nativeAccel.isNativeAccelAvailable()) {
+            LOGGER.info("C++加速器不可用，将使用纯Java实现");
+        }
+
+        // 处理验证结果
+        if (!failedComponents.isEmpty()) {
+            String errorMsg = "❌ 必需组件初始化失败: " + String.join(", ", failedComponents);
+            LOGGER.severe(errorMsg);
+            throw new IllegalStateException(errorMsg);
+        }
+
+        if (!degradedComponents.isEmpty()) {
+            String warnMsg = "⚠️ 重要组件初始化失败，部分功能将降级: " + String.join(", ", degradedComponents);
+            LOGGER.warning(warnMsg);
+
+            // 根据失败的组件调整系统状态
+            if (degradedComponents.contains("StreamlineInitializer")) {
+                shortCircuited = true;
+                shortCircuitReason = "Streamline SDK 初始化失败";
+                logShortCircuit();
+            }
+        }
+
+        // 输出最终健康状态
+        if (failedComponents.isEmpty() && degradedComponents.isEmpty()) {
+            LOGGER.info("✅ 所有子组件验证通过，系统健康状态良好");
+        }
     }
 
     /**
@@ -494,6 +565,56 @@ public final class RenderiumCore implements AutoCloseable {
     public long getVulkanDevice() { return vulkanDevice; }
     public int getCurrentFrame() { return currentFrame; }
     public float getLastDeltaTime() { return lastDeltaTime; }
+
+    /**
+     * 获取系统健康状态报告
+     * <p>
+     * 返回所有子组件的运行时状态，用于调试和监控。
+     *
+     * @return 格式化的健康状态字符串
+     */
+    public String getSystemHealthReport() {
+        StringBuilder report = new StringBuilder();
+        report.append("╔══════════════════════════════════════╗\n");
+        report.append("║     Renderium 系统健康报告 v6.0      ║\n");
+        report.append("╠══════════════════════════════════════╣\n");
+        report.append(String.format("║ 核心状态: %-28s ║\n", (initialized ? "✅ 已初始化" : "❌ 未初始化")));
+        report.append(String.format("║ 活跃状态: %-28s ║\n", (isActive() ? "✅ 正常运行" : (shortCircuited ? "⚠️ 降级模式" : "❌ 未激活"))));
+        if (shortCircuited) {
+            report.append(String.format("║ 降级原因: %-27s ║\n", shortCircuitReason));
+        }
+        report.append("╠══════════════════════════════════════╣\n");
+
+        // 子组件状态
+        report.append(String.format("║ QualityAssurance: %-21s ║\n", formatComponentStatus(qualityAssurance != null)));
+        report.append(String.format("║ Streamline:       %-21s ║\n",
+            formatComponentStatus(streamlineInit != null && streamlineInit.isInitialized())));
+        report.append(String.format("║ ModernTech:       %-21s ║\n", formatComponentStatus(techManager != null)));
+        report.append(String.format("║ NativeAccel:      %-21s ║\n",
+            formatComponentStatus(nativeAccel != null && nativeAccel.isNativeAccelAvailable())));
+        report.append(String.format("║ AsyncPipeline:    %-21s ║\n",
+            formatComponentStatus(AsyncRenderPipeline.isInitialized())));
+
+        // 功能模块状态
+        report.append("╠══════════════════════════════════════╣\n");
+        report.append(String.format("║ 超分辨率(SR):     %-21s ║\n",
+            formatFeatureStatus(techManager != null && techManager.isSuperResolutionEnabled())));
+        report.append(String.format("║ 帧生成(FG):       %-21s ║\n",
+            formatFeatureStatus(techManager != null && techManager.isFrameGenerationEnabled())));
+        report.append(String.format("║ Reflex低延迟:     %-21s ║\n",
+            formatFeatureStatus(techManager != null && techManager.isReflexEnabled())));
+
+        report.append("╚══════════════════════════════════════╝\n");
+        return report.toString();
+    }
+
+    private String formatComponentStatus(boolean healthy) {
+        return healthy ? "✅ 正常" : "❌ 异常";
+    }
+
+    private String formatFeatureStatus(boolean enabled) {
+        return enabled ? "🟢 已启用" : "⚫ 未启用";
+    }
 
     public SuperResolutionManager getSuperResolutionManager() {
         return techManager != null ? techManager.getSuperResolutionManager() : null;

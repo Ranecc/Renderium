@@ -60,8 +60,11 @@ public final class ModernTechManager {
      *
      * @param slContext Streamline 上下文（必须已初始化）
      * @param configLoader 配置加载器
+     * @param bridge Vulkan Streamline 桥接器（可为 null，用于 XeSS/FSR）
+     * @param frameEvaluator 帧评估器（可为 null，用于 XeSS/FSR）
      */
-    public void initializeSuperResolution(SLContext slContext, SLConfigLoader configLoader) {
+    public void initializeSuperResolution(SLContext slContext, SLConfigLoader configLoader,
+                                          VulkanStreamlineBridge bridge, FrameEvaluator frameEvaluator) {
         if (slContext == null || !slContext.isInitialized()) return;
 
         superResolutionManager = new SuperResolutionManager(slContext, configLoader);
@@ -72,11 +75,11 @@ public final class ModernTechManager {
             superResolutionManager.registerAdapter(new DLSSAdapter(dlssManager));
         }
 
-        // 注册 XeSS 适配器
-        superResolutionManager.registerAdapter(new XeSSAdapter(slContext, null));
+        // 注册 XeSS 适配器（bridge 和 frameEvaluator 可为 null，XeSS 会自行检查）
+        superResolutionManager.registerAdapter(new XeSSAdapter(slContext, bridge, frameEvaluator));
 
         // 注册 FSR 适配器
-        superResolutionManager.registerAdapter(new FSRAdapter(slContext, null));
+        superResolutionManager.registerAdapter(new FSRAdapter(slContext, bridge, frameEvaluator));
 
         // 自动检测最佳技术
         superResolutionManager.detectAndSelect();
@@ -87,8 +90,10 @@ public final class ModernTechManager {
      *
      * @param slContext Streamline 上下文（必须已初始化）
      * @param frameEvaluator 帧评估器
+     * @param bridge Vulkan Streamline 桥接器（必需，用于 DLSS-FG/FSR-FG）
      */
-    public void initializeFrameGeneration(SLContext slContext, FrameEvaluator frameEvaluator) {
+    public void initializeFrameGeneration(SLContext slContext, FrameEvaluator frameEvaluator,
+                                          VulkanStreamlineBridge bridge) {
         if (slContext == null || !slContext.isInitialized()) return;
 
         frameGeneratorManager = new FrameGeneratorManager();
@@ -96,13 +101,13 @@ public final class ModernTechManager {
         // 注册 DLSS FG
         frameGeneratorManager.registerGenerator(
             FrameGeneratorManager.FrameGenType.DLSS_FG,
-            new DLSSFGAdapter(slContext, frameEvaluator)
+            new DLSSFGAdapter(slContext, bridge, frameEvaluator)
         );
 
         // 注册 FSR FG
         frameGeneratorManager.registerGenerator(
             FrameGeneratorManager.FrameGenType.FSR_FG,
-            new FSRFGAdapter(slContext, frameEvaluator)
+            new FSRFGAdapter(slContext, bridge, frameEvaluator)
         );
 
         // 自动检测

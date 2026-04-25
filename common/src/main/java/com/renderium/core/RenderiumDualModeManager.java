@@ -196,10 +196,10 @@ public final class RenderiumDualModeManager {
      */
     private RenderiumMode determineMode() {
         if (sodiumPresent) {
-            LOGGER.warning("═════════════════════════════════════════════════════");
+            LOGGER.warning("=============================================");
             LOGGER.warning("  检测到 Sodium - 建议卸载以获得最佳 Renderium 体验");
             LOGGER.warning("  当前将启用兼容模式（功能受限）");
-            LOGGER.warning("═════════════════════════════════════════════════════");
+            LOGGER.warning("=============================================");
             return RenderiumMode.COMPATIBILITY_LIMITED;
         }
 
@@ -391,12 +391,12 @@ public final class RenderiumDualModeManager {
      * 记录启动信息日志
      */
     private void logStartupInfo() {
-        LOGGER.info("═════════════════════════════════════════════════════════");
+        LOGGER.info("===============================================");
         LOGGER.info("  Renderium 三轨制架构 v6.0");
-        LOGGER.info("═════════════════════════════════════════════════════════");
+        LOGGER.info("===============================================");
         LOGGER.info("  运行模式:     " + currentMode.getDisplayName() + " (" + currentMode.getId() + ")");
         LOGGER.info("  Sodium:      " + (sodiumPresent ? "✓ " + sodiumVersion.orElse("") : "✗ 未检测"));
-        LOGGER.info("───────────────────────────────────────────────────────");
+        LOGGER.info("-----------------------------------------------");
 
         switch (currentMode) {
             case COMPATIBILITY -> logCompatibilityDetails();
@@ -404,7 +404,7 @@ public final class RenderiumDualModeManager {
             case AGGRESSIVE -> logAggressiveDetails();
         }
 
-        LOGGER.info("═════════════════════════════════════════════════════════");
+        LOGGER.info("===============================================");
     }
 
     /**

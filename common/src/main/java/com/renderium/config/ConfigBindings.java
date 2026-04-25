@@ -51,7 +51,7 @@ public final class ConfigBindings {
      * @return 包装后的 setter（执行后自动调用 commitSnapshot）
      * @throws NullPointerException 如果参数为 null
      */
-    public static Consumer<Boolean> setter(Consumer<Boolean> originalSetter, RenderiumConfig config) {
+    public static Consumer<Boolean> booleanSetter(Consumer<Boolean> originalSetter, RenderiumConfig config) {
         Objects.requireNonNull(originalSetter, "originalSetter cannot be null");
         Objects.requireNonNull(config, "config cannot be null");
 
@@ -68,7 +68,7 @@ public final class ConfigBindings {
      * @param config         配置实例（用于提交快照）
      * @return 包装后的 setter（执行后自动调用 commitSnapshot）
      */
-    public static Consumer<Integer> setter(Consumer<Integer> originalSetter, RenderiumConfig config) {
+    public static Consumer<Integer> intSetter(Consumer<Integer> originalSetter, RenderiumConfig config) {
         Objects.requireNonNull(originalSetter, "originalSetter cannot be null");
         Objects.requireNonNull(config, "config cannot be null");
 
@@ -85,7 +85,7 @@ public final class ConfigBindings {
      * @param config         配置实例（用于提交快照）
      * @return 包装后的 setter（执行后自动调用 commitSnapshot）
      */
-    public static Consumer<Float> setter(Consumer<Float> originalSetter, RenderiumConfig config) {
+    public static Consumer<Float> floatSetter(Consumer<Float> originalSetter, RenderiumConfig config) {
         Objects.requireNonNull(originalSetter, "originalSetter cannot be null");
         Objects.requireNonNull(config, "config cannot be null");
 
@@ -103,7 +103,7 @@ public final class ConfigBindings {
      * @param config         配置实例（用于提交快照）
      * @return 包装后的 setter（执行后自动调用 commitSnapshot）
      */
-    public static <T extends Enum<T>> Consumer<T> setter(Consumer<T> originalSetter, RenderiumConfig config) {
+    public static <T extends Enum<T>> Consumer<T> enumSetter(Consumer<T> originalSetter, RenderiumConfig config) {
         Objects.requireNonNull(originalSetter, "originalSetter cannot be null");
         Objects.requireNonNull(config, "config cannot be null");
 
@@ -127,7 +127,7 @@ public final class ConfigBindings {
             Consumer<Boolean> setter,
             Supplier<Boolean> getter,
             RenderiumConfig config) {
-        return new Object[]{ setter(setter, config), getter };
+        return new Object[]{ booleanSetter(setter, config), getter };
     }
 
     /**
@@ -142,7 +142,7 @@ public final class ConfigBindings {
             Consumer<Integer> setter,
             Supplier<Integer> getter,
             RenderiumConfig config) {
-        return new Object[]{ setter(setter, config), getter };
+        return new Object[]{ intSetter(setter, config), getter };
     }
 
     /**
@@ -158,6 +158,6 @@ public final class ConfigBindings {
             Consumer<T> setter,
             Supplier<T> getter,
             RenderiumConfig config) {
-        return new Object[]{ setter(setter, config), getter };
+        return new Object[]{ enumSetter(setter, config), getter };
     }
 }
