@@ -23,9 +23,18 @@ import com.renderium.bridge.video.OptionPageBuilder;
 import com.renderium.bridge.video.RendererConfigBuilder;
 import com.renderium.config.structure.OptionFlag;
 import com.renderium.config.structure.OptionImpact;
+import com.renderium.pipeline.node.builtin.Bloom;
+import com.renderium.pipeline.node.builtin.SSAO;
+import com.renderium.framegen.FrameGeneratorManager;
+import com.renderium.gpu.sr.SROutputManager;
+import com.renderium.gpu.hiz.HiZBufferManager;
+import com.renderium.gpu.lod.GPULODDataManager;
+import com.renderium.reflex.ReflexManagerImpl;
+import com.renderium.gpu.framegen.CameraJitterGenerator;
+import com.renderium.pipeline.node.PipelineNodeRegistry;
 
 /**
- * GPU 视频选项注册器 🎮
+ * GPU 视频选项注册器
  * <p>
  * 注册所有 GPU 加速功能（后处理、超分辨率、遮挡剔除、延迟优化）
  * 的可配置参数到视频设置系统。
@@ -158,7 +167,6 @@ public final class GpuVideoOptionsRegistrar {
                 .unit("EV")
                 .flag(OptionFlag.REQUIRES_RENDERER_UPDATE)
                 .onChange((opt, value) -> {
-                    import com.renderium.pipeline.node.builtin.Bloom;
                     Bloom node = getBloomNodeInstance();
                     if (node != null) node.setThreshold(value);
                 });
@@ -170,7 +178,6 @@ public final class GpuVideoOptionsRegistrar {
                 .range(0.1f, 2.0f, 0.05f)
                 .flag(OptionFlag.REQUIRES_RENDERER_UPDATE)
                 .onChange((opt, value) -> {
-                    import com.renderium.pipeline.node.builtin.Bloom;
                     Bloom node = getBloomNodeInstance();
                     if (node != null) node.setIntensity(value);
                 });
@@ -182,7 +189,6 @@ public final class GpuVideoOptionsRegistrar {
                 .range(1, 6, 1)
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .onChange((opt, value) -> {
-                    import com.renderium.pipeline.node.builtin.Bloom;
                     Bloom node = getBloomNodeInstance();
                     if (node != null) node.setBlurPasses(value);
                 });
@@ -195,7 +201,6 @@ public final class GpuVideoOptionsRegistrar {
                 .choiceLabels("Coarse (Fast)", "Balanced", "Fine (Quality)")
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .onChange((opt, value) -> {
-                    import com.renderium.pipeline.node.builtin.Bloom;
                     Bloom node = getBloomNodeInstance();
                     if (node != null) node.setDownsampleScale(Float.parseFloat(value));
                 });
@@ -207,7 +212,6 @@ public final class GpuVideoOptionsRegistrar {
                 .defaultValue(true)
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .onChange((opt, value) -> {
-                    import com.renderium.pipeline.node.builtin.SSAO;
                     SSAO node = getSsaoNodeInstance();
                     if (node != null) node.setEnabled(value);
                 });
@@ -220,7 +224,6 @@ public final class GpuVideoOptionsRegistrar {
                 .choiceLabels("Low (8 samples)", "Medium (32)", "High (48)", "Ultra (64)")
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .onChange((opt, value) -> {
-                    import com.renderium.pipeline.node.builtin.SSAO;
                     SSAO node = getSsaoNodeInstance();
                     if (node != null) node.setQualityPreset(value);
                 });
@@ -232,7 +235,6 @@ public final class GpuVideoOptionsRegistrar {
                 .range(0.1f, 2.0f, 0.05f)
                 .flag(OptionFlag.REQUIRES_RENDERER_UPDATE)
                 .onChange((opt, value) -> {
-                    import com.renderium.pipeline.node.builtin.SSAO;
                     SSAO node = getSsaoNodeInstance();
                     if (node != null) node.setRadius(value);
                 });
@@ -260,7 +262,6 @@ public final class GpuVideoOptionsRegistrar {
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .advanced()
                 .onChange((opt, value) -> {
-                    import com.renderium.framegen.FrameGeneratorManager;
                     FrameGeneratorManager mgr = FrameGeneratorManager.getInstance();
                     if (mgr != null) mgr.setSrMode(value);
                 });
@@ -275,7 +276,6 @@ public final class GpuVideoOptionsRegistrar {
                 .suffix("%")
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .onChange((opt, value) -> {
-                    import com.renderium.gpu.sr.SROutputManager;
                     SROutputManager mgr = SROutputManager.getInstance();
                     if (mgr != null) mgr.setRenderScale(value);
                 });
@@ -289,7 +289,6 @@ public final class GpuVideoOptionsRegistrar {
                 .advanced()
                 .hardwareDependent()
                 .onChange((opt, value) -> {
-                    import com.renderium.framegen.FrameGeneratorManager;
                     FrameGeneratorManager mgr = FrameGeneratorManager.getInstance();
                     if (mgr != null) mgr.setEnabled(value);
                 });
@@ -314,7 +313,6 @@ public final class GpuVideoOptionsRegistrar {
                 .defaultValue(true)
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .onChange((opt, value) -> {
-                    import com.renderium.gpu.hiz.HiZBufferManager;
                     HiZBufferManager mgr = HiZBufferManager.getInstance();
                     if (mgr != null) mgr.setEnabled(value);
                 });
@@ -327,7 +325,6 @@ public final class GpuVideoOptionsRegistrar {
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .advanced()
                 .onChange((opt, value) -> {
-                    import com.renderium.gpu.hiz.HiZBufferManager;
                     HiZBufferManager mgr = HiZBufferManager.getInstance();
                     if (mgr != null) mgr.setMaxMipLevels(value);
                 });
@@ -340,7 +337,6 @@ public final class GpuVideoOptionsRegistrar {
                 .range(-4, 4, 1)
                 .flag(OptionFlag.REQUIRES_RENDERER_UPDATE)
                 .onChange((opt, value) -> {
-                    import com.renderium.gpu.lod.GPULODDataManager;
                     GPULODDataManager mgr = GPULODDataManager.getInstance();
                     if (mgr != null) mgr.setLodBias(value);
                 });
@@ -353,7 +349,6 @@ public final class GpuVideoOptionsRegistrar {
                 .unit("blocks")
                 .flag(OptionFlag.REQUIRES_RENDERER_UPDATE)
                 .onChange((opt, value) -> {
-                    import com.renderium.gpu.lod.GPULODDataManager;
                     GPULODDataManager mgr = GPULODDataManager.getInstance();
                     if (mgr != null) mgr.setMaxDistance(value);
                 });
@@ -381,7 +376,6 @@ public final class GpuVideoOptionsRegistrar {
                 .flag(OptionFlag.REQUIRES_RENDERER_UPDATE)
                 .hardwareDependent()
                 .onChange((opt, value) -> {
-                    import com.renderium.reflex.ReflexManagerImpl;
                     ReflexManagerImpl impl = ReflexManagerImpl.getInstanceOrNull();
                     if (impl != null) impl.setReflexMode(value);
                 });
@@ -396,7 +390,6 @@ public final class GpuVideoOptionsRegistrar {
                 .flag(OptionFlag.REQUIRES_RENDERER_UPDATE)
                 .advanced()
                 .onChange((opt, value) -> {
-                    import com.renderium.gpu.framegen.CameraJitterGenerator;
                     CameraJitterGenerator gen = CameraJitterGenerator.getInstance();
                     if (gen != null) gen.setJitterMode(value);
                 });
@@ -409,10 +402,9 @@ public final class GpuVideoOptionsRegistrar {
      *
      * @return Bloom 实例或 null
      */
-    private Object getBloomNodeInstance() {
+    private Bloom getBloomNodeInstance() {
         try {
-            import com.renderium.pipeline.node.PipelineNodeRegistry;
-            return PipelineNodeRegistry.getInstance().getNode("bloom");
+            return (Bloom) PipelineNodeRegistry.getInstance().getNode("bloom");
         } catch (Exception e) {
             return null;
         }
@@ -423,10 +415,9 @@ public final class GpuVideoOptionsRegistrar {
      *
      * @return SSAO 实例或 null
      */
-    private Object getSsaoNodeInstance() {
+    private SSAO getSsaoNodeInstance() {
         try {
-            import com.renderium.pipeline.node.PipelineNodeRegistry;
-            return PipelineNodeRegistry.getInstance().getNode("ssao");
+            return (SSAO) PipelineNodeRegistry.getInstance().getNode("ssao");
         } catch (Exception e) {
             return null;
         }
