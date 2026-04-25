@@ -1,0 +1,12 @@
+# 此目录存放 Windows x64 平台的原生库
+# renderium_accel.dll 需要在 Windows 环境下使用 Visual Studio 2022 或 MinGW-w64 编译
+#
+# 构建方法:
+#   cd tools
+#   .\build-native-windows.ps1
+#
+# 或手动:
+#   cd experiments\renderium_accel
+#   cmake -B build-windows -G "Visual Studio 17 2022" -A x64 .
+#   cmake --build build-windows --config Release --parallel
+#   copy build-windows\Release\renderium_accel.dll ..\renderium\common\src\main\resources\native\windows-x64\

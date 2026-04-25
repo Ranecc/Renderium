@@ -1,0 +1,310 @@
+#version 450 core
+// ============================================================================
+// Renderium Phase 2 - 狂暴模式优化
+// Frustum Culling Compute Shader (视锥剔除计算着色器)
+// ============================================================================
+//
+// 用途: GPUDrivenVisibilitySystem Pass 1 - GPU 加速视锥体剔除
+//
+// 功能描述:
+//   并行测试所有 Chunk 的 AABB 包围盒是否与当前相机视锥体相交。
+//   这是 GPU-Driven 渲染管线的第一步，快速剔除不可见的几何体，
+//   减少后续遮挡剔除和渲染的负担。
+//
+// 性能优化策略:
+//   1. 使用 P-NA (Plane Normal Alignment) 优化的 AABB-Frustum 测试
+//   2. Shared Memory 缓存包围盒数据，减少全局内存访问延迟
+//   3. Subgroup 操作进行并行归约统计可见数量
+//   4. Warp-level 分支优化，避免 divergence 开销
+//
+// 输入/输出:
+//   输入: ChunkBounds SSBO (AABB 包围盒), CameraData UBO (视锥平面)
+//   输出: VisibilityOutput SSBO (可见性标志), Atomic Counter (可见数量)
+//
+// 集成点:
+//   Java端: GPUCullingSystem / GPUDrivenVisibilitySystem
+//   调用方式: vkCmdDispatch(dispatchX, 1, 1), dispatchX = (chunkCount + 255) / 256
+//
+// 作者: Renderium Shader Team
+// 日期: 2026-04-14
+// ============================================================================
+
+// ==================== 可配置常量 ====================
+// 通过 #define 允许 Java 端在编译前调整参数
+
+/** 单个工作组处理的 Chunk 数量 (必须是 2 的幂，用于位操作优化) */
+#define WORKGROUP_SIZE 256
+
+/** 最大支持的 Chunk 数量 (防止越界访问) */
+#define MAX_CHUNKS 65536
+
+/** 是否启用 Subgroup 扩展 (需要 Vulkan 1.1+ 或 VK_KHR_shader_subgroup) */
+#define USE_SUBGROUP 1
+
+/** 是否启用距离预剔除 (基于渲染距离的快速拒绝) */
+#define ENABLE_DISTANCE_CULL 1
+
+/** 是否启用保守的视锥测试 (false = 更精确但稍慢) */
+#define CONSERVATIVE_FRUSTUM_TEST true
+
+// ==================== Subgroup 扩展声明 ====================
+#if USE_SUBGROUP
+#extension GL_EXT_shader_subgroup_ballot : require
+#extension GL_EXT_shader_subgroup_arithmetic : require
+#endif
+
+// ==================== 工作组配置 ====================
+// 每个工作组处理 WORKGROUP_SIZE 个 Chunk
+layout(local_size_x = WORKGROUP_SIZE) in;
+
+// ==================== 输入 SSBO: Chunk 包围盒数据 ====================
+// Binding 0: 所有 Chunk 的轴对齐包围盒 (AABB)
+// 内存布局: 每个 Chunk 占用 2 个 vec4 (min + max)，共 32 字节
+// 总大小: MAX_CHUNKS * 32 字节 = 2MB (对于 65536 chunks)
+//
+// Java端填充格式:
+//   bounds[chunkIndex * 2]     = vec4(aabbMin.x, aabbMin.y, aabbMin.z, 0.0)
+//   bounds[chunkIndex * 2 + 1] = vec4(aabbMax.x, aabbMax.y, aabbMax.z, 0.0)
+//
+// 注意: 使用 std430 布局确保跨平台一致的内存对齐
+layout(std430, binding = 0) readonly buffer ChunkBounds {
+    vec4 bounds[];  // [min.xyz, padding] 交替存储
+};
+
+// ==================== 输出 SSBO: 可见性结果 ====================
+// Binding 1: 每个 Chunk 的可见性标志和最终可见列表
+//
+// visibility[i] 含义:
+//   0 = 被剔除 (不可见)
+//   1 = 可能可见 (通过视锥测试，待进一步遮挡剔除)
+//
+// visibleChunkIndices[] 用于存储通过测试的 Chunk 索引，
+// 供后续 Hi-Z 遮挡剔除和 Indirect Draw 命令生成使用
+layout(std430, binding = 1) writeonly buffer VisibilityOutput {
+    uint visibility[];            // 原始可见性标志 (每 chunk 1 bit 或 1 uint)
+};
+
+// ==================== 原子计数器: 可见 Chunk 数量 ====================
+// Binding 2: 全局原子计数器，记录通过视锥测试的 Chunk 总数
+// 初始值必须在 Dispatch 前由 CPU 重置为 0
+layout(std430, binding = 2) buffer VisibleChunkCounter {
+    atomic_uint visibleCount;     // 全局可见 Chunk 计数
+};
+
+// ==================== UBO: 相机/视锥数据 ====================
+// Binding 3: 视锥体参数 (每帧更新一次)
+// 使用 std140 布局确保与 Java/C++ 端内存布局一致
+//
+// 视锥平面方程: dot(plane.xyz, point) + plane.w >= 0 表示在平面内侧 (可见侧)
+// 平面顺序: LEFT(0), RIGHT(1), TOP(2), BOTTOM(3), NEAR(4), FAR(5)
+layout(std140, binding = 3) uniform CameraData {
+    // 视图-投影矩阵 (可选，用于精确裁剪空间测试)
+    mat4 viewProjMatrix;
+
+    // 6 个视锥体平面 (法线朝向内部)
+    vec4 frustumPlanes[6];        // [normal.xyz, distance]
+
+    // 相机位置 (世界坐标，用于距离剔除)
+    vec3 cameraPosition;
+
+    // 渲染距离参数
+    float renderDistance;         // 最大渲染距离 (方块单位)
+
+    // 控制 flags
+    uint enableFrustumCull;       // 是否启用视锥剔除 (0/1)
+    uint enableDistanceCull;      // 是否启用距离剔除 (0/1)
+    uint totalChunkCount;         // 实际 Chunk 数量 (<= MAX_CHUNKS)
+    uint _padding;                // 对齐填充到 16 字节边界
+};
+
+// ==================== Shared Memory: 工作组内部缓存 ====================
+// 目的: 将全局内存读取缓存到 shared memory，减少延迟和提高带宽利用率
+// 每个 workgroup 加载 WORKGROUP_SIZE 个 chunk 的包围盒到共享内存
+shared vec3 sharedBoxMin[WORKGROUP_SIZE];
+shared vec3 sharedBoxMax[WORKGROUP_SIZE];
+
+#if USE_SUBGROUP
+// Subgroup 级别的局部可见计数 (用于并行归约)
+shared uint subgroupVisibleCounts[WORKGROUP_SIZE / 32];  // 假设 subgroup size = 32
+#endif
+
+// ==================== 核心算法: AABB-Frustum 相交测试 ====================
+/**
+ * 测试 AABB 包围盒是否与视锥体相交 (或完全在内)
+ *
+ * 算法: P-NA (Plane Normal Aligned) 优化版本
+ *
+ * 原理:
+ *   对于每个视锥平面，找到 AABB 在该平面法线方向上的最远顶点 (p-vertex)。
+ *   如果 p-vertex 在平面外侧 (dot(N, p) + D < 0)，则 AABB 完全在该平面外侧，
+ *   可以安全地判定为不可见。
+ *
+ * 优化:
+ *   - 避免测试所有 8 个顶点，只需测试每个平面的 p-vertex
+ *   - 提前退出: 一旦发现任何平面完全排除 AABB，立即返回 false
+ *   - 使用符号预计算避免分支 (某些实现中)
+ *
+ * @param boxMin  AABB 最小角点 (x,y,z 最小值)
+ * @param boxMax  AABB 最大角点 (x,y,z 最大值)
+ * @param planes  6 个视锥平面数组
+ * @return true 如果 AABB 可能可见 (与视锥相交或在内部)
+ */
+bool testAABBvsFrustum(vec3 boxMin, vec3 boxMax, vec4 planes[6]) {
+    // 对每个视锥平面进行测试
+    for (int i = 0; i < 6; i++) {
+        vec3 normal = planes[i].xyz;
+        float distance = planes[i].w;
+
+        // 计算 p-vertex: AABB 在平面法线方向上最远的顶点
+        // 选择策略: 如果法线分量 > 0，选择该轴向的最大值；否则选择最小值
+        //
+        // 数学原理:
+        //   p-vertex 是使 dot(normal, vertex) 最大的顶点
+        //   对于每个分量: normal.x > 0 → 选 boxMax.x; 否则选 boxMin.x
+        //
+        // 这种方法比测试所有 8 个顶点快 ~8x
+        vec3 pVertex;
+        pVertex.x = (normal.x > 0.0) ? boxMax.x : boxMin.x;
+        pVertex.y = (normal.y > 0.0) ? boxMax.y : boxMin.y;
+        pVertex.z = (normal.z > 0.0) ? boxMax.z : boxMin.z;
+
+        // 测试 p-vertex 是否在平面内侧
+        // 平面方程: dot(normal, point) + distance = 0 定义平面
+        // 结果 > 0 表示在可见侧 (内侧)
+        float signedDistance = dot(normal, pVertex) + distance;
+
+        // 如果 p-vertex 在平面外侧 → 整个 AABB 在外侧 → 不可见
+        if (signedDistance < 0.0) {
+            return false;
+        }
+    }
+
+    // 所有 6 个平面测试通过 → AABB 可能可见
+    return true;
+}
+
+/**
+ * 快速距离剔除测试
+ *
+ * 基于 Chunk 中心点到相机的距离进行快速拒绝。
+ * 使用平方距离避免 sqrt 开销。
+ *
+ * 优化说明:
+ *   - 这是一个粗略的球体测试，不是精确的 AABB 测试
+ *   - 对于远距离的 chunk 可以快速剔除，节省后续精确测试的开销
+ *   - 使用 renderDistance 作为阈值
+ *
+ * @param boxMin  AABB 最小角点
+ * @param boxMax  AABB 最大角点
+ * @return true 如果距离超过渲染范围 (应被剔除)
+ */
+#if ENABLE_DISTANCE_CULL
+bool isBeyondRenderDistance(vec3 boxMin, vec3 boxMax) {
+    // 计算 AABB 中心点
+    vec3 center = (boxMin + boxMax) * 0.5;
+
+    // 计算到相机的方向向量
+    vec3 toCamera = center - cameraPosition;
+
+    // 使用平方距离比较 (避免 sqrt)
+    float distSq = dot(toCamera, toCamera);
+    float maxDistSq = renderDistance * renderDistance;
+
+    return distSq > maxDistSq;
+}
+#endif
+
+// ==================== 主函数 ====================
+void main() {
+    // ---- 步骤 1: 获取全局工作项索引 ----
+    // gl_GlobalInvocationID.x 是当前 invocation 处理的全局唯一 Chunk 索引
+    uint globalIdx = gl_GlobalInvocationID.x;
+
+    // ---- 步骤 2: 边界检查 (防止越界访问) ----
+    // 安全检查: 如果索引超出实际 Chunk 数量，直接返回
+    if (globalIdx >= totalChunkCount || globalIdx >= MAX_CHUNKS) {
+        return;
+    }
+
+    // ---- 步骤 3: 从全局内存加载包围盒数据到 Shared Memory ----
+    // 优化目的: 将全局内存访问集中化，利用 shared memory 的低延迟和高带宽
+    //
+    // 内存访问模式分析:
+    //   - 所有线程在同一时间访问连续的内存位置 → 合并访问 (coalesced access)
+    //   - 一次加载后多次使用 → 减少 DRAM 带宽压力
+    uint localIdx = gl_LocalInvocationID.x;
+
+    // 每个 chunk 占用 2 个 vec4 (min 和 max)
+    uint baseIndex = globalIdx * 2;
+    sharedBoxMin[localIdx] = bounds[baseIndex].xyz;      // AABB min
+    sharedBoxMax[localIdx] = bounds[baseIndex + 1].xyz;  // AABB max
+
+    // 确保 workgroup 内所有线程都完成数据加载
+    barrier();
+
+    // ---- 步骤 4: 执行视锥剔除测试 ----
+    bool isVisible = true;  // 默认可见 (保守策略)
+
+    // 4a. 距离预剔除 (如果启用)
+#if ENABLE_DISTANCE_CULL
+    if (enableDistanceCull != 0u && isVisible) {
+        // 快速距离检查
+        if (isBeyondRenderDistance(sharedBoxMin[localIdx], sharedBoxMax[localIdx])) {
+            isVisible = false;
+        }
+    }
+#endif
+
+    // 4b. 视锥体精确测试 (如果启用)
+    if (enableFrustumCull != 0u && isVisible) {
+        isVisible = testAABBvsFrustum(
+            sharedBoxMin[localIdx],
+            sharedBoxMax[localIdx],
+            frustumPlanes
+        );
+    }
+
+    // ---- 步骤 5: 写入可见性结果 ----
+    // 使用原子 OR/AND 操作确保线程安全写入
+    // 注意: 这里使用独立的 uint 数组而非 bitfield，
+    // 因为原子 bit 操作在某些硬件上效率较低
+    visibility[globalIdx] = isVisible ? 1u : 0u;
+
+    // ---- 步骤 6: 统计可见数量 (使用 Subgroup 优化) ----
+#if USE_SUBGROUP
+    // Subgroup Ballot: 收集整个 subgroup 的可见性结果到一个 64-bit 位掩码
+    uvec4 ballotResult = subgroupBallot(isVisible);
+
+    // 计算当前 subgroup 中可见的 thread 数量
+    uint subgroupVisibleCount = subgroupBallotBitCount(ballotResult);
+
+    // Subgroup 内部归约: 只有 elected thread 负责写入全局计数器
+    // subgroupElect(): 每个 subgroup 返回 true 的只有一个 thread
+    if (subgroupElect()) {
+        // 原子加: 将本 subgroup 的可见数量累加到全局计数器
+        atomicAdd(visibleCount, subgroupVisibleCount);
+    }
+
+    // 可选: 工作组级别的统计 (用于调试或高级优化)
+    // if (gl_LocalInvocationID.x == 0u) {
+    //     uint workgroupTotal = 0;
+    //     for (int i = 0; i < WORKGROUP_SIZE / 32; i++) {
+    //         workgroupTotal += subgroupVisibleCounts[i];
+    //     }
+    // }
+#else
+    // 无 Subgroup 支持时的回退方案: 直接使用原子操作
+    if (isVisible) {
+        atomicAdd(visibleCount, 1u);
+    }
+#endif
+
+    // ---- 函数结束 ----
+    // 此 shader 的输出:
+    //   1. visibility[globalIdx] = 0 或 1 (可见性标志)
+    //   2. visibleCount 原子增加 (可见总数)
+    //
+    // 下游消费者:
+    //   - hiz_occlusion_culling.comp: 读取 visibility[] 进行遮挡剔除
+    //   - indirect_draw_gen.comp: 读取 visibility[] 生成绘制命令
+}

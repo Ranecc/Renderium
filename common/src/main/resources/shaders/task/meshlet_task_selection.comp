@@ -1,0 +1,465 @@
+// Renderium - MR2 Mesh Shader 渲染器
+// Task Shader: Meshlet 可见性选择与 LOD 判定
+// 来源文档: modern-render-architecture.md §3.2 Mesh Shader Pipeline
+// 功能: 并行测试所有候选 Meshlets 的可见性，输出通过测试的索引列表
+// 扩展要求: GL_NV_mesh_shader (Vulkan 1.2+) 或 GL_EXT_mesh_shader (Vulkan 1.3+)
+
+#version 450 core
+
+// ====== Mesh Shader 扩展声明 ======
+// 根据目标平台选择合适的扩展：
+#ifdef USE_NV_MESH_SHADER
+    #extension GL_NV_mesh_shader : require
+    // NV 版本使用 gl_TaskCountNV 输出任务数量
+#else
+    #extension GL_EXT_mesh_shader : require
+    // EXT 版本使用更现代的 API
+#endif
+
+// ====== Workgroup 配置 ======
+// 每个 Workgroup 处理 32 个候选 Meshlets（一个 warp/wavefront）
+// 调度粒度: dispatch(taskCount / 32, 1, 1)
+layout(local_size_x = 32) in;
+
+// ====== 输入缓冲区: Meshlet 任务列表 (Binding 1, Set 0) ======
+/**
+ * MeshletTask 结构体 - Task Shader 的输入数据
+ * 
+ * 每个 Task 代表一组待处理的 Meshlets（通常属于同一个 Chunk/Section）
+ * 
+ * 内存布局 (std430):
+ * struct MeshletTask {
+ *     uint   meshletOffset;          [0]  // 全局 Meshlet 数组中的偏移
+ *     uint   meshletCount;           [4]  // 该任务的 Meshlet 数量
+ *     float  lodDistanceThreshold;   [8]  // LOD 切换距离阈值
+ *     // padding to 16 bytes          [12]
+ * };
+ */
+layout(std430, binding = 0) readonly buffer MeshletTasks {
+    MeshletTask tasks[];
+};
+
+// 定义 MeshletTask 结构体（与 Java 端 MeshletTask 类对应）
+struct MeshletTask {
+    uint meshletOffset;           // Meshlet 在全局数组中的起始偏移
+    uint meshletCount;            // 该任务包含的 Meshlet 数量
+    float lodDistanceThreshold;   // LOD 距离阈值（用于距离剔除）
+};
+
+// ====== 输入缓冲区: Meshlet 数据 (Binding 1, Set 1) ======
+/**
+ * Meshlet 结构体 - 完整的几何体数据
+ * 
+ * 存储每个 Meshlet 的顶点、索引、边界球和元数据。
+ * 这是 GPU 端的主要几何体存储格式。
+ * 
+ * 内存布局 (std430, ~1KB per meshlet):
+ * struct Meshlet {
+ *     vec3   positions[64];        [0]    // 顶点位置 (half-float 解压后)
+ *     vec3   normals[64];          [768]  // 顶点法线 (octahedral 解压后)
+ *     vec2   texCoords[64];        [1536] // UV 坐标 (half-float 解压后)
+ *     uint8  indices[126];         [2042] // 三角形索引 (本地顶点索引)
+ *     // padding                   [2168]
+ *     vec4   boundingSphere;       [2172] // 边界球 (center.xyz + radius)
+ *     uint   lodLevel;             [2188] // LOD 等级 [0-7]
+ *     uint   parentChunkId;        [2192] // 所属 Chunk ID
+ * };
+ */
+layout(std430, binding = 1) readonly buffer MeshletData {
+    Meshlet meshlets[];
+};
+
+// 定义 Meshlet 结构体
+struct Meshlet {
+    vec3 positions[64];           // 顶点位置数组 (对象空间)
+    vec3 normals[64];             // 顶点法线数组 (对象空间)
+    vec2 texCoords[64];           // UV 坐标数组
+    uint indices[126];            // 三角形索引 (本地索引, 0-63, packed as uint)
+    vec4 boundingSphere;          // 边界球 (xyz = center, w = radius)
+    uint lodLevel;                // LOD 等级 (0 = 最高精度)
+    uint parentChunkId;           // 父 Chunk ID
+};
+
+// ====== 输出缓冲区: 可见 Meshlet 索引列表 (Binding 2, Set 1) ======
+/**
+ * 可见 Meshlet 索引输出缓冲区
+ * 
+ * Task Shader 将通过视锥+LOD 测试的 Meshlet 索引写入此缓冲区，
+ * Mesh Shader 随后读取此列表生成实际三角形。
+ * 
+ * 格式: uint[] visibleMeshletIndices[]
+ * 大小: MAX_MESHLETS (65536)
+ */
+layout(std430, binding = 2) writeonly buffer VisibleMeshlets {
+    uint visibleMeshletIndices[];
+};
+
+// ====== 原子计数器: 可见 Meshlet 总数 (Binding 3, Set 1) ======
+/**
+ * 原子计数器 - 记录已写入的可见 Meshlet 数量
+ * 
+ * 每帧开始时需要清零！
+ * 使用原子操作保证并行写入的正确性。
+ * 
+ * 格式: uint (单个原子计数器)
+ */
+layout(std430, binding = 3) buffer VisibleMeshletCounter {
+    uint visibleMeshletCount;
+};
+
+// ====== Uniform Buffer: 相机参数 (Binding 0, Set 0) ======
+/**
+ * Task Shader 统一缓冲区 - 相机和 LOD 参数
+ * 
+ * 包含执行视锥测试和 LOD 选择所需的所有参数。
+ * 通过 Push Constants 或 UBO 传递（每帧更新）。
+ * 
+ * 内存布局 (std140, 112 bytes):
+ * layout(std140) uniform TaskUniforms {
+ *     mat4  viewProj;              [0]   // 视角投影矩阵 (4x4 = 64 bytes)
+ *     vec3  cameraPos;             [64]  // 相机世界坐标 (12 bytes + 4 padding)
+ *     float lodDistances[8];       [80]  // 各 LOD 层级的距离阈值 (32 bytes)
+ * };                               [112] // total size
+ */
+layout(std140, binding = 0) uniform TaskUniforms {
+    mat4 viewProj;                 // 视角投影矩阵 (列主序)
+    vec3 cameraPos;                // 相机位置 (世界空间)
+    // implicit padding (4 bytes)
+    float lodDistances[8];         // LOD 距离阈值数组:
+                                  //   [0]: LOD 0→1 切换距离 (最近)
+                                  //   [1]: LOD 1→2 切换距离
+                                  //   ...
+                                  //   [7]: LOD 7→剔除 切换距离 (最远)
+};
+
+// ====== Push Constants (可选，更高性能) ======
+// 如果支持，优先使用 Push Constants (更快，无需绑定 UBO)
+/*
+layout(push_constant) uniform PushConstants {
+    mat4 viewProj;
+    vec3 cameraPos;
+    float lodDistances[8];
+} pc;
+*/
+
+// ====== 共享内存 (Shared Memory) ======
+/**
+ * Workgroup 内部共享变量
+ * 用于减少全局内存访问和优化 Subgroup 操作
+ */
+shared uint localVisibleCount;      // 本 Workgroup 内的可见 Meshlet 数量
+shared uint localBaseOffset;        // 本 Workgroup 的全局输出偏移
+
+// ====== 常量定义 ======
+
+/** 视锥裁剪平面数量 */
+const int FRUSTUM_PLANE_COUNT = 6;
+
+/** 最大 LOD 级别数（必须与 Java 端 MAX_LOD_LEVELS 一致）*/
+const int MAX_LOD_LEVELS = 8;
+
+/** 最小屏幕空间像素阈值（小于此值则剔除）*/
+const float MIN_SCREEN_SIZE_PIXELS = 1.0;
+
+// ====== 辅助函数 ======
+
+/**
+ * 视锥体测试 - 使用边界球
+ * 
+ * 测试给定的边界球是否与视锥体相交。
+ * 使用球-平面距离测试，比 AABB 更快且更紧凑。
+ * 
+ * @param sphereCenter 边界球中心 (世界空间)
+ * @param radius       边界球半径
+ * @param viewProj     视角投影矩阵
+ * 
+ * @return true 如果边界球在视锥体内或相交（可能可见）
+ * @return false 如果完全在视锥体外（肯定不可见）
+ * 
+ * 算法原理:
+ * 对于视锥体的6个裁剪平面（左、右、上、下、近、远）：
+ *   1. 提取平面方程: P = (a, b, c, d)，其中 ax + by + cz + d = 0 定义平面
+ *   2. 计算有符号距离: distance = dot(P, (sphereCenter, 1.0))
+ *   3. 如果 distance < -radius，球完全在平面外侧 → 剔除
+ *   4. 所有平面都通过 → 可能可见
+ */
+bool testFrustumSphere(vec3 sphereCenter, float radius, mat4 viewProj) {
+    // 从 VP 矩阵提取6个裁剪平面（左、右、下、上、近、远）
+    // 平面方程: ax + by + cz + d = 0
+    // 存储为 vec4(a, b, c, d)
+    
+    // 左平面: row3 + row0
+    vec4 leftPlane = vec4(
+        viewProj[0][3] + viewProj[0][0],
+        viewProj[1][3] + viewProj[1][0],
+        viewProj[2][3] + viewProj[2][0],
+        viewProj[3][3] + viewProj[3][0]
+    );
+    
+    // 右平面: row3 - row0
+    vec4 rightPlane = vec4(
+        viewProj[0][3] - viewProj[0][0],
+        viewProj[1][3] - viewProj[1][0],
+        viewProj[2][3] - viewProj[2][0],
+        viewProj[3][3] - viewProj[3][0]
+    );
+    
+    // 下平面: row3 + row1
+    vec4 bottomPlane = vec4(
+        viewProj[0][3] + viewProj[0][1],
+        viewProj[1][3] + viewProj[1][1],
+        viewProj[2][3] + viewProj[2][1],
+        viewProj[3][3] + viewProj[3][1]
+    );
+    
+    // 上平面: row3 - row1
+    vec4 topPlane = vec4(
+        viewProj[0][3] - viewProj[0][1],
+        viewProj[1][3] - viewProj[1][1],
+        viewProj[2][3] - viewProj[2][1],
+        viewProj[3][3] - viewProj[3][1]
+    );
+    
+    // 近平面: row3 + row2
+    vec4 nearPlane = vec4(
+        viewProj[0][3] + viewProj[0][2],
+        viewProj[1][3] + viewProj[1][2],
+        viewProj[2][3] + viewProj[2][2],
+        viewProj[3][3] + viewProj[3][2]
+    );
+    
+    // 远平面: row3 - row2
+    vec4 farPlane = vec4(
+        viewProj[0][3] - viewProj[0][2],
+        viewProj[1][3] - viewProj[1][2],
+        viewProj[2][3] - viewProj[2][2],
+        viewProj[3][3] - viewProj[3][2]
+    );
+    
+    // 对每个平面进行球-平面距离测试
+    // 有符号距离 = dot(plane.xyz, center) + plane.w
+    // 如果 distance < -radius，球完全在外侧
+    
+    if (dot(leftPlane.xyz, sphereCenter) + leftPlane.w < -radius) return false;
+    if (dot(rightPlane.xyz, sphereCenter) + rightPlane.w < -radius) return false;
+    if (dot(bottomPlane.xyz, sphereCenter) + bottomPlane.w < -radius) return false;
+    if (dot(topPlane.xyz, sphereCenter) + topPlane.w < -radius) return false;
+    if (dot(nearPlane.xyz, sphereCenter) + nearPlane.w < -radius) return false;
+    if (dot(farPlane.xyz, sphereCenter) + farPlane.w < -radius) return false;
+    
+    // 所有平面都通过 → 可能可见
+    return true;
+}
+
+/**
+ * 距离 LOD 测试
+ * 
+ * 根据相机到边界球的距离选择合适的 LOD 级别。
+ * 返回选定的 LOD 等级，如果距离太远返回 -1 表示应剔除。
+ * 
+ * @param sphereCenter 边界球中心 (世界空间)
+ * @param radius       边界球半径
+ * @param currentLod   当前 Meshlet 的基准 LOD 等级
+ * 
+ * @return 选定的 LOD 等级 (>= 0 表示可见)
+ * @return -1 表示应该剔除（超出最大渲染距离）
+ * 
+ * 算法原理:
+ * 1. 计算相机到边界球表面的最近距离
+ * 2. 遍历预计算的 LOD 距离阈值数组
+ * 3. 找到第一个距离超过阈值的 LOD 级别
+ * 4. 如果超过最高 LOD 阈值 → 剔除
+ * 
+ * 注意: 此函数仅基于距离简化实现，
+ * 生产环境还应考虑屏幕空间大小、遮挡等因素
+ */
+int testDistanceLOD(vec3 sphereCenter, float radius, int currentLod) {
+    // 计算相机到边界球中心的距离
+    float distToCenter = length(sphereCenter - cameraPos);
+    // 减去半径得到到球表面的最近距离
+    float distToSurface = distToCenter - radius;
+    
+    // 遍历 LOD 阈值，找到合适的级别
+    for (int lod = 0; lod < MAX_LOD_LEVELS; lod++) {
+        if (distToSurface < lodDistances[lod]) {
+            // 距离在此 LOD 阈值内，使用此级别（但不能高于当前级别）
+            return min(lod, currentLod);
+        }
+    }
+    
+    // 超过所有 LOD 阈值 → 剔除
+    return -1;
+}
+
+/**
+ * 计算屏幕空间大小（近似）
+ * 
+ * 估算边界球在屏幕上的投影直径（像素），
+ * 用于精细的 LOD 选择和剔除判定。
+ * 
+ * @param sphereCenter 边界球中心 (世界空间)
+ * @param radius       边界球半径 (世界单位)
+ * 
+ * @return 近似的屏幕空间直径（像素）
+ * 
+ * 公式:
+ * screenSize = (radius * focalLength) / distance
+ * 其中 focalLength ≈ 1 / tan(fov/2)
+ * 
+ * 注意: 此处简化计算，假设正交投影特性
+ */
+float computeScreenSize(vec3 sphereCenter, float radius) {
+    float dist = max(length(sphereCenter - cameraPos), 0.001);  // 避免除零
+    
+    // 简化的屏幕空间大小估算
+    // 基于视角投影的线性近似
+    // 实际应考虑 FOV 和屏幕分辨率
+    float screenSize = (radius * 1000.0) / dist;  // 经验系数 1000.0
+    
+    return screenSize;
+}
+
+// ====== 主函数 ======
+
+/**
+ * Task Shader 入口点
+ * 
+ * 每个 invocation 处理一个候选 Meshlet：
+ * 1. 从 tasks[] 读取当前任务信息
+ * 2. 计算本 invocation 负责的 Meshlet 全局索引
+ * 3. 读取该 Meshlet 的边界球数据
+ * 4. 执行视锥测试
+ * 5. 执行距离 LOD 测试
+ * 6. 如果通过测试，原子地写入输出缓冲区
+ * 7. 最后决定发射多少个 Mesh Shader Workgroups
+ */
+void main() {
+    // ========== 步骤 1: 获取任务索引 ==========
+    uint globalInvocationID = gl_GlobalInvocationID.x;
+    uint taskIndex = globalInvocationID;  // 每个 invocation 对应一个任务（可配置）
+    
+    // 边界检查：确保不越界访问 tasks 数组
+    // 任务总数由 Dispatch 参数决定，此处保守检查
+    // 注意: 实际应用中 tasks 数组大小应在 CPU 端保证正确性
+    
+    // ========== 步骤 2: 读取任务数据 ==========
+    MeshletTask task = tasks[taskIndex];
+    
+    // ========== 步骤 3: 初始化共享变量 ==========
+    // 只有 workgroup 的第一个线程初始化共享计数器
+    if (gl_LocalInvocationID.x == 0) {
+        localVisibleCount = 0;
+    }
+    
+    // 同步：等待所有线程完成初始化
+    barrier();
+    
+    // ========== 步骤 4: 遍历任务中的所有 Meshlets ==========
+    // 每个 invocation 可以处理多个 Meshlets（循环展开）
+    // 此处简化：每个 invocation 处理一个 Meshlet
+    // 如需处理多个，可改为 for 循环
+    
+    uint localMeshletIndex = gl_LocalInvocationID.x;  // 本任务内的局部索引
+    
+    // 边界检查：不超过该任务的 Meshlet 数量
+    if (localMeshletIndex >= task.meshletCount) {
+        // 此 invocation 无工作可做
+        return;
+    }
+    
+    // 计算全局 Meshlet 索引
+    uint globalMeshletIndex = task.meshletOffset + localMeshletIndex;
+    
+    // 读取 Meshlet 数据（主要是边界球，避免加载完整数据）
+    Meshlet m = meshlets[globalMeshletIndex];
+    
+    // ========== 步骤 5: 视锥体测试 ==========
+    vec3 worldSpaceCenter = m.boundingSphere.xyz;  // 假设已在世界空间
+    // TODO: 如果是局部坐标，需要先应用模型变换
+    // vec3 worldSpaceCenter = (modelMatrix * vec4(m.boundingSphere.xyz, 1.0)).xyz;
+    
+    float radius = m.boundingSphere.w;
+    
+    bool frustumVisible = testFrustumSphere(worldSpaceCenter, radius, viewProj);
+    
+    if (!frustumVisible) {
+        // 视锥外剔除 → 不输出
+        return;
+    }
+    
+    // ========== 步骤 6: 距离 LOD 测试 ==========
+    int selectedLod = testDistanceLOD(worldSpaceCenter, radius, int(m.lodLevel));
+    
+    if (selectedLod < 0) {
+        // 距离太远，完全剔除
+        return;
+    }
+    
+    // 可选: 屏幕空间大小测试（更精细的剔除）
+    float screenSize = computeScreenSize(worldSpaceCenter, radius);
+    if (screenSize < MIN_SCREEN_SIZE_PIXELS) {
+        // 投影太小（亚像素），剔除以节省填充率
+        return;
+    }
+    
+    // ========== 步骤 7: 写入可见 Meshlet 索引 ==========
+    // 使用原子操作分配全局输出位置
+    uint outputIndex = atomicAdd(visibleMeshletCount, 1);
+    
+    // 写入 Meshlet 全局索引到输出缓冲区
+    visibleMeshletIndices[outputIndex] = globalMeshletIndex;
+    
+    // ========== 步骤 8: （可选）统计本地可见数量 ==========
+    // 用于优化后续的 Mesh Shader 调度
+    uint localVisibleIndex = atomicAdd(localVisibleCount, 1);
+    
+    // 同步：等待所有线程完成写入
+    barrier();
+    
+    // ========== 步骤 9: 决定发射 Mesh Shader 数量 ==========
+    // 只有 workgroup 的第一个线程负责发射
+    if (gl_LocalInvocationID.x == 0) {
+        // 分配此任务的全局输出范围偏移
+        localBaseOffset = atomicAdd(visibleMeshletCount, 0);  // 已包含之前的值
+        
+        // 发射 Mesh Shader Workgroups
+        // 每个可见 Meshlet 一个 Workgroup
+#ifdef USE_NV_MESH_SHADER
+        gl_TaskCountNV = localVisibleCount;  // NV API
+#else
+        gl_TaskCountEXT = localVisibleCount;  // EXT API
+#endif
+    }
+}
+
+// ====== 编译说明 ======
+//
+// 编译命令 (glslangValidator):
+//   glslangValidator -V -e main --target-env vulkan1.2 \
+//     -DUSE_NV_MESH_SHADER \
+//     meshlet_task_selection.comp -o meshlet_task_selection.comp.spv
+//
+// 或对于 EXT 版本:
+//   glslangValidator -V -e main --target-env vulkan1.3 \
+//     meshlet_task_selection.comp -o meshlet_task_selection_ext.comp.spv
+//
+// 依赖:
+//   - Vulkan SDK 1.2+ (NV) 或 1.3+ (EXT)
+//   - GLSL 450 core
+//   - SPIR-V 1.4+
+//
+// 性能优化建议:
+//   1. 启用 Subgroup 操作 (subgroupBallot, subgroupAdd 等) 提升并行效率
+//   2. 使用 Early Return 快速跳过不可见 Meshlet
+//   3. 考虑 Hi-Z 遮挡查询（需额外深度纹理输入）
+//   4. 使用 Push Constants 替代 UBO 减少带宽占用
+//
+// 与 Java 端的接口对应关系:
+//   - MeshletTask → com.renderium.module.impl.blaze3d.modern.MeshShaderRenderer.MeshletTask
+//   - Meshlet → com.renderium.module.impl.blaze3d.modern.MeshShaderRenderer.Meshlet
+//   - TaskUniforms → render() 方法的参数 (viewProjMatrix, camera, etc.)
+//
+// 文档参考:
+//   - modern-render-architecture.md §3.2
+//   - NVIDIA Mesh Shader Whitepaper (GDC 2019)
+//   - Vulkan Specification: VK_NV_mesh_shader / VK_EXT_mesh_shader

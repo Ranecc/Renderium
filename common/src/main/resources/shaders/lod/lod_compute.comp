@@ -1,0 +1,448 @@
+// Renderium - Blaze3D 拦截层系统 Phase 3: LOD 多细节层次系统
+// lod_compute.comp - GPU 驱动 LOD 计算 Compute Shader
+// 功能: 在 GPU 上并行计算所有 chunk 的 LOD 等级，支持视角依赖和视锥体剔除
+//
+// 对应 Java 类: GPUDrivenLODSystem
+// 使用模式: 仅 AGGRESSIVE（狂暴模式）启用
+
+#version 450 core
+
+// ==================== Workgroup 配置 ====================
+// 每个 Workgroup 处理 64 个 chunk（可根据 GPU 架构调整）
+// 推荐值: NVIDIA Ampere=128, AMD RDNA2=64, Intel Arc=32
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// ==================== 数据结构定义 ====================
+
+/**
+ * Chunk 输入数据结构 (对应 Java 端 GPUDrivenLODSystem.GPUChunkInput)
+ *
+ * 布局说明:
+ * - center: chunk 中心点世界坐标（用于距离计算）
+ * - chunkId: 全局唯一标识符（用于输出索引）
+ * - flags: 标志位字段
+ *   bit 0 (0x1): hasGeometryData - 是否有可渲染的几何体
+ *   bit 1 (0x2): isDirty - 是否为脏数据（需要强制重算）
+ */
+struct ChunkInput {
+    vec4 center;       // xyz = 中心坐标, w = padding
+    uint chunkId;      // 全局唯一 ID
+    uint flags;        // 标志位
+    uint padding1;     // 对齐填充 (std430 要求 vec4 后面跟 uint 需要 padding)
+    uint padding2;     // 对齐填充
+};
+
+/**
+ * LOD 输出结果结构 (对应 Java 端 GPUDrivenLODSystem.GPULODOutput)
+ *
+ * 布局说明:
+ * - lodLevel: 计算后的 LOD 等级 [0-3]
+ * - transitionAlpha: 过渡混合系数 [0.0, 1.0]（用于 crossfade/dithering）
+ * - visible: 是否通过视锥体剔除（不可见的 chunk 不生成绘制命令）
+ */
+struct LODOutput {
+    uint lodLevel;           // LOD 等级: 0=FULL, 1=HIGH, 2=MEDIUM, 3=LOW
+    float transitionAlpha;   // 过渡混合系数
+    uint visible;            // 是否可见 (0/1)
+    uint padding;            // 对齐到 16 字节
+};
+
+/**
+ * 间接绘制命令结构 (对应 Vulkan VkDrawIndexedIndirectCommand)
+ *
+ * 由 Compute Shader 输出，供 vkCmdDrawIndexedIndirect 直接使用。
+ * 只有 visible=true 的 chunk 才会写入有效命令。
+ */
+struct DrawIndirectCommand {
+    uint indexCount;         // 每个实例的索引数量（根据 LOD 等级变化）
+    uint instanceCount;      // 实例数量（通常为 1）
+    uint firstIndex;         // 第一个索引的偏移量
+    int vertexOffset;        // 顶点偏移（添加到索引值上）
+    uint firstInstance;      // 实例 ID 基础值 (= gl_GlobalInvocationID.x）
+};
+
+// ==================== SSBO (Shader Storage Buffer Object) 绑定 ====================
+
+/**
+ * Chunk 数据输入缓冲区 (只读)
+ * 存储所有待计算 LOD 的 chunk 信息
+ * 绑定点: 0
+ */
+layout(std430, binding = 0) readonly buffer ChunkDataBuffer {
+    ChunkInput chunks[];
+};
+
+/**
+ * LOD 结果输出缓冲区 (写入)
+ * 每个 chunk 一个 LODOutput 条目，索引与 chunks[] 一一对应
+ * 绑定点: 1
+ */
+layout(std430, binding = 1) writeonly buffer LODResultBuffer {
+    LODOutput lodResults[];
+};
+
+/**
+ * 间接绘制命令缓冲区 (写入)
+ * 仅对可见 chunk 写入有效的绘制命令
+ * 绑定点: 2
+ */
+layout(std430, binding = 2) buffer IndDrawCommandBuffer {
+    DrawIndirectCommand drawCommands[];
+};
+
+/**
+ * 全局原子计数器缓冲区 (读写)
+ * 用于记录可见 chunk 总数和总 draw call 数量
+ * 绑定点: 3
+ */
+layout(std430, binding = 3) buffer AtomicCounterBuffer {
+    uint visibleChunkCount;   // 可见 chunk 总数（原子递增）
+    uint totalDrawCalls;      // 总 draw call 数量（原子递增）
+    uint padding_counters[2]; // 对齐填充到 16 字节边界
+};
+
+// ==================== UBO (Uniform Buffer Object) 绑定 ====================
+
+/**
+ * LOD 计算参数 (相机和渲染设置)
+ * 每帧由 CPU 端更新一次
+ * 绑定点: 4 (使用 std140 布局以保证跨平台一致性)
+ */
+layout(std140, binding = 4) uniform LODParams {
+    // ---- 相机参数 ----
+    vec3 cameraPosition;       // 相机世界空间位置
+    float fovY;                // 垂直视场角 (弧度)
+
+    // ---- 屏幕参数 ----
+    float screenWidth;          // 屏幕宽度 (像素)
+    float screenHeight;         // 屏幕高度 (像素)
+    float aspectRatio;          // 宽高比 (screenWidth / screenHeight)
+
+    // ---- LOD 距离阈值 (区块数) ----
+    // 阈值数组: [threshold0, threshold1, threshold2]
+    // 默认: [32.0, 64.0, 128.0]
+    vec3 distanceThresholds;
+
+    // ---- 视角依赖参数 ----
+    float maxViewAngle;         // 最大有效角度 (弧度, 默认 π/3)
+    float falloffFactor;        // 衰减因子 [0.0, 1.0], 默认 0.5
+
+    // ---- 控制参数 ----
+    uint maxChunks;             // 最大处理 chunk 数量（防止越界）
+    uint enableFrustumCull;     // 是否启用视锥体剔除 (0/1)
+    uint enableViewAngleAdjust; // 是否启用视角依赖调整 (0/1)
+    uint lodPadding;            // 对齐填充
+};
+
+// ==================== 常量定义 ====================
+
+/** 最大 LOD 级别数 */
+const uint MAX_LOD_LEVELS = 4u;
+
+/** 无效 chunk ID 常量 */
+const uint INVALID_CHUNK_ID = 0xFFFFFFFFu;
+
+/** 几何数据标志位 */
+const uint FLAG_HAS_GEOMETRY = 1u;
+
+/** 脏数据标志位 */
+const uint FLAG_IS_DIRTY = 2u;
+
+/** PI 常量 */
+const float PI = 3.14159265358979323846;
+
+/** 16.0 (blocks per chunk, 用于世界坐标→chunk坐标转换) */
+const float BLOCKS_PER_CHUNK = 16.0;
+
+// ==================== 辅助函数：LOD 等级计算 ====================
+
+/**
+ * 根据距离计算基础 LOD 等级。
+ *
+ * <h3>算法：</h3>
+ * <pre>
+ * if (distance < threshold.x) → LOD 0 (FULL_DETAIL)
+ * else if (distance < threshold.y) → LOD 1 (HIGH)
+ * else if (distance < threshold.z) → LOD 2 (MEDIUM)
+ * else → LOD 3 (LOW)
+ * </pre>
+ *
+ * @param distance 到相机的距离（区块数）
+ * @return LOD 等级 [0, 3]
+ */
+uint calculateBaseLODLevel(float distance) {
+    // 分支式阈值比较（GPU 上分支开销小，且逻辑清晰）
+    if (distance < distanceThresholds.x) {
+        return 0u; // LOD_FULL_DETAIL: < 32 chunks
+    } else if (distance < distanceThresholds.y) {
+        return 1u; // LOD_HIGH: 32-64 chunks
+    } else if (distance < distanceThresholds.z) {
+        return 2u; // LOD_MEDIUM: 64-128 chunks
+    } else {
+        return 3u; // LOD_LOW: > 128 chunks
+    }
+}
+
+/**
+ * 计算视角依赖的调整权重。
+ *
+ * <h3>算法公式：</h3>
+ * <pre>
+ * adjustment = 1.0 - (angleFromCenter / maxAngle) * falloffFactor
+ * </pre>
+ *
+ * 效果：
+ * - 正对相机 (angle ≈ 0°): adjustment ≈ 1.0 （完整细节）
+ * - 边缘区域 (angle ≈ 30-60°): adjustment ≈ 0.5~1.0
+ * - 外围区域 (angle > 60°): adjustment ≈ 0.5 （最低细节）
+ *
+ * @param viewDirection 从相机到 chunk 方向的单位向量
+ * @return 调整权重 [0.5, 1.0]
+ */
+float calculateViewAngleAdjustment(vec3 viewDirection) {
+    if (enableViewAngleAdjust == 0u) {
+        return 1.0; // 未启用 → 不调整
+    }
+
+    // 假设相机朝向 -Z 方向（OpenGL/Vulkan 惯例）
+    // 计算视线方向与 chunk 方向的夹角
+    vec3 cameraForward = vec3(0.0, 0.0, -1.0);
+    float cosAngle = dot(normalize(viewDirection), cameraForward);
+    cosAngle = clamp(cosAngle, -1.0, 1.0);
+    float angleFromCenter = acos(cosAngle);
+
+    // 应用视角衰减公式
+    float normalizedAngle = clamp(angleFromCenter / maxViewAngle, 0.0, 1.0);
+    float adjustment = 1.0 - normalizedAngle * falloffFactor;
+
+    return max(adjustment, 1.0 - falloffFactor); // 最小不低于 (1 - falloffFactor)
+}
+
+/**
+ * 计算过渡混合系数 Alpha。
+ *
+ * <p>在两个相邻 LOD 等级的阈值边界附近，
+ * 返回一个 [0.0, 1.0] 的插值系数用于 dithering/crossfade。
+ *
+ * @param distance 距离（区块数）
+ * @param lodLevel 当前 LOD 等级
+ * @return 混合系数 [0.0, 1.0]
+ */
+float calculateTransitionAlpha(float distance, uint lodLevel) {
+    // 确定当前等级的下界和上界
+    float lowerBound;
+    float upperBound;
+
+    if (lodLevel == 0u) {
+        lowerBound = 0.0;
+        upperBound = distanceThresholds.x;
+    } else if (lodLevel == 1u) {
+        lowerBound = distanceThresholds.x;
+        upperBound = distanceThresholds.y;
+    } else if (lodLevel == 2u) {
+        lowerBound = distanceThresholds.y;
+        upperBound = distanceThresholds.z;
+    } else {
+        return 0.0; // LOD 3 是最高级别，无需向上过渡
+    }
+
+    // 在过渡区间内线性插值
+    float range = upperBound - lowerBound;
+    if (range <= 0.0001) {
+        return 0.0;
+    }
+
+    float alpha = (distance - lowerBound) / range;
+    return clamp(alpha, 0.0, 1.0);
+}
+
+// ==================== 辅助函数：视锥体剔除 ====================
+
+/**
+ * 测试 chunk 是否在视锥体内可见。
+ *
+ * <h3>算法：</h3>
+ * 使用简化的球体-视锥体相交测试：
+ * 将 chunk 近似为一个以中心点为中心、半径为 8 格（半 chunk 大小）的球体，
+ * 测试该球体是否与视锥体的 6 个平面相交。
+ *
+ * <p><b>注意：</b>此处使用简化版本（仅基于距离和 FOV 的粗略测试），
+ * 完整版本应使用 viewProjection 矩阵提取 6 个平面方程进行精确测试。
+ *
+ * @param chunkCenter chunk 中心坐标（世界空间）
+ * @param distance     到相机的距离（区块数）
+ * @return true 表示可见（在视锥体内或与之相交）
+ */
+bool isChunkVisible(vec3 chunkCenter, float distance) {
+    if (enableFrustumCull == 0u) {
+        return true; // 未启用剔除 → 全部可见
+    }
+
+    // 简化版可见性判断：
+    // 基于 FOV 和距离估算水平/垂直可视范围
+    // 如果 chunk 超出了基于 FOV 的最大可见角度范围，则认为不可见
+
+    float halfFovX = atan(tan(fovY * 0.5) * aspectRatio);
+    float halfFovY = fovY * 0.5;
+
+    // chunk 的近似角半径（弧度）
+    float chunkAngularRadius = atan(BLOCKS_PER_CHUNK * 0.5 / max(distance * BLOCKS_PER_CHUNK, 0.001));
+
+    // 如果 chunk 的角半径小于 FOV 的一半，则可能可见
+    // 这是一个非常宽松的简化测试
+    return chunkAngularRadius < max(halfFovX, halfFovY) || distance < distanceThresholds.x;
+}
+
+// ==================== 主函数 ====================
+
+/**
+ * Compute Shader 入口点。
+ *
+ * <h3>处理流程：</h3>
+ * <pre>
+ * ┌──────────────────────────────────────────────────────────────┐
+ * │  1. 获取当前线程对应的 chunk 索引                             │
+ * │  2. 边界检查（防止越界访问 chunks[] 数组）                     │
+ * │  3. 读取 chunk 输入数据                                       │
+ * │  4. 快速跳过无几何数据的 chunk                                │
+ * │  5. 计算到相机的距离（欧几里得距离，转换单位为区块数）          │
+ * │  6. 执行视锥体剔除测试                                        │
+ * │  7. 计算基础 LOD 等级（基于距离阈值）                          │
+ * │  8. 可选：应用视角依赖调整                                     │
+ * │  9. 计算过渡 Alpha                                            │
+ * │ 10. 写入 LOD 结果到输出缓冲区                                  │
+ * │ 11. 如可见：原子计数并写入间接绘制命令                          │
+ * └──────────────────────────────────────────────────────────────┘
+ * </pre>
+ *
+ * <h3>性能特征：</h3>
+ * <ul>
+ *   <li>每个线程独立处理一个 chunk，无跨线程同步（除了原子计数器）</li>
+ *   <li>分支多样性低（主要分支仅取决于距离阈值比较）</li>
+ *   <li>内存访问模式：每个线程读取 1 个 ChunkInput，写入 1 个 LODOutput</li>
+ *   <li>全局内存写入仅发生在最后一步（合并写入友好）</li>
+ * </ul>
+ */
+void main() {
+    // ========== Step 1 & 2: 获取 chunk 索引并边界检查 ==========
+
+    uint chunkIdx = gl_GlobalInvocationID.x;
+
+    // 边界检查：确保不越界访问 chunks 数组
+    if (chunkIdx >= maxChunks) {
+        return; // 超出范围 → 空操作（GPU 会自动跳过多余线程）
+    }
+
+    // ========== Step 3: 读取 chunk 输入数据 ==========
+
+    ChunkInput chunk = chunks[chunkIdx];
+
+    // ========== Step 4: 快速跳过无效 chunk ==========
+
+    // 检查是否有几何数据（bit 0 标志位）
+    bool hasGeometry = (chunk.flags & FLAG_HAS_GEOMETRY) != 0u;
+    if (!hasGeometry) {
+        // 无几何数据 → 标记为不可见，不生成绘制命令
+        lodResults[chunkIdx] = LODOutput(
+            3u,           // lodLevel = LOW（最低细节，反正不渲染）
+            0.0,          // transitionAlpha = 0
+            0u,           // visible = false
+            0u            // padding
+        );
+        return;
+    }
+
+    // ========== Step 5: 计算距离 ==========
+
+    // 提取 chunk 中心坐标
+    vec3 chunkCenter = chunk.center.xyz;
+
+    // 计算欧几里得距离（世界单位）
+    vec3 toChunk = chunkCenter - cameraPosition;
+    float distanceWorld = length(toChunk);
+
+    // 转换为区块数（1 chunk = 16 blocks）
+    float distanceChunks = distanceWorld / BLOCKS_PER_CHUNK;
+
+    // 安全下界（避免除零等问题）
+    distanceChunks = max(distanceChunks, 0.001);
+
+    // ========== Step 6: 视锥体剔除 ==========
+
+    bool visible = isChunkVisible(chunkCenter, distanceChunks);
+
+    if (!visible) {
+        // 被视锥剔除 → 标记为不可见
+        lodResults[chunkIdx] = LODOutput(
+            3u,
+            0.0,
+            0u,  // visible = false
+            0u
+        );
+        return;
+    }
+
+    // ========== Step 7: 计算基础 LOD 等级 ==========
+
+    uint baseLOD = calculateBaseLODLevel(distanceChunks);
+
+    // ========== Step 8: 可选：视角依赖调整 ==========
+
+    uint finalLOD = baseLOD;
+
+    if (enableViewAngleAdjust != 0u && baseLOD < MAX_LOD_LEVELS - 1u) {
+        float adjustment = calculateViewAngleAdjustment(toChunk);
+
+        // 如果调整权重低于阈值，提升一个 LOD 等级（降低细节）
+        // 阈值 0.75：当 adjustment < 0.75 时提升一级
+        if (adjustment < 0.75) {
+            finalLOD = min(baseLOD + 1u, MAX_LOD_LEVELS - 1u);
+        }
+    }
+
+    // ========== Step 9: 计算过渡 Alpha ==========
+
+    float alpha = calculateTransitionAlpha(distanceChunks, finalLOD);
+
+    // ========== Step 10: 写入 LOD 结果 ==========
+
+    lodResults[chunkIdx] = LODOutput(
+        finalLOD,
+        alpha,
+        1u,  // visible = true
+        0u    // padding
+    );
+
+    // ========== Step 11: 生成间接绘制命令（仅对可见 chunk）==========
+
+    // 原子递增获取命令输出位置（线程安全）
+    uint outputIdx = atomicAdd(visibleChunkCount, 1u);
+
+    // 防止溢出
+    if (outputIdx >= maxChunks) {
+        atomicAdd(visibleChunkCount, uint(-1)); // 回滚计数器
+        return;
+    }
+
+    // 根据 LOD 等级确定 index count（模拟：越高 LOD 越少索引）
+    // 实际值应由 mesh 缓存提供，这里用公式估算：
+    // indexCount = baseIndexCount / (2^lodLevel)
+    uint baseIndexCount = 1536u; // 假设完整 chunk 有 ~512 个三角形 × 3
+    uint lodIndexCount = baseIndexCount >> finalLOD; // 右移 = 除以 2^lodLevel
+    lodIndexCount = max(lodIndexCount, 12u); // 最少 4 个三角形（12 个索引）
+
+    // 写入间接绘制命令
+    drawCommands[outputIdx] = DrawIndirectCommand(
+        lodIndexCount,     // indexCount: 根据 LOD 等级缩放
+        1u,                 // instanceCount: 单实例
+        chunkIdx * baseIndexCount, // firstIndex: 基于 chunk 索引偏移
+        0,                  // vertexOffset: 无偏移
+        outputIdx           // firstInstance: = 输出索引
+    );
+
+    // 更新总 draw call 计数
+    atomicAdd(totalDrawCalls, 1u);
+
+    // ========== 完成 ==========
+    // 此线程处理的 chunk 已完成全部 LOD 计算和命令生成
+}

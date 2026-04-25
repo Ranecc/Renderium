@@ -1,0 +1,207 @@
+// ============================================================================
+// Hi-Z Mipmap 金字塔构建 Compute Shader
+// ============================================================================
+// 文件: hiz_build.comp
+// 用途: 从深度缓冲构建 Hierarchical Z-Buffer (Hi-Z) Mipmap 金字塔
+// 算法来源: 基于 Python 验证算法 (hiz_build.py) 的 Vulkan GLSL 实现
+// 验证状态: 已与 Python 参考实现逐级对比验证一致性
+// ============================================================================
+
+#version 450
+
+// ============================================================================
+// 工作组配置
+// ============================================================================
+// local_size_x/y = 16: 16x16 像素工作组，匹配 GPU 波浪/warp 大小以优化性能
+// local_size_z = 1: 2D 纹理处理，Z 维度不需要并行
+// ============================================================================
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ============================================================================
+// 资源绑定声明
+// ============================================================================
+
+// 绑定 0: 深度缓冲输入 (只读采样器)
+// 格式: R32_SFLOAT (单通道 32 位浮点深度值)
+// 数据来源: 前序 Pass 渲染的深度纹理 (如 G-Buffer Depth / Prepass Depth)
+// 方法: texelFetch(depthBuffer, coord, lod).r 获取指定坐标的深度值
+// 参数:
+//   - coord (ivec2): 像素坐标
+//   - lod (int): Mipmap 层级 (此处固定为 0)
+// 返回值: float 深度值 [0.0, 1.0] 或 [near, far] (取决于深度范围)
+// ============================================================================
+layout (binding = 0) uniform sampler2D depthBuffer;
+
+// 绑定 1: Hi-Z Mipmap 数组输出 (图像存储)
+// 格式: rgba32f (四通道 32 位浮点，仅使用 .r 通道存储最小深度)
+// 数组大小: 10 级 Mipmap (支持最大 1024x1024 -> 1x1 的下采样链)
+// 存储布局:
+//   [0]: Level 0 - 原始深度 (与 depthBuffer 相同分辨率)
+//   [1]: Level 1 - 1/4 分辨率 (2x2 min-z 下采样)
+//   [2]: Level 2 - 1/16 分辨率
+//   ...
+//   [9]: Level 9 - 最小 1x1 (全局最小深度值)
+// 方法:
+//   - imageLoad(hizMipmaps[level], coord): 读取指定层级的像素值
+//   - imageStore(hizMipmaps[level], coord, value): 写入指定层级
+// 参数:
+//   - level (uint/int): Mipmap 层级索引 [0, mipLevels-1]
+//   - coord (ivec2): 该层级下的像素坐标
+//   - value (vec4): 写入值 (.r = 最小深度, .gba = 保留字段)
+// 返回值 (imageLoad): vec4 (.r = 最小深度值)
+// ============================================================================
+layout (rgba32f, binding = 1) uniform image2D hizMipmaps[10];
+
+// 绑定 2: 配置 Uniform Buffer (std140 布局)
+// 对齐规则: std140 要求 uint 4 字节对齐, uvec2 8 字节对齐
+// 由 Host 端在 Dispatch 前填充配置数据
+// ============================================================================
+layout (std140, binding = 2) uniform HiZConfig {
+    uint mipLevels;      // 总 Mipmap 层数 (根据 screenSize 的 log2 计算)
+                        // 计算公式: ceil(log2(max(screenSize.x, screenSize.y))) + 1
+                        // 示例: 1920x1080 -> 11 级 (受数组大小限制为 max 10)
+    uvec2 screenSize;    // 原始屏幕尺寸 (像素)
+                        // 对应 depthBuffer 的纹理尺寸
+                        // 用于越界检查和 Mipmap 尺寸计算
+};
+
+// ============================================================================
+// 主函数: main()
+// 功能: 为每个 invocation 处理一个像素，构建完整 Hi-Z Mipmap 金字塔
+//
+// 执行流程:
+//   Step 1: 越界检查 - 排除超出屏幕范围的 invocation
+//   Step 2: Level 0 写入 - 将原始深度值写入 hizMipmaps[0]
+//   Step 3: 循环构建 Level 1~N - 递归执行 2x2 min-z 下采样
+//   Step 4: 同步屏障 - 确保 imageLoad/imageStore 可见性
+//
+// 与 Python 算法对应关系:
+//   Python: build_hiz_pyramid(depth_buffer, levels)
+//     -> level[0] = depth_buffer.copy()
+//     -> for l in range(1, levels):
+//          for y in range(0, height, 2):
+//            for x in range(0, width, 2):
+//              level[l][y//2][x//2] = min(
+//                level[l-1][y][x], level[l-1][y][x+1],
+//                level[l-1][y+1][x], level[l-1][y+1][x+1]
+//              )
+//   本 Shader: 每个 invocation 处理 (pixelCoord.x, pixelCoord.y) 像素，
+//             通过 pixelCoord / (1 << level) 映射到各 Mipmap 层级的坐标
+// ============================================================================
+void main() {
+    // ========================================================================
+    // Step 1: 获取当前 invocation 的全局像素坐标
+    // gl_GlobalInvocationID: 全局唯一的工作项 ID，直接映射到像素坐标
+    // ========================================================================
+    uvec2 pixelCoord = gl_GlobalInvocationID.xy;
+
+    // ========================================================================
+    // Step 2: 越界检查 - 提前退出无效 invocation
+    // 条件: pixelCoord >= screenSize 时返回
+    // 目的: 避免越界写人，减少无效线程开销
+    // 性能说明: early return 是 GPU 编程的最佳实践
+    // ========================================================================
+    if (any(greaterThanEqual(pixelCoord, screenSize))) {
+        return;
+    }
+
+    // ========================================================================
+    // Step 3: 写入 Level 0 (基准层 - 原始深度)
+    //
+    // 操作: 从 depthBuffer 读取深度值，原样写入 hizMipmaps[0]
+    // 对应 Python: level[0] = depth_buffer.copy()
+    //
+    // 方法调用:
+    //   texelFetch(sampler, coord, lod):
+    //     - 无滤波的直接纹素获取，适合精确像素操作
+    //     - lod=0 表示读取最高分辨率层级
+    //   imageStore(image, coord, value):
+    //     - 向图像存储写入像素值
+    //     - 使用 vec4 包装单通道深度值以满足 rgba32f 格式要求
+    // ========================================================================
+    float depth = texelFetch(depthBuffer, ivec2(pixelCoord), 0).r;
+    imageStore(hizMipmaps[0], ivec2(pixelCoord), vec4(depth, 0.0, 0.0, 1.0));
+
+    // ========================================================================
+    // Step 4: 图像内存屏障 + 工作组同步
+    //
+    // memoryBarrierImage():
+    //   - 确保 Level 0 的 imageStore 对同工作组其他 invocation 可见
+    //   - 保证后续 imageLoad 能读到正确的 Level 0 数据
+    // barrier():
+    //   - 同步工作组内所有 invocation 到此点
+    //   - 必须在 control flow uniform 的分支内调用 (当前满足条件)
+    //
+    // 注意: 此处同步是必须的，因为后续层级依赖前一层的写入结果
+    // ========================================================================
+    memoryBarrierImage();
+    barrier();
+
+    // ========================================================================
+    // Step 5: 循环构建 Level 1 ~ Level (mipLevels-1)
+    //
+    // 算法: 2x2 区域最小值下采样 (Min-Z Filter)
+    // 对应 Python:
+    //   for l in range(1, levels):
+    //     level[l][py][px] = min(2x2 neighborhood from level[l-1])
+    //
+    // 关键变量:
+    //   currentSize: 当前层级的纹理尺寸 (每轮除以 2)
+    //   mipSize: 当前层级的有效尺寸 (最小为 1x1)
+    //   mipCoord: 当前 invocation 在当前层级的坐标 (pixelCoord >> level)
+    // ========================================================================
+    uvec2 currentSize = screenSize;
+
+    for (uint level = 1; level < mipLevels; ++level) {
+        // --------------------------------------------------------------------
+        // 计算当前 Mipmap 层级的尺寸和坐标映射
+        // currentSize / 2u: 分辨率减半 (2x2 -> 1)
+        // max(..., uvec2(1)): 保证最小尺寸为 1x1，避免零尺寸异常
+        // pixelCoord / (1u << level): 像素坐标右移 level 位，映射到当前层级
+        // --------------------------------------------------------------------
+        uvec2 mipSize = max(currentSize / 2u, uvec2(1));
+        uvec2 mipCoord = pixelCoord / (1u << level);
+
+        // --------------------------------------------------------------------
+        // 坐标边界检查: 仅处理当前层级范围内的 invocation
+        // 当 mipCoord >= mipSize 时跳过 (多余的 invocation 无工作可做)
+        // --------------------------------------------------------------------
+        if (all(lessThan(mipCoord, mipSize))) {
+            // ===============================================================
+            // 2x2 Min-Z 下采样核心算法
+            //
+            // 读取上一级 (level-1) 的 2x2 邻域四个纹素:
+            //   s00: 左上 (baseX,     baseY)
+            //   s10: 右上 (baseX + 1, baseY)
+            //   s01: 左下 (baseX,     baseY + 1)
+            //   s11: 右下 (baseX + 1, baseY + 1)
+            //
+            // 坐标计算: mipCoord * 2 映射回上一级的 2x2 区域起始位置
+            //
+            // 取四个深度的最小值作为当前像素的 Hi-Z 值
+            // 数学保证: Hi-Z[level](x,y) <= 实际深度 (保守估计)
+            // 这保证了后续遮挡剔除的保守性 (不误杀可见物体)
+            // ===============================================================
+            vec4 s00 = imageLoad(hizMipmaps[level - 1], ivec2(mipCoord * 2));
+            vec4 s10 = imageLoad(hizMipmaps[level - 1], ivec2(mipCoord * 2 + uvec2(1, 0)));
+            vec4 s01 = imageLoad(hizMipmaps[level - 1], ivec2(mipCoord * 2 + uvec2(0, 1)));
+            vec4 s11 = imageLoad(hizMipmaps[level - 1], ivec2(mipCoord * 2 + uvec2(1, 1)));
+
+            // 四取最小值 - 核心降采样操作
+            float minDepth = min(min(s00.r, s10.r), min(s01.r, s11.r));
+
+            // 写入当前层级 (.r=最小深度, .gba=填充值)
+            imageStore(hizMipmaps[level], ivec2(mipCoord), vec4(minDepth, 0.0, 0.0, 1.0));
+        }
+
+        // --------------------------------------------------------------------
+        // 层间同步: 确保当前层级写入完成后再进入下一层级
+        // 这是循环不变量: 每次 iteration 结束时所有 invocation 都完成当前层级的写入
+        // --------------------------------------------------------------------
+        memoryBarrierImage();
+        barrier();
+
+        // 更新当前尺寸供下一轮迭代使用
+        currentSize = mipSize;
+    }
+}

@@ -1,0 +1,401 @@
+// ============================================================================
+// Renderium - LOD Cull Compute Shader (LOD 视锥剔除计算着色器)
+// ============================================================================
+//
+// 用途: GPUDrivenVisibilitySystem - 基于距离的 LOD 级别分配 + 视锥体剔除
+//
+// 功能描述:
+//   并行处理所有 Chunk/物体，执行两阶段剔除:
+//   1. 视锥体剔除 (Frustum Culling): 基于包围球与 6 个裁剪平面的相交测试
+//   2. LOD 距离计算 (Distance-based LOD): 根据到相机的距离分配 LOD 级别 (0~7)
+//
+// 算法来源:
+//   - 视锥体剔除: frustum_cull.py (P-NA 平面法线对齐测试)
+//   - LOD 距离: lod_distance.py (单调递增阈值查找)
+//
+// 性能优化策略:
+//   1. 每线程处理一个 Chunk (local_size_x = 64)，最大化并行度
+//   2. 提前退出 (Early-out): 视锥外直接跳过 LOD 计算
+//   3. 包围球测试替代 AABB，减少每平面测试的计算量
+//   4. 距离阈值从 UBO 读取，支持运行时动态调整
+//
+// 输入/输出:
+//   输入: ChunkInput SSBO (物体数据), FrustumData UBO (视锥平面), LODConfig UBO (LOD 参数)
+//   输出: LODOutput SSBO (LOD 级别数组, 0xFF = 不可见)
+//
+// 集成点:
+//   Java端: LODCullingSystem / GPUDrivenVisibilitySystem
+//   调用方式: vkCmdDispatch((chunkCount + 63) / 64, 1, 1)
+//
+// 验证一致性:
+//   本 Shader 的输出必须与 Python 端 frustum_cull.py + lod_distance.py 的结果一致
+//   - 视锥测试: testAABBAgainstFrustum() ≡ Python frustum_cull.test_aabb_against_frustum()
+//   - LOD 计算: computeLODLevel() ≡ Python lod_distance.compute_lod_level()
+//
+// 作者: Renderium Shader Team
+// 日期: 2026-04-21
+// ============================================================================
+
+#version 450 core
+
+// ==================== 工作组配置 ====================
+// 每个 Workgroup 处理 64 个 Chunk (每个线程处理 1 个 Chunk)
+// 选择 64 的原因:
+//   - 大多数 GPU 的 warp/wavefront 大小为 32 或 64
+//   - 64 是 32 的倍数，保证 warp 级别的整齐性
+//   - 在典型场景下 (4096~65536 chunks) 可充分利用 GPU 并行度
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// ==================== 数据结构定义 ====================
+
+/**
+ * 物体/区块数据结构 (对应 Java 端 Chunk / RenderObject)
+ *
+ * 内存布局说明 (共 32 字节, std430 对齐):
+ *   - center (vec3, 12字节): 世界空间中心位置
+ *   - radius (float, 4字节): 包围球半径 (用于快速视锥测试)
+ *   - chunkId (uint, 4字节): 区块唯一标识符
+ *   - _pad0~_pad2 (3×uint, 12字节): 对齐填充到 32 字节边界
+ *
+ * Java端填充注意事项:
+ *   - radius 应为包围球的实际半径 (非 AABB 半径)
+ *   - chunkId 必须与 chunks[] 数组索引一致
+ */
+struct ChunkData {
+    vec3 center;       // 世界空间中心位置
+    float radius;      // 包围球半径
+    uint chunkId;      // 区块 ID (与数组索引对应)
+    uint _pad0;        // 对齐填充
+    uint _pad1;
+    uint _pad2;
+};
+
+/**
+ * 视锥体裁剪平面
+ *
+ * 平面方程表示: dot(equation.xyz, point) + equation.w = 0
+ *   - equation.xyz: 平面单位法向量 (指向视锥内部/可见侧)
+ *   - equation.w: 平面到原点的有符号距离
+ *
+ * 判定规则:
+ *   dot(N, point) + D > 0  → 点在平面内侧 (可见)
+ *   dot(N, point) + D < 0  → 点在外侧 (被裁剪)
+ *
+ * 平面顺序约定 (必须与 Java/CPU 端一致):
+ *   [0] LEFT   - 左裁剪面
+ *   [1] RIGHT  - 右裁剪面
+ *   [2] BOTTOM - 下裁剪面
+ *   [3] TOP    - 上裁剪面
+ *   [4] NEAR   - 近裁剪面
+ *   [5] FAR    - 远裁剪面
+ */
+struct FrustumPlane {
+    vec4 equation;     // .xyz = 法向量, .w = 有符号距离
+};
+
+// ==================== SSBO (Shader Storage Buffer Object) 绑定 ====================
+
+/**
+ * 输入 SSBO: 区块/物体列表 (只读)
+ *
+ * 绑定点: 0
+ * 访问模式: readonly (Compute Shader 只读取不修改)
+ *
+ * 内存布局: std430 (宽松对齐，适合动态数组)
+ * 总大小: chunkCount × sizeof(ChunkData) 字节
+ *
+ * 使用方式:
+ *   chunks[gl_GlobalInvocationID.x] 获取当前线程负责的区块数据
+ */
+layout(std430, binding = 0) readonly buffer ChunkInput {
+    ChunkData chunks[];
+};
+
+// ==================== UBO (Uniform Buffer Object) 绑定 ====================
+
+/**
+ * UBO: 视锥体数据 (每帧更新)
+ *
+ * 绑定点: 1
+ * 内存布局: std140 (严格对齐，确保 CPU/GPU 布局一致)
+ *
+ * 数据来源:
+ *   - planes[6]: 从 viewProjection 矩阵提取的 6 个裁剪平面
+ *   - cameraPosition: 相机世界坐标 (用于距离计算)
+ *   - viewMatrix/projMatrix: 可选的原始矩阵 (用于调试或高级特性)
+ */
+layout(std140, binding = 1) uniform FrustumData {
+    FrustumPlane planes[6];     // 6 个裁剪平面 (LEFT, RIGHT, BOTTOM, TOP, NEAR, FAR)
+    vec3 cameraPosition;         // 相机世界空间位置
+    float _pad0;                // vec3 后的 float 对齐填充
+    mat4 viewMatrix;             // 4×4 视图矩阵 (可选)
+    mat4 projMatrix;             // 4×4 投影矩阵 (可选)
+};
+
+/**
+ * UBO: LOD 配置参数 (运行时可调)
+ *
+ * 绑定点: 2
+ * 内存布局: std140
+ *
+ * 关键参数说明:
+ *   - distanceThresholds[8]: 8 级 LOD 的距离阈值
+ *     阈值含义: 当 distance < thresholds[level] 时使用该 level
+ *     默认值: [32, 64, 128, 256, 512, 1024, 2048, 4096]
+ *     单位: 世界空间单位 (方块/米)
+ *
+ *   - maxLODLevel: 最大有效 LOD 索引 (通常为 7, 即 0~7 共 8 级)
+ *
+ *   - chunkCount: 当前帧的总区块数量 (用于边界检查)
+ *
+ * <h3>LOD 级别语义：</h3>
+ * <pre>
+ *   Level 0 (最近): 最高细节, distance < 32
+ *   Level 1:        高细节,   distance < 64
+ *   Level 2:        中高细节, distance < 128
+ *   Level 3:        中等细节, distance < 256
+ *   Level 4:        中低细节, distance < 512
+ *   Level 5:        低细节,   distance < 1024
+ *   Level 6:        很低细节, distance < 2048
+ *   Level 7 (最远): 最低细节, distance >= 2048 (或 < 4096)
+ * </pre>
+ */
+layout(std140, binding = 2) uniform LODConfig {
+    float distanceThresholds[8]; // 8 级 LOD 距离阈值 (升序排列)
+    uint maxLODLevel;           // 最大 LOD 级别索引 (通常为 7)
+    uint chunkCount;            // 当前帧总区块数 (必须 <= chunks[] 实际大小)
+    vec2 _pad1;                 // 对齐填充
+};
+
+// ==================== 输出 SSBO ====================
+
+/**
+ * 输出 SSBO: LOD 分配结果 (写入)
+ *
+ * 绑定点: 3
+ * 访问模式: writeonly
+ *
+ * 输出格式:
+ *   lodLevels[i] 的值域:
+ *     0 ~ 7       : 有效的 LOD 级别 (数字越小细节越高)
+ *     0xFF (255)  : 特殊标记 - 该区块完全不可见 (被视锥剔除)
+ *
+ * 下游消费者:
+ *   - 渲染管线: 根据 lodLevels[i] 选择对应的网格/纹理 LOD
+ *   - 统计系统: 统计各级 LOD 的区块分布
+ *   - 调试工具: 可视化 LOD 分配情况
+ */
+layout(std430, binding = 3) writeonly buffer LODOutput {
+    uint lodLevels[];          // 每个区块的 LOD 级别 (0~7 或 0xFF=不可见)
+};
+
+// ==================== 常量定义 ====================
+
+/** 不可见标记值: 表示该区块被视锥体完全剔除 */
+const uint LOD_CULLED_FLAG = 0xFFu;
+
+// ==================== 核心算法函数 ====================
+
+/**
+ * 视锥体剔除测试 - 包围球版本 (来自 frustum_cull.py)
+ *
+ * <h3>算法原理 (P-NA: Plane-Normal Alignment)：</h3>
+ * 对于给定的包围球 (球心 + 半径)，依次测试 6 个视锥裁剪平面。
+ * 如果包围球完全在任一平面的外侧 (signed distance < -radius)，
+ * 则判定整个球体不可见，可以安全剔除。
+ *
+ * <h3>数学推导：</h3>
+ * <pre>
+ *   平面方程: dot(N, P) + D = 0
+ *   球心到平面的有符号距离: d = dot(N, center) + D
+ *
+ *   判定条件:
+ *     d < -radius  → 球体完全在平面外侧 → 不可见 (返回 false)
+ *     d > radius   → 球体完全在平面内侧 (但还需测试其他平面)
+ *     |d| <= radius→ 球体与平面相交 (可能可见，继续测试)
+ * </pre>
+ *
+ * <h3>与 Python 端的一致性要求：</h3>
+ * 此函数的判定结果必须与 Python frustum_cull.test_aabbaagainst_frustum() 一致。
+ * 注意: Python 版本可能使用 AABB 测试，此处使用包围球作为保守近似。
+ * 包围球测试比 AABB 更快但更保守 (可能保留一些实际不可见的物体)。
+ *
+ * @param center   包围球的世界空间中心点
+ * @param radius   包围球半径 (世界空间单位)
+ * @return true  表示包围球至少部分在视锥体内 (可见)
+ * @return false 表示包围球完全在视锥体外 (被剔除)
+ */
+bool testAABBAgainstFrustum(vec3 center, float radius) {
+    // 遍历 6 个视锥裁剪平面
+    for (int i = 0; i < 6; i++) {
+        // 提取当前平面的法向量和距离参数
+        vec3 normal = planes[i].equation.xyz;
+        float planeDistance = planes[i].equation.w;
+
+        // 计算球心到平面的有符号距离
+        // 正值: 球心在平面内侧 (可见侧)
+        // 负值: 球心在平面外侧 (被裁剪侧)
+        float signedDist = dot(normal, center) + planeDistance;
+
+        // 核心判定: 如果 signedDist < -radius
+        // 说明整个球体都在平面外侧 (即使球面上最靠近平面的点也在外侧)
+        if (signedDist < -radius) {
+            return false; // 完全在此外侧 → 不可见，提前退出
+        }
+    }
+
+    // 所有 6 个平面测试通过 → 包围球至少部分在视锥体内 → 可能可见
+    return true;
+}
+
+/**
+ * LOD 级别计算 - 基于距离的阈值查找 (来自 lod_distance.py)
+ *
+ * <h3>算法原理：</h3>
+ * 使用线性扫描查找第一个满足 distance < threshold[level] 的级别。
+ * 由于 distanceThresholds[] 是严格单调递增的，
+ * 返回的 LOD level 也是随 distance 单调不减的 (距离越远，LOD 越低)。
+ *
+ * <h3>单调性保证：</h3>
+ * <pre>
+ *   设 d1 < d2 (两个不同距离), 对应级别 L(d1) 和 L(d2):
+ *   - 若 d1 和 d2 在同一阈值区间内 → L(d1) == L(d2)
+ *   - 若 d1 在较低区间, d2 在较高区间 → L(d1) <= L(d2)
+ *   - 结论: L(d) 是关于 d 的单调不减函数 ✓
+ * </pre>
+ *
+ * <h3>边界值性质：</h3>
+ * <pre>
+ *   distance = 0      → level = 0 (相机正上方, 最高细节)
+ *   distance < 32     → level = 0
+ *   distance = 32     → level = 1 (恰好在阈值上, 进入下一级)
+ *   distance = 4095    → level = 7
+ *   distance >= 4096   → level = 7 (最大级别钳位)
+ * </pre>
+ *
+ * <h3>与 Python 端的一致性要求：</h3>
+ * 此函数必须产生与 Python lod_distance.compute_lod_level() 完全相同的结果。
+ * 验证方法: 对相同的 (distance, thresholds[]) 输入，两端返回值必须一致。
+ *
+ * @param distance  区块中心到相机的欧几里得距离 (世界空间单位, >= 0)
+ * @return LOD 级别索引 (0 ~ maxLODLevel), 数值越小表示越高的细节等级
+ */
+uint computeLODLevel(float distance) {
+    // 线性扫描距离阈值数组
+    // 从最低级别 (最高细节) 开始检查
+    for (uint level = 0u; level < maxLODLevel; level++) {
+        // 如果当前距离小于此级别的阈值 → 使用此级别
+        // 注意: 这里的 "<" 与 Python 端保持一致 (非 "<=")
+        if (distance < distanceThresholds[level]) {
+            return level;
+        }
+    }
+
+    // 距离超出所有阈值范围 → 返回最大 (最粗糙) LOD 级别
+    return maxLODLevel;
+}
+
+// ==================== 主函数 ====================
+
+/**
+ * Compute Shader 主入口 - LOD 视锥剔除
+ *
+ * <h3>执行流程 (Mermaid)：</h3>
+ * ```mermaid
+ * flowchart TD
+ *     A[获取 chunkId = gl_GlobalInvocationID.x] --> B{chunkId >= chunkCount?}
+ *     B -->|是| Z[返回 - 越界保护]
+ *     B -->|否| C[读取 chunks[chunkId]]
+ *     C --> D[testAABBAgainstFrustum<br/>视锥体包围球测试]
+ *     D --> E{visible?}
+ *     E -->|否 - 被剔除| F[lodLevels[chunkId] = 0xFF<br/>标记不可见]
+ *     F --> Z
+ *     E -->|是 - 可能可见| G[计算 distance =<br/>length of center to camera]
+ *     G --> H[computeLODLevel of distance<br/>查找 LOD 级别]
+ *     H --> I[lodLevels[chunkId] = lodLevel<br/>写入结果]
+ *     I --> Z
+ * ```
+ *
+ * <h3>性能特征：</h3>
+ * <ul>
+ *   <li><b>最佳情况</b>: Chunk 在视锥体外 → 仅 6 次点积 + 比较 → ~24 FLOPs</li>
+ *   <li><b>一般情况</b>: Chunk 可见 → 6 次点积 + 1 次 length + 最多 8 次比较</li>
+ *   <li><b>最坏情况</b>: 最远距离 → 完整 8 级阈值扫描</li>
+ *   <li><b>无分支发散</b>: 所有线程执行相同代码路径 (除 visible 判断)</li>
+ * </ul>
+ *
+ * <h3>内存访问模式：</h3>
+ * <ul>
+ *   <li>读: chunks[] (coalesced, 连续读取)</li>
+ *   <li>读: planes[], distanceThresholds[] (uniform, 全部线程读同一位置)</li>
+ *   <li>写: lodLevels[] (scatter, 每线程写独立位置, 无冲突)</li>
+ * </ul>
+ */
+void main() {
+    // ========== Step 1: 获取全局工作项索引 ==========
+    //
+    // gl_GlobalInvocationID.x 是当前 invocation 在 Dispatch 维度上的全局唯一索引。
+    // 由于 local_size_x = 64 且 dispatch 只在 X 轴分派,
+    // gl_GlobalInvocationID.x 直接对应 chunkId。
+    uint chunkId = gl_GlobalInvocationID.x;
+
+    // ========== Step 2: 边界检查 (防止越界访问) ==========
+    //
+    // 安全防护: 实际 chunkCount 可能不是 WORKGROUP_SIZE 的整数倍,
+    // 最后一个 workgroup 的部分线程可能超出有效范围。
+    // 这些线程必须立即退出，避免读取无效内存。
+    if (chunkId >= chunkCount) {
+        return; // 越界 → 空操作 (no-op)
+    }
+
+    // ========== Step 3: 读取当前区块数据 ==========
+    //
+    // 从 SSBO 加载当前线程负责的 Chunk 数据。
+    // 这是本次 invoke 唯一的 chunks[] 读取操作。
+    ChunkData chunk = chunks[chunkId];
+
+    // ========== Step 4: 视锥体剔除测试 ==========
+    //
+    // 使用包围球进行快速的视锥体相交测试。
+    // 如果包围球完全在视锥体外 → 该区块不可能可见 → 直接标记为剔除。
+    // 这是关键的 Early-Out 优化点，可避免后续的距离和 LOD 计算。
+    bool visible = testAABBAgainstFrustum(chunk.center, chunk.radius);
+
+    if (!visible) {
+        // ---- Case A: 区块被视锥体剔除 ----
+        // 写入特殊标记 0xFF 表示"完全不可见"
+        // 下游渲染管线检测到此值时应跳过该区块的绘制
+        lodLevels[chunkId] = LOD_CULLED_FLAG;
+        return; // 提前退出，节省后续计算
+    }
+
+    // ========== Step 5: 计算到相机的距离 ==========
+    //
+    // 使用欧几里得距离 (Euclidean distance) 作为 LOD 决策依据。
+    // length() 内部实现为 sqrt(dot(v,v))，硬件通常有单周期指令支持。
+    //
+    // 性能备注: 对于超大规模场景可考虑使用近似距离 (如 Manhattan 或 Chebyshev),
+    // 但对于典型的 chunk-based 场景 (<= 100K chunks), sqrt 开销可忽略不计。
+    vec3 toCamera = chunk.center - cameraPosition;
+    float distance = length(toCamera);
+
+    // ========== Step 6: 计算 LOD 级别 ==========
+    //
+    // 基于距离查找合适的 LOD 级别。
+    // 结果范围: [0, maxLODLevel]，数值越小细节越高。
+    uint lodLevel = computeLODLevel(distance);
+
+    // ========== Step 7: 写入 LOD 分配结果 ==========
+    //
+    // 将计算得到的 LOD 级别写入输出缓冲区。
+    // 每个线程写入独立的数组位置，不存在写冲突 (write-after-write hazard)。
+    lodLevels[chunkId] = lodLevel;
+
+    // ========== 完成 ==========
+    //
+    // 此线程处理的 Chunk 已完成完整的 LOD 分配流程:
+    //   1. ✅ 视锥体剔除测试 (通过)
+    //   2. ✅ 距离计算
+    //   3. ✅ LOD 级别分配
+    //   4. ✅ 结果写入
+}

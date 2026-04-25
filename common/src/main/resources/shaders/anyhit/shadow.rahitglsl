@@ -1,0 +1,287 @@
+// Renderium - Ray Tracing Shaders
+// shadow.rahitglsl - 阴影光线任意命中着色器
+// 功能: 处理阴影光线与半透明几何体的交互 (alpha 测试)
+//
+// 扩展要求: GLSL #version 460 + GL_EXT_ray_tracing
+// 管线类型: Any Hit Shader (anyhit)
+// 触发条件: 光线与几何体相交时调用 (在 closest hit 之前)
+//
+// 主要用途:
+// - Alpha 测试 (透明/半透明物体的阴影)
+// - 面剔除控制
+// - 条件性忽略命中 (让光线穿透)
+
+#version 460 core
+#extension GL_EXT_ray_tracing : require;
+
+// ==================== Hit Attributes ====================
+
+/** 重心坐标属性 */
+hitAttributeEXT vec2 barycentrics;
+
+// ==================== Payload 定义 ====================
+
+/** 阴影光线 Payload */
+layout(location = 0) rayPayloadInEXT ShadowPayload {
+    float hitT;       // 命中距离
+    bool visible;     // 是否可见
+} payload;
+
+// ==================== 描述符绑定 ====================
+
+/**
+ * 材质参数缓冲区 (SSBO)
+ * <p>
+ * 存储每个材质的 alpha 测试阈值和其他属性。
+ * 通过 gl_InstanceCustomIndexEXT 索引。
+ */
+layout(std430, binding = 30) readonly buffer MaterialBuffer {
+    MaterialData materials[];
+};
+
+/** UV 坐标缓冲区 */
+layout(set = 0, binding = 12) readonly buffer VertexUVs {
+    vec4 uvs[];
+};
+
+/** 索引缓冲区 */
+layout(set = 0, binding = 13) readonly buffer Indices {
+    uint indices[];
+};
+
+/**
+ * Alpha 贴图数组 (可选)
+ * <p>
+ * 使用 nonuniformEXT 采样器索引支持多纹理。
+ * 如果不需要 alpha 测试，可以移除此绑定。
+ */
+layout(set = 0, binding = 31) uniform texture2D alphaTextures[];
+
+// ==================== 数据结构定义 ====================
+
+/**
+ * 材质数据结构
+ */
+struct MaterialData {
+    vec4 baseColor;           // rgba 基础颜色
+    float alphaThreshold;     // Alpha 测试阈值 (0.0 ~ 1.0)
+    float metallic;           // 金属度
+    float roughness;          // 粗糙度
+    uint alphaTextureIndex;   // Alpha 贴图索引 (~0u 表示无贴图)
+    uint flags;               // 材质标志位
+    // ... 其他属性
+};
+
+/** 材质标志位常量 */
+const uint MATERIAL_FLAG_ALPHA_TEST = 1u << 0;     // 启用 Alpha 测试
+const uint MATERIAL_FLAG_DOUBLE_SIDED = 1u << 1;   // 双面渲染
+
+// ==================== 辅助函数 ====================
+
+/**
+ * 插值 UV 坐标
+ *
+ * @param bary 重心坐标
+ * @return 插值后的 UV 坐标
+ */
+vec2 interpolateUV(vec2 bary) {
+    uint primitiveId = gl_PrimitiveID;
+    uint indexOffset = primitiveId * 3u;
+
+    uint idx0 = indices[indexOffset + 0u];
+    uint idx1 = indices[indexOffset + 1u];
+    uint idx2 = indices[indexOffset + 2u];
+
+    vec2 uv0 = uvs[idx0].xy;
+    vec2 uv1 = uvs[idx1].xy;
+    vec2 uv2 = uvs[idx2].xy;
+
+    float w = 1.0 - bary.x - bary.y;
+    return uv0 * w + uv1 * bary.x + uv2 * bary.y;
+}
+
+/**
+ * 执行 Alpha 测试
+ *
+ * <h3>算法：</h3>
+ * <pre>
+ * if (alpha < threshold) → 忽略此次命中 (光线穿透)
+ * else → 接受此次命中 (光线被遮挡)
+ * </pre>
+ *
+ * @param alpha      当前像素的 alpha 值
+ * @param threshold  Alpha 测试阈值
+ * @return true 表示应忽略此命中 (光线继续传播)
+ */
+bool shouldIgnoreHit(float alpha, float threshold) {
+    return alpha < threshold;
+}
+
+// ==================== 主函数 ====================
+
+/**
+ * Any Hit 主入口
+ *
+ * <h3>触发时机：</h3>
+ * 当光线与任何几何体图元相交时都会调用此 Shader，
+ * 无论是否是最近交点。
+ * 这使得我们可以在确定"最近命中"之前进行早期拒绝或特殊处理。
+ *
+ * <h3>典型用途：</h3>
+ * <ul>
+ *   <li><b>Alpha 测试</b>: 半透明物体（如树叶、栅栏、玻璃）</li>
+ *   <li><b>面剔除</b>: 单面物体的背面处理</li>
+ *   <li><b>条件性命中</b>: 基于材质属性决定是否接受命中</li>
+ * </ul>
+ *
+ * <h3>关键操作：</h3>
+ * <ul>
+ *   <li>{@code ignoreIntersectionEXT()}: 忽略当前命中，光线继续传播</li>
+ *   <li>{@code terminateRayEXT()}: 立即终止光线追踪</li>
+ *   <li>(默认): 不做任何操作，接受命中，继续寻找更近的交点</li>
+ * </ul>
+ *
+ * <h3>性能提示：</h3>
+ * 此 Shader 应尽可能简单快速，因为它可能被频繁调用。
+ * 复杂的计算应在 Closest Hit 中完成。
+ */
+void main() {
+    // ========== 获取材质信息 ==========
+
+    // 从实例自定义索引获取材质 ID
+    uint materialId = gl_InstanceCustomIndexEXT;
+
+    // 安全检查: 确保 materialId 在有效范围内
+    if (materialId >= materials.length()) {
+        // 无效材质 ID → 默认行为 (接受命中)
+        return;
+    }
+
+    // 读取材质数据
+    MaterialData mat = materials[materialId];
+
+    // ========== Alpha 测试 (主要功能) ==========
+
+    // 检查是否启用 Alpha 测试
+    bool alphaTestEnabled = (mat.flags & MATERIAL_FLAG_ALPHA_TEST) != 0u;
+
+    if (alphaTestEnabled) {
+        // 计算命中点的 UV 坐标
+        vec2 hitUV = interpolateUV(barycentrics);
+
+        // 获取 alpha 值
+        float alpha = 1.0; // 默认完全不透明
+
+        if (mat.alphaTextureIndex != ~0u && mat.alphaTextureIndex < alphaTextures.length()) {
+            // 有 Alpha 贴图 → 采样
+            // 使用 nonuniformEXT 因为索引是动态的 (发散的)
+            alpha = texture(alphaTextures[nonuniformEXT(mat.alphaTextureIndex)], hitUV).r;
+        } else {
+            // 无 Alpha 贴图 → 使用基础颜色的 alpha
+            alpha = mat.baseColor.a;
+        }
+
+        // 执行 Alpha 测试
+        if (shouldIgnoreHit(alpha, mat.alphaThreshold)) {
+            // Alpha 低于阈值 → 忽略此命中
+            // 光线将穿透此物体继续传播
+
+            #ifdef DEBUG_SHADOW_RAYS
+                // [调试] 可以记录被忽略的命中用于可视化
+            #endif
+
+            ignoreIntersectionEXT(); // 关键操作！告诉驱动忽略此命中
+            return; // 函数结束，光线继续
+        }
+
+        // Alpha 通过测试 → 接受命中 (继续执行或返回)
+        // 不需要显式代码，默认行为就是接受命中
+    }
+
+    // ========== 双面渲染支持 ==========
+
+    // 检查是否为双面材质
+    bool doubleSided = (mat.flags & MATERIAL_FLAG_DOUBLE_SIDED) != 0u;
+
+    if (!doubleSided) {
+        // 单面材质: 检查是否击中背面
+        //
+        // 注意: 对于单面材质，背面通常已在构建 BLAS 时通过
+        // VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR 或
+        // 类似机制处理。但这里可以添加额外的安全检查。
+
+        // [可选] 背面剔除逻辑
+        // vec3 surfaceNormal = calculateFaceNormal(...);
+        // float NdotD = dot(surfaceNormal, gl_WorldRayDirectionEXT);
+        // if (NdotD > 0.0) {
+        //     // 击中背面 → 忽略
+        //     ignoreIntersectionEXT();
+        //     return;
+        // }
+    }
+
+    // ========== 特殊情况: 完全不透明的遮挡物 ==========
+
+    // 对于完全不透明的物体 (如墙壁、地面)，
+    // 一旦确认命中就可以立即终止光线追踪，
+    // 因为我们已经知道该像素处于阴影中。
+
+    // 检查是否为完全不透明且无特殊效果
+    bool isFullyOpaque = !alphaTestEnabled &&
+                         mat.baseColor.a >= 0.99f &&
+                         mat.alphaTextureIndex == ~0u;
+
+    if (isFullyOpaque) {
+        // 完全不透明物体 → 立即终止光线 (性能优化)
+        // 无需寻找更近的交点，因为任何不透明遮挡都产生相同结果
+
+        // 更新 payload (标记为不可见)
+        payload.visible = false;
+        payload.hitT = gl_HitTEXT;
+
+        terminateRayEXT(); // 关键操作！立即停止光线追踪
+        return;
+    }
+
+    // ========== 默认行为 ==========
+
+    // 如果没有触发上述特殊情况:
+    // - 接受此命中
+    // - 让驱动继续寻找可能的更近交点
+    // - 最终会 (或不会) 进入 Closest Hit Shader
+}
+
+// ==================== 补充说明 ====================
+//
+// 【Any-Hit vs Closest-Hit 的区别】
+//
+// ┌─────────────────────────────────────────────────────────────┐
+// │ 光线路径:  O ──────→ A ──────→ B ──────→ (无限远)         │
+// │             ↑         ↑                                       │
+// │           Any-Hit   Any-Hit                                  │
+// │                     ↓                                        │
+// │                  Closest-Hit ← 最近交点                       │
+// └─────────────────────────────────────────────────────────────┘
+//
+// 执行顺序:
+// 1. 光线与 A 相交 → 调用 anyhit(A)
+//    ├─ 如果 ignoreIntersectionEXT() → 继续传播
+//    └─ 否则 → 记录候选，继续寻找
+//
+// 2. 光线与 B 相交 → 调用 anyhit(B)
+//    ├─ 如果 ignoreIntersectionEXT() → 继续传播
+//    └─ 否则 → B 成为新的最近候选
+//
+// 3. 没有更多相交 → B 是最近交点
+//    → 调用 closesthit(B) (如果未设置 SkipClosestHitShader)
+//
+// 4. 如果没有任何命中 → 调用 miss()
+//
+// 【对于阴影光线的优化策略】
+//
+// 由于阴影光线只关心"是否有遮挡"，而不关心"最近遮挡物是什么":
+// - 设置 gl_RayFlagsSkipClosestHitShaderEXT 标志
+// - 在 anyhit 中:
+//   · 不透明物 → terminateRayEXT() (立即结束)
+//   · 半透明物 → alpha 测试后决定 ignore 还是 terminate
+// - 这样可以避免不必要的 closest hit 计算，提高性能

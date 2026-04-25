@@ -1,0 +1,196 @@
+#version 450
+
+// ============================================
+// Renderium Exposure Adaptation Compute Shader
+// 直方图 Luminance 采样 + 自适应曝光调整
+// 基于自适应曝光算法（类似 GTA V / COD 的曝光系统）
+//
+// 功能说明：
+// 1. 对场景进行降采样 Luminance 采样
+// 2. 计算平均/中位 Luminance
+// 3. 目标曝光 = key_value / avg_luminance（key_value ≈ 0.18）
+// 4. 平滑过渡：exposure = lerp(current, target, adaptation_speed * dt)
+//
+// 工作组配置：
+// - 工作组大小：16×16（256 个线程/工作组）
+// - 适用于 1080p/4K 分辨率的降采样
+//
+// 算法参考：
+// - "High Dynamic Range Imaging" by Reinhard et al.
+// - GTA V 自适应曝光系统
+// - Call of Duty 曝光适应实现
+// ============================================
+
+// --- 工作组大小定义 ---
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// --- 输入纹理：场景颜色 ---
+layout(binding = 0) uniform sampler2D uSceneColor;
+
+// --- 输出缓冲区：计算后的曝光值 ---
+layout(std430, binding = 0) buffer ExposureOutput {
+    float uExposureOutput;          // 最终输出曝光值（单个 float）
+};
+
+// --- Uniform 参数 ---
+layout(push_constant) uniform ExposureParams {
+    vec2 uResolution;               // 屏幕分辨率 (width, height)
+    float uCurrentExposure;         // 当前曝光值（上一帧的结果）
+    float uAdaptationSpeed;         // 适应速度（默认 1.5，越高越快）
+    float uMinExposure;             // 最小曝光限制（默认 0.01）
+    float uMaxExposure;             // 最大曝光限制（默认 10.0）
+    uint uFrameCount;               // 帧计数器（用于平滑和调试）
+    float uDeltaTime;               // 帧间隔时间（秒）
+    float uKeyValue;                // 中灰关键值（默认 0.18，摄影学标准）
+} exposure;
+
+// --- 共享内存：用于工作组内归约 ---
+shared float sharedLuminance[256];   // 16*16 = 256 个线程
+
+// --- 常量定义 ---
+const float EPSILON = 1e-6;
+const float MIDDLE_GRAY = 0.18;     // 摄影学中灰常数（18% 反射率）
+
+// ==================== 工具函数 ====================
+
+/**
+ * 计算像素的相对亮度值
+ * 使用 ITU-R BT.709 亮度系数（人眼对绿色最敏感）
+ *
+ * @param color 输入颜色 (RGB，线性空间)
+ * @return 亮度值（标量，范围 0.0-∞）
+ */
+float luminance(vec3 color) {
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
+}
+
+/**
+ * 将线性亮度转换为对数空间
+ * 用于更自然的曝光计算（符合人眼感知）
+ *
+ * @param lum 线性亮度值
+ * @return 对数亮度值
+ */
+float logLuminance(float lum) {
+    return log(max(lum, EPSILON));
+}
+
+/**
+ * 将对数亮度转换回线性空间
+ *
+ * @param logLum 对数亮度值
+ * @return 线性亮度值
+ */
+float expLuminance(float logLum) {
+    return exp(logLum);
+}
+
+// ==================== 主计算函数 ====================
+
+void main() {
+    // 获取当前线程在工作组内的局部 ID
+    uint localIndex = gl_LocalInvocationIndex;  // 0-255
+    ivec2 workgroupID = ivec2(gl_WorkGroupID);  // 工作组坐标
+    ivec2 localID = ivec2(gl_LocalInvocationID); // 局部线程坐标 (0-15, 0-15)
+
+    // ====== 步骤 1: 降采样 Luminance 采集 ======
+    // 计算当前线程负责的屏幕区域
+    // 使用网格采样方式覆盖整个屏幕
+
+    // 计算总的工作组数量（假设屏幕被分成多个 16x16 的块）
+    uint numGroupsX = uint(ceil(exposure.uResolution.x / 16.0));
+    uint numGroupsY = uint(ceil(exposure.uResolution.y / 16.0));
+
+    // 当前线程对应的像素坐标（居中采样点）
+    vec2 pixelCoord = vec2(
+        float(workgroupID.x * 16 + localID.x),
+        float(workgroupID.y * 16 + localID.y)
+    );
+
+    // 转换为归一化纹理坐标 [0, 1]
+    vec2 uv = pixelCoord / exposure.uResolution;
+
+    // 边界检查（避免越界采样）
+    if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
+        // 采样场景颜色
+        vec3 sceneColor = texture(uSceneColor, uv).rgb;
+
+        // 计算 Luminance 并转换到对数空间
+        float lum = luminance(sceneColor);
+        sharedLuminance[localIndex] = logLuminance(lum);
+    } else {
+        // 越界线程贡献零值
+        sharedLuminance[localIndex] = 0.0;
+    }
+
+    // ====== 步骤 2: 工作组内并行归约 ======
+    // 使用树形归约算法计算平均对数亮度
+    // 时间复杂度: O(log n)，n = 256
+
+    memoryBarrierShared();
+    barrier();
+
+    // 并行归约（每次迭代将数据量减半）
+    for (uint stride = 128; stride > 0; stride >>= 1) {
+        if (localIndex < stride) {
+            sharedLuminance[localIndex] += sharedLuminance[localIndex + stride];
+        }
+        memoryBarrierShared();
+        barrier();
+    }
+
+    // ====== 步骤 3: 全局归约与曝光计算 ======
+    // 只有第一个线程（index 0）执行最终计算并写入结果
+    if (localIndex == 0) {
+        // 计算工作组的平均对数亮度
+        float avgLogLum = sharedLuminance[0] / 256.0;
+
+        // 转换回线性空间的平均亮度
+        float avgLuminance = expLuminance(avgLogLum);
+
+        // 避免除以零或极端值
+        avgLuminance = clamp(avgLuminance, EPSILON, 1e6);
+
+        // ====== 步骤 4: 目标曝光计算 ======
+        // 使用摄影学公式：target_exposure = key_value / avg_luminance
+        // 这基于"中间灰"理论：18% 反射率的物体在正确曝光下呈现中性灰
+        //
+        // 公式推导：
+        // - 场景关键亮度（key）通常设为 0.18（18% 中灰）
+        // - 如果场景很亮（avg_luminance 高），需要降低曝光
+        // - 如果场景很暗（avg_luminance 低），需要提高曝光
+        float targetExposure = exposure.uKeyValue / avgLuminance;
+
+        // ====== 步骤 5: 平滑过渡（时间滤波） ======
+        // 使用指数平滑避免曝光突变
+        // 公式：exposure(t) = lerp(exposure(t-1), target, speed * dt)
+        //
+        // adaptation_speed 控制适应速度：
+        // - 低值（0.5）：缓慢适应，适合电影感
+        // - 高值（3.0+）：快速适应，适合游戏实时渲染
+        float smoothingFactor = 1.0 - exp(-exposure.uAdaptationSpeed * exposure.uDeltaTime);
+
+        float adaptedExposure = mix(
+            exposure.uCurrentExposure,
+            targetExposure,
+            smoothingFactor
+        );
+
+        // ====== 步骤 6: 范围限制 ======
+        // 将最终曝光值限制在合理范围内
+        adaptedExposure = clamp(
+            adaptedExposure,
+            exposure.uMinExposure,
+            exposure.uMaxExposure
+        );
+
+        // 写入输出缓冲区
+        uExposureOutput = adaptedExposure;
+
+        // 可选：调试信息（可通过条件编译启用）
+        #ifdef DEBUG_EXPOSURE
+        // 在实际实现中可以写入额外的调试缓冲区
+        // 例如：写入直方图数据、帧统计等
+        #endif
+    }
+}
