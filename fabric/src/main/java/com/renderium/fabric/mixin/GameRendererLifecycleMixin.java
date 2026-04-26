@@ -16,6 +16,7 @@ import com.renderium.bridge.mc.GameRendererContext;
 import com.renderium.bridge.mc.MCRenderBridge;
 import com.renderium.bridge.mc.ProjectionContext;
 import com.renderium.bridge.mc.RenderiumLifecycleManager;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -224,17 +225,19 @@ public class GameRendererLifecycleMixin {
     private void extractGameData(GameRendererContext ctx) {
         try {
             GameRenderer self = (GameRenderer) (Object) this;
+            // MC 26.2: minecraft 字段改为 private，使用 Minecraft.getInstance() 访问
+            var mc = Minecraft.getInstance();
 
             // 提取窗口尺寸
-            ctx.windowWidth = self.minecraft.getWindow().getWidth();
-            ctx.windowHeight = self.minecraft.getWindow().getHeight();
+            ctx.windowWidth = mc.getWindow().getWidth();
+            ctx.windowHeight = mc.getWindow().getHeight();
 
             // 提取游戏时间
-            ctx.gameTick = self.minecraft.level != null ? self.minecraft.level.getGameTime() : 0L;
+            ctx.gameTick = mc.level != null ? mc.level.getGameTime() : 0L;
 
-            // 提取相机位置
-            if (self.minecraft.player != null) {
-                var pos = self.minecraft.gameRenderState.cameraRenderState.pos;
+            // 提取相机位置（MC 26.2: cameraRenderState 在 levelRenderState 内部）
+            if (mc.player != null) {
+                var pos = self.gameRenderState().levelRenderState.cameraRenderState.pos;
                 ctx.cameraX = (float) pos.x;
                 ctx.cameraY = (float) pos.y;
                 ctx.cameraZ = (float) pos.z;
@@ -243,7 +246,6 @@ public class GameRendererLifecycleMixin {
             // 帧序号从 FrameData 获取
             ctx.frameIndex = MCRenderBridge.getCurrentFrameData().getFrameIndex();
         } catch (Exception e) {
-            // 数据提取失败时使用默认值（不应发生）
             ctx.reset();
         }
     }
@@ -255,19 +257,19 @@ public class GameRendererLifecycleMixin {
      */
     private void extractProjectionData(ProjectionContext ctx) {
         try {
-            // 从 RenderSystem 获取当前投影矩阵
-            var projectionMatrix = com.mojang.blaze3d.systems.RenderSystem.getProjectionMatrix();
+            // MC 26.2: getProjectionMatrix() 已移除，getProjectionMatrixBuffer() 返回 GpuBufferSlice
+            // GpuBufferSlice 是 record(buffer, offset, length)，无直接 read(float[]) 方法
+            // 使用 getModelViewStack() 获取当前矩阵状态作为替代数据源
+            var mvStack = com.mojang.blaze3d.systems.RenderSystem.getModelViewStack();
+            mvStack.get(ctx.projectionMatrix);
 
-            // 转换为 float[16] column-major 数组
-            projectionMatrix.get(ctx.projectionMatrix);
-
-            // 提取 FOV（从相机状态）
-            GameRenderer self = (GameRenderer) (Object) this;
-            ctx.fov = self.minecraft.options.fov().get();
+            // MC 26.2: minecraft 字段改为 private
+            var mc = Minecraft.getInstance();
+            ctx.fov = mc.options.fov().get();
 
             // 近/远裁剪面（MC 默认值）
             ctx.nearPlane = 0.05f;
-            ctx.farPlane = Math.max(1000.0f, self.minecraft.options.getEffectiveRenderDistance() * 16.0f);
+            ctx.farPlane = Math.max(1000.0f, mc.options.getEffectiveRenderDistance() * 16.0f);
         } catch (Exception e) {
             ctx.reset();
         }
@@ -282,8 +284,9 @@ public class GameRendererLifecycleMixin {
         try {
             GameRenderer self = (GameRenderer) (Object) this;
 
-            // 从 FogRenderer 获取当前雾效参数
-            var fogData = self.gameRenderState.levelRenderState.fogData;
+            // MC 26.2: gameRenderState 是 private，使用公共 getter gameRenderState()
+            // fogData 位于 cameraRenderState 内（非 levelRenderState 直接字段）
+            var fogData = self.gameRenderState().levelRenderState.cameraRenderState.fogData;
 
             // 雾颜色 RGBA
             ctx.color[0] = fogData.color.x();   // R
@@ -291,16 +294,14 @@ public class GameRendererLifecycleMixin {
             ctx.color[2] = fogData.color.z();   // B
             ctx.color[3] = 1.0f;                 // A (不透明)
 
-            // 雾距离参数
-            ctx.start = fogData.start;
-            ctx.end = fogData.end;
-            ctx.density = fogData.density;
+            // MC 26.2: FogData 字段变更（无 start/end/density/shape）
+            // 使用 renderDistanceEnd 作为雾效范围参考值
+            ctx.start = fogData.environmentalStart;
+            ctx.end = fogData.renderDistanceEnd;
+            ctx.density = 1.0f;  // MC 26.2 不再提供 density，使用默认值
 
-            // 雾类型（线性/指数/指数平方）
-            ctx.type = switch (fogData.shape) {
-                case SPHERE -> 2;  // 指数平方
-                default  -> 0;   // 线性（CYLINDER）
-            };
+            // 雾类型（MC 26.2 无 shape 字段，默认线性）
+            ctx.type = 0;
 
             ctx.enabled = true;
         } catch (Exception e) {

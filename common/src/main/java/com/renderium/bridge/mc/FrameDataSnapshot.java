@@ -230,6 +230,13 @@ public final class FrameDataSnapshot {
     public int getTranslucentDrawCallCount() { return translucentDrawCallCount; }
     public boolean isViewAreaChanged() { return viewAreaChanged; }
 
+    /**
+     * 获取区块数据（自身引用，用于兼容旧 API）
+     *
+     * @return 帧数据快照自身
+     */
+    public FrameDataSnapshot getChunkData() { return this; }
+
     // ==================== Getter 方法：帧序号 ====================
 
     public int getFrameIndex() { return frameIndex; }

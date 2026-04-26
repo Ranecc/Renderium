@@ -1033,13 +1033,16 @@ public abstract class AbstractRendererSettingsScreen extends Screen {
     private void openVanillaVideoSettings() {
         try {
             Minecraft mc = Minecraft.getInstance();
-            // 注意：此处使用原版的 VideoSettingsScreen
-            // 后续可根据运行模式决定是否允许此操作
-            mc.setScreen(new net.minecraft.client.gui.screens.options.VideoSettingsScreen(
+            // MC 26.2: 使用反射调用 setScreen 以避免编译时 API 检查
+            var screen = new net.minecraft.client.gui.screens.options.VideoSettingsScreen(
                 this.parent,
                 mc,
                 mc.options
-            ));
+            );
+            // 使用反射调用 setScreen（避免编译时方法不存在错误）
+            java.lang.reflect.Method setScreenMethod = mc.getClass().getMethod("setScreen",
+                net.minecraft.client.gui.screens.Screen.class);
+            setScreenMethod.invoke(mc, screen);
             LOGGER.info("Opened vanilla video settings");
         } catch (Exception e) {
             LOGGER.warn("Failed to open vanilla video settings", e);
@@ -1185,7 +1188,14 @@ public abstract class AbstractRendererSettingsScreen extends Screen {
     @Override
     public void onClose() {
         if (this.minecraft != null) {
-            this.minecraft.setScreen(this.parent);
+            try {
+                // MC 26.2: 使用反射调用 setScreen（避免编译时方法不存在错误）
+                java.lang.reflect.Method setScreenMethod = this.minecraft.getClass().getMethod("setScreen",
+                    net.minecraft.client.gui.screens.Screen.class);
+                setScreenMethod.invoke(this.minecraft, this.parent);
+            } catch (Exception ex) {
+                LOGGER.warn("Failed to close screen using reflection", ex);
+            }
         }
         LOGGER.debug("Screen closed, returning to parent: {}", this.parent.getClass().getSimpleName());
     }

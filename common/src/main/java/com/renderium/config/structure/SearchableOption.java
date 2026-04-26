@@ -18,6 +18,15 @@ package com.renderium.config.structure;
 interface SearchableOption extends RendererOption {
 
     /**
+     * 获取选项唯一标识符
+     *
+     * @return 选项 ID
+     */
+    default net.minecraft.resources.Identifier id() {
+        return getId();
+    }
+
+    /**
      * 将此选项注册到搜索索引。
      *
      * @param index       搜索索引实例

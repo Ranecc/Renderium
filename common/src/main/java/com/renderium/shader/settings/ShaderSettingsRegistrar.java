@@ -217,9 +217,11 @@ public final class ShaderSettingsRegistrar {
                                         () -> config.getGiBounces()
                                 )
                                 .setImpact(OptionImpact.HIGH)
-                                .setEnabledProvider(() -> config.getPreset() != ShaderPreset.OFF)
+                                .setEnabledProvider(state -> config.getPreset() != ShaderPreset.OFF)
                                 .build()
                 );
+
+
     }
 
     // ==================== 组 3: 画面增强 ====================
@@ -244,7 +246,7 @@ public final class ShaderSettingsRegistrar {
                                         () -> (int) config.getBloomIntensity()
                                 )
                                 .setImpact(OptionImpact.MEDIUM)
-                                .setEnabledProvider(() -> config.getPreset() != ShaderPreset.OFF)
+                                .setEnabledProvider(state -> config.getPreset() != ShaderPreset.OFF)
                                 .build()
                 )
 
@@ -347,7 +349,7 @@ public final class ShaderSettingsRegistrar {
                                 )
                                 .setImpact(OptionImpact.HIGH)
                                 .setFlags(OptionFlag.REQUIRES_RENDERER_RELOAD)
-                                .setEnabledProvider(() -> config.getPreset().ordinal() >= ShaderPreset.BALANCED.ordinal())
+                                .setEnabledProvider(state -> config.getPreset().ordinal() >= ShaderPreset.BALANCED.ordinal())
                                 .build()
                 )
 
@@ -365,7 +367,7 @@ public final class ShaderSettingsRegistrar {
                                         () -> RTReflectionQuality.fromInt(config.getRtReflections())
                                 )
                                 .setImpact(OptionImpact.HIGH)
-                                .setEnabledProvider(() -> config.getPreset().ordinal() >= ShaderPreset.CINEMATIC.ordinal())
+                                .setEnabledProvider(state -> config.getPreset().ordinal() >= ShaderPreset.CINEMATIC.ordinal())
                                 .build()
                 )
 

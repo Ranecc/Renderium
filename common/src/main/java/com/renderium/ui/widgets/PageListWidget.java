@@ -3,12 +3,13 @@
 
 package com.renderium.ui.widgets;
 
-import com.renderium.config.structure.RendererPage;
+import com.renderium.config.structure.RendererOptionPage;
 import com.renderium.ui.ColorTheme;
 import com.renderium.ui.Colors;
 import com.renderium.ui.Layout;
 import com.renderium.ui.util.Dim2i;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.NonNull;
 import org.slf4j.Logger;
@@ -89,13 +90,13 @@ public class PageListWidget extends AbstractScrollable {
     private static final Logger LOGGER = LoggerFactory.getLogger("Renderium-PageListWidget");
 
     /** 所有页面列表 */
-    private final List<RendererPage> pages;
+    private final List<RendererOptionPage> pages;
 
     /** 当前选中的页面索引（-1 表示未选中） */
     private int selectedIndex = -1;
 
     /** 页面选择回调（点击页面项时触发） */
-    private final Consumer<RendererPage> onPageSelected;
+    private final Consumer<RendererOptionPage> onPageSelected;
 
     /** 当前选中的页面项组件引用（用于更新视觉状态） */
     private PageEntryWidget selectedEntry;
@@ -117,7 +118,7 @@ public class PageListWidget extends AbstractScrollable {
      * 传入被选中的 RendererPage 对象。
      * 典型实现是调用 OptionListWidget.showPage() 切换主内容区。
      */
-    public PageListWidget(Dim2i dim, List<RendererPage> pages, Consumer<RendererPage> onPageSelected) {
+    public PageListWidget(Dim2i dim, List<RendererOptionPage> pages, Consumer<RendererOptionPage> onPageSelected) {
         super(dim);
         this.pages = List.copyOf(pages);  // 防御性拷贝
         this.onPageSelected = onPageSelected;
@@ -159,7 +160,7 @@ public class PageListWidget extends AbstractScrollable {
         int listHeight = 0;
 
         // 创建每个页面的入口组件
-        for (RendererPage page : this.pages) {
+        for (RendererOptionPage page : this.pages) {
             Dim2i widgetDim = new Dim2i(x, y + listHeight, width, entryHeight);
             PageEntryWidget entry = new PageEntryWidget(widgetDim, page, DEFAULT_THEME, listHeight);
             this.addRenderableChild(entry);
@@ -231,7 +232,7 @@ public class PageListWidget extends AbstractScrollable {
      * @param page 目标页面（必须存在于 pages 列表中）
      * @throws IllegalArgumentException 若页面不在列表中
      */
-    public void switchSelected(RendererPage page) {
+    public void switchSelected(RendererOptionPage page) {
         if (page == null) {
             LOGGER.warn("Attempted to switch to null page");
             return;
@@ -307,7 +308,7 @@ public class PageListWidget extends AbstractScrollable {
      * @param page 目标页面
      * @return 对应的 PageEntryWidget，如果未找到返回 null
      */
-    private PageEntryWidget findEntryByPage(RendererPage page) {
+    private PageEntryWidget findEntryByPage(RendererOptionPage page) {
         for (var child : this.children()) {
             if (child instanceof PageEntryWidget entry && entry.page == page) {
                 return entry;
@@ -332,7 +333,7 @@ public class PageListWidget extends AbstractScrollable {
      *
      * @return 选中的 RendererPage，如果没有选中返回 null
      */
-    public RendererPage getSelectedPage() {
+    public RendererOptionPage getSelectedPage() {
         return this.selectedIndex >= 0 ? this.pages.get(this.selectedIndex) : null;
     }
 
@@ -347,7 +348,7 @@ public class PageListWidget extends AbstractScrollable {
     private class PageEntryWidget extends AbstractWidget {
 
         /** 关联的页面对象 */
-        final RendererPage page;
+        final RendererOptionPage page;
 
         /** 颜色主题 */
         final ColorTheme theme;
@@ -366,7 +367,7 @@ public class PageListWidget extends AbstractScrollable {
          * @param theme           颜色主题
          * @param scrollTargetStart 滚动目标位置
          */
-        PageEntryWidget(Dim2i dim, RendererPage page, ColorTheme theme, int scrollTargetStart) {
+        PageEntryWidget(Dim2i dim, RendererOptionPage page, ColorTheme theme, int scrollTargetStart) {
             super(dim);
             this.page = page;
             this.theme = theme;
@@ -413,9 +414,9 @@ public class PageListWidget extends AbstractScrollable {
             // 确定文本颜色
             int textColor;
             if (this.selected) {
-                textColor = this.theme.theme();          // 选中：主题色
+                textColor = this.theme.theme;          // 选中：主题色
             } else if (this.hovered) {
-                textColor = this.theme.themeLighter();   // 悬停：浅色
+                textColor = this.theme.themeLighter;   // 悬停：浅色
             } else {
                 textColor = Colors.FOREGROUND;           // 默认：白色
             }

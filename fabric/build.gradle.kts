@@ -108,6 +108,7 @@ tasks {
 
     processResources {
         from(configurationCommonResources)
+        duplicatesStrategy = DuplicatesStrategy.INHERIT
     }
 
     named<Jar>("jar") {

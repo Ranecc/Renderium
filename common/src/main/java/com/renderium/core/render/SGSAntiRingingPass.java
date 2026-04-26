@@ -17,6 +17,7 @@ package com.renderium.core.render;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.renderium.core.VulkanDeviceHolder;
 
 /**
  * SGS (Scalar Gradient Smoothing) 零带宽抗振铃后处理系统

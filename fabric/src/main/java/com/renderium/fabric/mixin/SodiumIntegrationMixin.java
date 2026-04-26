@@ -68,7 +68,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * @since 1.0.0
  * @version 1.0 (初始实现)
  */
-@org.spongepowered.asm.mixin.extensibility.IfMod("sodium")
+// MC 26.2: IfMod 注解在当前 Mixin 版本不可用，Sodium 集成改为运行时检测
 @Mixin(value = Object.class, remap = false)
 public abstract class SodiumIntegrationMixin extends Screen {
 

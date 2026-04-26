@@ -287,6 +287,12 @@ public class Bloom extends AbstractPipelineNode {
     /** 上一帧处理的纹理高度（用于检测尺寸变化） */
     private int lastInputHeight = 0;
 
+    /** 当前初始化分辨率宽度 */
+    private int currentWidth = 1920;
+
+    /** 当前初始化分辨率高度 */
+    private int currentHeight = 1080;
+
     // ==================== 性能统计 ====================
 
     /** 总执行时间（纳秒） */

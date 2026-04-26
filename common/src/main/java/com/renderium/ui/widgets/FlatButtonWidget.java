@@ -324,7 +324,7 @@ public class FlatButtonWidget extends AbstractWidget implements Renderable {
      * @param delta    部分刻度时间
      */
     @Override
-    public void extractRenderState(@NonNull GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
         // 不可见时直接返回
         if (!this.visible) {
             return;
@@ -382,7 +382,7 @@ public class FlatButtonWidget extends AbstractWidget implements Renderable {
      * @return 启用时返回 themeLighter，禁用时返回 themeDarker
      */
     protected int getTextColor() {
-        return this.enabled ? this.theme.themeLighter() : this.theme.themeDarker();
+        return this.enabled ? this.theme.themeLighter : this.theme.themeDarker;
     }
 
     // ==================== 事件处理 ====================

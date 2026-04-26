@@ -9,6 +9,7 @@
 package com.renderium.platform;
 
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
 /**
@@ -110,6 +111,47 @@ public final class MCAbstract {
             // brigadier 不可用时的回退方案
             return Component.literal(translationKey);
         }
+    }
+
+    // ==================== 文本测量方法 ====================
+
+    /**
+     * 测量文本渲染宽度（像素）
+     *
+     * <p>封装 Minecraft 字体的宽度计算，
+     * 用于 UI 布局时的文本尺寸计算。
+     *
+     * @param text 要测量的文本
+     * @return 文本渲染宽度（像素），若字体不可用返回 0
+     */
+    public static int textWidth(String text) {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && mc.font != null) {
+                return mc.font.width(text);
+            }
+        } catch (Exception e) {
+            // 忽略异常，返回默认值
+        }
+        return 0;
+    }
+
+    /**
+     * 测量 Component 文本渲染宽度（像素）
+     *
+     * @param text 要测量的文本组件
+     * @return 文本渲染宽度（像素），若字体不可用返回 0
+     */
+    public static int textWidth(Component text) {
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc != null && mc.font != null) {
+                return mc.font.width(text);
+            }
+        } catch (Exception e) {
+            // 忽略异常，返回默认值
+        }
+        return 0;
     }
 
     // ==================== Button 构建器（替代 CycleButton）====================

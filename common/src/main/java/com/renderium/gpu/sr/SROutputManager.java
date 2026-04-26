@@ -78,6 +78,9 @@ public final class SROutputManager {
     /** 日志记录器 */
     private static final Logger LOGGER = Logger.getLogger("Renderium|SROutputMgr");
 
+    /** 单例实例 */
+    private static volatile SROutputManager instance;
+
     /** 输出纹理格式: VK_FORMAT_R16G16B16A16_SFLOAT（半精度四通道浮点 HDR） */
     public static final int OUTPUT_FORMAT = 93; // VK_FORMAT_R16G16B16A16_SFLOAT
 
@@ -187,6 +190,46 @@ public final class SROutputManager {
         }
 
         LOGGER.info("SROutputManager 已构造（延迟初始化模式，双缓冲=" + BUFFER_COUNT + "）");
+    }
+
+    /**
+     * 获取单例实例（需先通过 initialize() 初始化）
+     *
+     * @return SROutputManager 单例实例，如果未初始化返回 null
+     */
+    public static SROutputManager getInstance() {
+        return instance;
+    }
+
+    /**
+     * 初始化并设置单例实例
+     *
+     * @param holder VulkanDeviceHolder 设备持有者
+     * @return SROutputputManager 实例
+     */
+    public static synchronized SROutputManager initializeInstance(VulkanDeviceHolder holder) {
+        if (instance == null) {
+            instance = new SROutputManager(holder);
+        }
+        return instance;
+    }
+
+    /**
+     * 设置渲染倍率（百分比）
+     *
+     * @param scale 渲染倍率（50-200）
+     */
+    public void setRenderScale(int scale) {
+        // 根据倍率计算新的输入分辨率
+        int newInputWidth = (currentOutputWidth * scale) / 100;
+        int newInputHeight = (currentOutputHeight * scale) / 100;
+
+        if (newInputWidth > 0 && newInputHeight > 0 &&
+            (newInputWidth != currentInputWidth || newInputHeight != currentInputHeight)) {
+            LOGGER.info("调整 SR 输出尺寸: " + currentInputWidth + "x" + currentInputHeight +
+                       " → " + newInputWidth + "x" + newInputHeight + " (" + scale + "%)");
+            resize(newInputWidth, newInputHeight, currentOutputWidth, currentOutputHeight);
+        }
     }
 
     // ==================== 核心方法 ====================

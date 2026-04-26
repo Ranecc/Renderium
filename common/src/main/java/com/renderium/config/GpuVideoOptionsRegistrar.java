@@ -168,7 +168,7 @@ public final class GpuVideoOptionsRegistrar {
                 .flag(OptionFlag.REQUIRES_RENDERER_UPDATE)
                 .onChange((opt, value) -> {
                     Bloom node = getBloomNodeInstance();
-                    if (node != null) node.setThreshold(value);
+                    if (node != null) node.setThreshold(((Number) value).floatValue());
                 });
 
         postGroup.floatOption("gpu:bloom.intensity")
@@ -179,7 +179,7 @@ public final class GpuVideoOptionsRegistrar {
                 .flag(OptionFlag.REQUIRES_RENDERER_UPDATE)
                 .onChange((opt, value) -> {
                     Bloom node = getBloomNodeInstance();
-                    if (node != null) node.setIntensity(value);
+                    if (node != null) node.setIntensity(((Number) value).floatValue());
                 });
 
         postGroup.intOption("gpu:bloom.blurPasses")
@@ -190,7 +190,7 @@ public final class GpuVideoOptionsRegistrar {
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .onChange((opt, value) -> {
                     Bloom node = getBloomNodeInstance();
-                    if (node != null) node.setBlurPasses(value);
+                    if (node != null) node.setBlurPasses(((Number) value).intValue());
                 });
 
         postGroup.enumOption("gpu:bloom.downsampleScale")
@@ -202,18 +202,18 @@ public final class GpuVideoOptionsRegistrar {
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .onChange((opt, value) -> {
                     Bloom node = getBloomNodeInstance();
-                    if (node != null) node.setDownsampleScale(Float.parseFloat(value));
+                    if (node != null) node.setDownsampleScale(Float.parseFloat(value.toString()));
                 });
 
         // --- SSAO 环境光遮蔽 ---
-        postGroup.booleanOption("gpu:ssao.enabled")
+        postGroup.boolOption("gpu:ssao.enabled")
                 .displayName("Enable SSAO")
                 .description("启用屏幕空间环境光遮蔽，增强场景深度感和接触阴影")
                 .defaultValue(true)
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .onChange((opt, value) -> {
                     SSAO node = getSsaoNodeInstance();
-                    if (node != null) node.setEnabled(value);
+                    if (node != null) node.setEnabled(value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(value.toString()));
                 });
 
         postGroup.enumOption("gpu:ssao.quality")
@@ -236,7 +236,7 @@ public final class GpuVideoOptionsRegistrar {
                 .flag(OptionFlag.REQUIRES_RENDERER_UPDATE)
                 .onChange((opt, value) -> {
                     SSAO node = getSsaoNodeInstance();
-                    if (node != null) node.setRadius(value);
+                    if (node != null) node.setRadius(((Number) value).floatValue());
                 });
     }
 
@@ -277,11 +277,11 @@ public final class GpuVideoOptionsRegistrar {
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .onChange((opt, value) -> {
                     SROutputManager mgr = SROutputManager.getInstance();
-                    if (mgr != null) mgr.setRenderScale(value);
+                    if (mgr != null) mgr.setRenderScale(((Number) value).intValue());
                 });
 
         // --- 帧生成 ---
-        srGroup.booleanOption("gpu:framegen.enabled")
+        srGroup.boolOption("gpu:framegen.enabled")
                 .displayName("Enable Frame Generation")
                 .description("启用 AI 帧生成（需要兼容硬件），通过插值提升帧率")
                 .defaultValue(false)
@@ -290,7 +290,9 @@ public final class GpuVideoOptionsRegistrar {
                 .hardwareDependent()
                 .onChange((opt, value) -> {
                     FrameGeneratorManager mgr = FrameGeneratorManager.getInstance();
-                    if (mgr != null) mgr.setEnabled(value);
+                    if (mgr != null && value instanceof Boolean boolValue) {
+                        mgr.setEnabled(boolValue);
+                    }
                 });
     }
 
@@ -307,14 +309,14 @@ public final class GpuVideoOptionsRegistrar {
                 .collapsible(true);
 
         // --- Hi-Z 遮挡 ---
-        cullGroup.booleanOption("gpu:hiz.enabled")
+        cullGroup.boolOption("gpu:hiz.enabled")
                 .displayName("Enable Hi-Z Occlusion")
                 .description("基于深度金字塔的 GPU 遮挡剔除，大幅减少不可见几何体的渲染开销")
                 .defaultValue(true)
                 .flag(OptionFlag.REQUIRES_RENDERER_RELOAD)
                 .onChange((opt, value) -> {
                     HiZBufferManager mgr = HiZBufferManager.getInstance();
-                    if (mgr != null) mgr.setEnabled(value);
+                    if (mgr != null) mgr.setEnabled(value instanceof Boolean ? (Boolean) value : Boolean.parseBoolean(value.toString()));
                 });
 
         cullGroup.intOption("gpu:hiz.maxMipLevels")
@@ -326,7 +328,7 @@ public final class GpuVideoOptionsRegistrar {
                 .advanced()
                 .onChange((opt, value) -> {
                     HiZBufferManager mgr = HiZBufferManager.getInstance();
-                    if (mgr != null) mgr.setMaxMipLevels(value);
+                    if (mgr != null) mgr.setMaxMipLevels(((Number) value).intValue());
                 });
 
         // --- GPU Driven LOD ---
@@ -338,7 +340,7 @@ public final class GpuVideoOptionsRegistrar {
                 .flag(OptionFlag.REQUIRES_RENDERER_UPDATE)
                 .onChange((opt, value) -> {
                     GPULODDataManager mgr = GPULODDataManager.getInstance();
-                    if (mgr != null) mgr.setLodBias(value);
+                    if (mgr != null) mgr.setLodBias(((Number) value).intValue());
                 });
 
         cullGroup.intOption("gpu:lod.maxDistance")
@@ -350,7 +352,7 @@ public final class GpuVideoOptionsRegistrar {
                 .flag(OptionFlag.REQUIRES_RENDERER_UPDATE)
                 .onChange((opt, value) -> {
                     GPULODDataManager mgr = GPULODDataManager.getInstance();
-                    if (mgr != null) mgr.setMaxDistance(value);
+                    if (mgr != null) mgr.setMaxDistance(((Number) value).intValue());
                 });
     }
 
@@ -391,7 +393,9 @@ public final class GpuVideoOptionsRegistrar {
                 .advanced()
                 .onChange((opt, value) -> {
                     CameraJitterGenerator gen = CameraJitterGenerator.getInstance();
-                    if (gen != null) gen.setJitterMode(value);
+                    if (gen != null) gen.setJitterMode(
+                            CameraJitterGenerator.JitterMode.valueOf(value.toString())
+                    );
                 });
     }
 

@@ -99,7 +99,8 @@ public abstract class ModSettingsButtonMixin extends Screen {
         // ====== L0 规范: 通过反射获取配置（禁止直接调用 Core）======
         Object config = queryConfig();
         // MC 26.2: setScreen() 方法已移至 gui 子对象
-        minecraft.gui.setScreen(new RenderiumSettingsScreen(this, config));
+        minecraft.gui.setScreen(new RenderiumSettingsScreen(this,
+                (com.renderium.config.RenderiumConfig) config));
     }
 
     /**

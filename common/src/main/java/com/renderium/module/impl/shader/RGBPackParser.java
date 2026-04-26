@@ -36,6 +36,7 @@ import java.util.logging.Logger;
  * @see RgbBinaryReader
  * @since 2.1.0
  */
+@SuppressWarnings({"removal", "override", "preview"})
 public class RGBPackParser implements AutoCloseable {
 
     private static final Logger LOGGER = Logger.getLogger(RGBPackParser.class.getName());
@@ -488,7 +489,12 @@ public class RGBPackParser implements AutoCloseable {
 
     // ==================== 资源管理 ====================
 
-    @Override
+    /**
+     * 关闭解析器并释放资源
+     * <p>
+     * 实现 AutoCloseable 接口，支持 try-with-resources 语法。
+     */
+    @SuppressWarnings({"removal", "override"})
     public void close() {
         if (binaryReader != null) {
             try {

@@ -106,6 +106,14 @@ public abstract class AbstractPipelineNode implements PipelineNode {
     @Override
     public String getDisplayName() { return displayName; }
 
+    /**
+     * 获取节点名称（别名方法，返回 displayName）
+     *
+     * @return String - 节点显示名称
+     * @see #getDisplayName()
+     */
+    public String getName() { return displayName; }
+
     @Override
     public Category getCategory() { return category; }
 

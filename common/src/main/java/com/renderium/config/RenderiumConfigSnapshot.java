@@ -231,16 +231,16 @@ public final class RenderiumConfigSnapshot {
             this.dynamicResolution = config.isDynamicResolution();
 
             // 拦截层配置（安全访问）
-            InterceptionConfig interception = config.getInterceptionConfig();
+            RenderiumConfig.InterceptionConfig interception = config.getInterceptionConfig();
             if (interception != null) {
                 // 通过 PreInterceptorConfig 获取 LOD 和剔除配置
                 var preInterceptor = interception.getPreInterceptor();
                 if (preInterceptor != null) {
-                    LODConfig lod = preInterceptor.getLodInjection();
+                    RenderiumConfig.LODConfig lod = preInterceptor.getLodInjection();
                     if (lod != null) {
                         this.lodInjectionEnabled = lod.isEnabled();
                     }
-                    CullingInjectionConfig culling = preInterceptor.getCullingInjection();
+                    RenderiumConfig.CullingInjectionConfig culling = preInterceptor.getCullingInjection();
                     if (culling != null) {
                         this.cullingInjectionEnabled = culling.isEnabled();
                     }

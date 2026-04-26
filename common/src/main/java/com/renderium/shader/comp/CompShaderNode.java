@@ -21,6 +21,7 @@ package com.renderium.shader.comp;
 
 import com.renderium.interception.context.RenderContext;
 import com.renderium.pipeline.node.AbstractPipelineNode;
+import com.renderium.pipeline.node.PipelineNode;  // 导入 PipelineNode 接口（包含 Category 枚举）
 import com.renderium.shader.settings.ShaderGraphicsConfig;
 import com.renderium.gpu.resource.VulkanGPUResourceManager;
 
@@ -111,7 +112,9 @@ public class CompShaderNode extends AbstractPipelineNode {
      */
     public CompShaderNode(Path compPath, Path metaPath) throws IOException {
         super("comp:" + compPath.getFileName().toString(),
-              "Compute Shader: " + compPath.getFileName());
+              "Compute Shader: " + compPath.getFileName(),
+              PipelineNode.Category.POST_PROCESS,  // Compute Shader 属于后处理阶段
+              100);  // 默认优先级
 
         this.compSourcePath = Objects.requireNonNull(compPath);
         this.metaPath = Objects.requireNonNull(metaPath);
@@ -134,7 +137,9 @@ public class CompShaderNode extends AbstractPipelineNode {
      * 使用已加载的元数据创建节点（用于内嵌 shader）
      */
     public CompShaderNode(CompShaderMeta meta, byte[] precompiledSpirv) {
-        super("comp:" + meta.getId(), "Compute Shader: " + meta.getDisplayName());
+        super("comp:" + meta.getId(), "Compute Shader: " + meta.getDisplayName(),
+              PipelineNode.Category.POST_PROCESS,  // Compute Shader 属于后处理阶段
+              100);  // 默认优先级
         this.meta = Objects.requireNonNull(meta);
         this.compSourcePath = null;  // 无源码文件（预编译）
         this.metaPath = null;

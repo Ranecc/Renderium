@@ -17,6 +17,7 @@ import com.renderium.bridge.mc.FrameDataSnapshot;
 import com.renderium.bridge.mc.MCRenderBridge;
 import com.renderium.interception.context.RenderContext;
 import com.renderium.pipeline.node.AbstractPipelineNode;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -118,7 +119,7 @@ public class ShadowMapNodeV3Example extends AbstractPipelineNode {
         // ══════════════════════════════════════
         // Step 3: 批量变换可见区块顶点（核心优化路径）
         // ══════════════════════════════════════
-        int visibleSectionCount = fd.getChunkData().visibleSectionCount;
+        int visibleSectionCount = fd.getChunkData().getVisibleSectionCount();
         float[] transformedPositions;
 
         if (useV3 && visibleSectionCount > 0) {
@@ -189,7 +190,7 @@ public class ShadowMapNodeV3Example extends AbstractPipelineNode {
         // 使用 V3 引擎的批量矩阵乘法（如果可用）
         BatchTransformEngineV3 v3 = MCRenderBridge.getBatchTransformerV3();
         if (v3 != null) {
-            return v3.batchMatrixMultiply(new float[][]{proj}, new float[][]{view}, 1, null)[0];
+            return v3.batchMatrixMultiply(proj, view, 1, null);
         }
 
         // Fallback: 手动计算

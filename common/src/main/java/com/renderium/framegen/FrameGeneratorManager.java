@@ -22,9 +22,65 @@ public final class FrameGeneratorManager {
 
     private static final Logger LOGGER = Logger.getLogger(FrameGeneratorManager.class.getName());
 
+    /** 单例实例 */
+    private static volatile FrameGeneratorManager instance;
+
     private final Map<FrameGenType, FrameGenerator> generators = new EnumMap<>(FrameGenType.class);
     private FrameGenerator activeGenerator;
     private FrameGenMode currentMode = FrameGenMode.OFF;
+
+    /**
+     * 获取单例实例
+     *
+     * @return FrameGeneratorManager 单例实例
+     */
+    public static FrameGeneratorManager getInstance() {
+        if (instance == null) {
+            synchronized (FrameGeneratorManager.class) {
+                if (instance == null) {
+                    instance = new FrameGeneratorManager();
+                }
+            }
+        }
+        return instance;
+    }
+
+    /**
+     * 设置是否启用帧生成
+     *
+     * @param enabled 是否启用
+     */
+    public void setEnabled(boolean enabled) {
+        if (enabled) {
+            if (activeGenerator == null && !detectAndSelect()) {
+                LOGGER.warning("无法启用帧生成：无可用帧生成器");
+                return;
+            }
+            enable(currentMode != FrameGenMode.OFF ? currentMode : FrameGenMode.FIXED_2X);  // 使用 FIXED_2X 替代不存在的 HIGH
+        } else {
+            disable();
+        }
+    }
+
+    /**
+     * 设置超分辨率模式
+     *
+     * @param mode 模式字符串（OFF/NIS/FSR/DLSS）
+     */
+    public void setSrMode(Object mode) {
+        String modeStr = mode != null ? mode.toString().toUpperCase() : "OFF";
+        try {
+            FrameGenMode fgMode = FrameGenMode.valueOf(modeStr);
+            if (fgMode == FrameGenMode.OFF) {
+                disable();
+            } else {
+                enable(fgMode);
+            }
+        } catch (IllegalArgumentException e) {
+            LOGGER.warning("未知的超分辨率模式: " + modeStr + ", 使用 OFF");
+            disable();
+        }
+    }
 
     /**
      * 帧生成技术类型

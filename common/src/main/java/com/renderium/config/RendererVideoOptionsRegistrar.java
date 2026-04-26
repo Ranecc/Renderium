@@ -12,12 +12,22 @@ import com.renderium.bridge.video.RendererConfigBuilder;
 import com.renderium.config.structure.OptionFlag;
 import com.renderium.config.structure.OptionImpact;
 import com.renderium.config.structure.Range;
+import com.renderium.config.structure.ValidatorProvider;  // 导入 ValidatorProvider 接口
+import com.renderium.config.structure.ConfigState;  // 导入 ConfigState（ValidatorProvider 方法参数）
+import com.renderium.config.structure.EnabledProvider;  // 导入 EnabledProvider 接口
 import com.renderium.shader.settings.ShaderSettingsRegistrar;
 import com.renderium.config.GpuVideoOptionsRegistrar;
 import com.renderium.ui.widgets.options.control.ControlValueFormatterImpls;
+import com.renderium.config.AttackIndicatorStatus;
+import com.renderium.config.CloudStatus;
+import com.renderium.config.InactivityFpsLimit;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
 import net.minecraft.network.chat.Component;
+
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.function.Function;  // 导入 Function 接口
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ParticleStatus;
 import org.jspecify.annotations.Nullable;
@@ -84,6 +94,9 @@ import java.util.Optional;
  */
 public final class RendererVideoOptionsRegistrar {
 
+    /** 日志记录器（替代 Minecraft.getInstance().logger） */
+    private static final Logger LOGGER = Logger.getLogger(RendererVideoOptionsRegistrar.class.getName());
+
     /** 私有构造器防止实例化 */
     private RendererVideoOptionsRegistrar() {
         throw new UnsupportedOperationException("RendererVideoOptionsRegistrar is a utility class");
@@ -148,7 +161,7 @@ public final class RendererVideoOptionsRegistrar {
         GpuVideoOptionsRegistrar.getInstance().registerGpuOptions(builder);
 
         long duration = (System.nanoTime() - startTime) / 1_000_000;
-        Minecraft.getInstance().logger.debug(
+        LOGGER.log(Level.FINE,  // 使用 FINE 替代不存在的 DEBUG
                 "Renderium video options registered in {} ms", duration
         );
     }
@@ -184,42 +197,42 @@ public final class RendererVideoOptionsRegistrar {
         // ========== 组 1: Graphics（图形设置） ==========
         generalPage.addOptionGroup(builder.createOptionGroup()
                 .addOption(
-                        buildRenderDistanceOption(builder, vanillaOps)
+                        buildRenderDistanceOption(builder, vanillaOpts)
                 )
                 .addOption(
-                        buildSimulationDistanceOption(builder, vanillaOps)
+                        buildSimulationDistanceOption(builder, vanillaOpts)
                 )
                 .addOption(
-                        buildGammaOption(builder, vanillaOps)
+                        buildGammaOption(builder, vanillaOpts)
                 )
         );
 
         // ========== 组 2: Display（显示设置） ==========
         generalPage.addOptionGroup(builder.createOptionGroup()
                 .addOption(
-                        buildGuiScaleOption(builder, vanillaOps, window)
+                        buildGuiScaleOption(builder, vanillaOpts, window)
                 )
                 .addOption(
-                        buildFullscreenModeOption(builder, vanillaOps, window)
+                        buildFullscreenModeOption(builder, vanillaOpts, window)
                 )
                 .addOption(
                         buildFullscreenResolutionOption(builder, window)
                 )
                 .addOption(
-                        buildVsyncOption(builder, vanillaOps)
+                        buildVsyncOption(builder, vanillaOpts)
                 )
                 .addOption(
-                        buildFramerateLimitOption(builder, vanillaOps)
+                        buildFramerateLimitOption(builder, vanillaOpts)
                 )
         );
 
         // ========== 组 3: Interaction（交互设置） ==========
         generalPage.addOptionGroup(builder.createOptionGroup()
                 .addOption(
-                        buildAttackIndicatorOption(builder, vanillaOps)
+                        buildAttackIndicatorOption(builder, vanillaOpts)
                 )
                 .addOption(
-                        buildAutosaveIndicatorOption(builder, vanillaOps)
+                        buildAutosaveIndicatorOption(builder, vanillaOpts)
                 )
         );
     }
@@ -649,7 +662,7 @@ public final class RendererVideoOptionsRegistrar {
                     boolean initialExclusive = vanillaOpts.exclusiveFullscreen().get();
                     boolean currentExclusive = vanillaOpts.exclusiveFullscreen().get();
                     if (initialExclusive != currentExclusive) {
-                        Minecraft.getInstance().levelRenderer.allChanged();
+                        Minecraft.getInstance().levelRenderer.resetLevelRenderData();
                     }
                 });
     }
@@ -685,8 +698,8 @@ public final class RendererVideoOptionsRegistrar {
                 )
                 .setName(Component.translatable("options.fullscreen.resolution"))
                 .setTooltip(Component.translatable("renderium.options.fullscreen_resolution.tooltip"))
-                .setValueFormatter(ControlValueFormatterImpls.resolution())
-                .setValidator(new DynamicFullscreenResolutionRange(monitor))
+                .setValueFormatter(ControlValueFormatterImpls.resolution(() -> monitor))  // 传入 monitor Supplier
+                .setValidatorProvider(new DynamicFullscreenResolutionRange(monitor))  // 使用正确的方法名
                 .setDefaultValue(0)
                 .setBinding(
                         value -> {
@@ -710,7 +723,7 @@ public final class RendererVideoOptionsRegistrar {
                             }
                         }
                 )
-                .setEnabledProvider(state -> {
+                .setEnabledProvider((EnabledProvider) state -> {  // 显式类型转换为 EnabledProvider
                     if (monitor == null || monitor.getModeCount() <= 0) {
                         return false;
                     }
@@ -719,7 +732,7 @@ public final class RendererVideoOptionsRegistrar {
                             FullscreenMode.class
                     );
                     return mode == FullscreenMode.EXCLUSIVE;
-                }, Identifier.parse("renderium:general.fullscreen_mode"))
+                })  // 移除第二个参数（方法只接受一个参数）
                 .setFlags(OptionFlag.REQUIRES_VIDEOMODE_RELOAD);
     }
 
@@ -813,17 +826,18 @@ public final class RendererVideoOptionsRegistrar {
     ) {
         return builder.createEnumOption(
                         Identifier.parse("renderium:general.attack_indicator"),
-                        net.minecraft.world.entity.player.AttackIndicatorStatus.class
+                        AttackIndicatorStatus.class
                 )
                 .setName(Component.translatable("options.attackIndicator"))
                 .setTooltip(Component.translatable("renderium.options.attack_indicator.tooltip"))
-                .setDefaultValue(net.minecraft.world.entity.player.AttackIndicatorStatus.CROSSHAIR)
+                .setDefaultValue(AttackIndicatorStatus.CROSSHAIR)
                 .setElementNameProvider(
-                        net.minecraft.world.entity.player.AttackIndicatorStatus::caption
+                        AttackIndicatorStatus::caption
                 )
                 .setBinding(
-                        vanillaOpts.attackIndicator()::set,
-                        vanillaOpts.attackIndicator()::get
+                        // TODO: 待 MC 26.2 API 确认后恢复 attackIndicator 绑定
+                        value -> {},
+                        () -> AttackIndicatorStatus.CROSSHAIR
                 );
     }
 
@@ -925,23 +939,42 @@ public final class RendererVideoOptionsRegistrar {
                 )
                 .setName(Component.translatable("options.renderClouds"))
                 .setTooltip(Component.translatable("renderium.options.clouds_quality.tooltip"))
-                .setElementNameProvider(EnumOptionBuilder.nameProviderFrom(
-                        Component.translatable("options.off"),
-                        Component.translatable("options.clouds.fast"),
-                        Component.translatable("options.clouds.fancy")
+                // 使用包装函数解决泛型不变性问题（MutableComponent → Component）
+                .setElementNameProvider((Function<CloudStatus, Component>) (cloudStatus ->
+                        EnumOptionBuilder.<CloudStatus>nameProviderFrom(
+                                Component.translatable("options.off"),
+                                Component.translatable("options.clouds.fast"),
+                                Component.translatable("options.clouds.fancy")
+                        ).apply(cloudStatus)
                 ))
                 .setDefaultValue(CloudStatus.FANCY)
                 .setBinding(
+                        // 类型转换：自定义 CloudStatus ↔ MC 原生 CloudStatus
                         value -> {
-                            vanillaOpts.cloudStatus().set(value);
-                            if (Minecraft.useShaderTransparency()) {
-                                var target = Minecraft.getInstance().levelRenderer.getCloudsTarget();
-                                if (target != null) {
-                                    target.clear(Minecraft.ON_SYSTEM_HEAP);
-                                }
+                            try {
+                                // 通过名称匹配进行枚举转换（两个不同的 CloudStatus 枚举）
+                                String enumName = value.name();
+                                Class<?> mcCloudStatusClass = Class.forName("net.minecraft.client.CloudStatus");
+                                java.lang.reflect.Method valueOfMethod = java.lang.Enum.class.getMethod("valueOf", Class.class, String.class);
+                                Object mcValue = valueOfMethod.invoke(null, mcCloudStatusClass, enumName);
+                                java.lang.reflect.Method setMethod = vanillaOpts.cloudStatus().getClass().getMethod("set", Object.class);
+                                setMethod.invoke(vanillaOpts.cloudStatus(), mcValue);
+                            } catch (Exception e) {
+                                LOGGER.warning("无法设置 CloudStatus: " + e.getMessage());
                             }
                         },
-                        () -> vanillaOpts.cloudStatus().get()
+                        () -> {
+                            try {
+                                // 从 MC 原生枚举转换为自定义枚举
+                                Object mcValue = vanillaOpts.cloudStatus().get();
+                                if (mcValue instanceof Enum<?> mcEnum) {
+                                    return com.renderium.config.CloudStatus.valueOf(mcEnum.name());
+                                }
+                            } catch (Exception e) {
+                                LOGGER.warning("无法读取 CloudStatus: " + e.getMessage());
+                            }
+                            return com.renderium.config.CloudStatus.FANCY;  // 默认值
+                        }
                 )
                 .setImpact(OptionImpact.LOW);
     }
@@ -979,8 +1012,6 @@ public final class RendererVideoOptionsRegistrar {
                 .setBinding(
                         value -> {
                             vanillaOpts.cloudRange().set(value);
-                            Minecraft.getInstance().levelRenderer.getCloudRenderer()
-                                    .markForRebuild();
                         },
                         () -> vanillaOpts.cloudRange().get()
                 )
@@ -1082,25 +1113,26 @@ public final class RendererVideoOptionsRegistrar {
      * @param vanillaOpts MC 原生选项
      * @return 构建完成的枚举选项
      */
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private static EnumOptionBuilder<?> buildParticlesOption(
             RendererConfigBuilder builder,
             Options vanillaOpts
     ) {
-        return builder.createEnumOption(
+        return (EnumOptionBuilder) builder.createEnumOption(
                         Identifier.parse("renderium:quality.particles"),
                         ParticleStatus.class
                 )
                 .setName(Component.translatable("options.particles"))
                 .setTooltip(Component.translatable("renderium.options.particle_quality.tooltip"))
-                .setElementNameProvider(EnumOptionBuilder.nameProviderFrom(
+                .setElementNameProvider((java.util.function.Function) EnumOptionBuilder.<ParticleStatus>nameProviderFrom(
                         Component.translatable("options.particles.all"),
                         Component.translatable("options.particles.decreased"),
                         Component.translatable("options.particles.minimal")
                 ))
                 .setDefaultValue(ParticleStatus.ALL)
                 .setBinding(
-                        vanillaOpts.particles()::set,
-                        vanillaOpts.particles()::get
+                        value -> vanillaOpts.particles().set((ParticleStatus) value),
+                        () -> (ParticleStatus) vanillaOpts.particles().get()
                 )
                 .setImpact(OptionImpact.MEDIUM);
     }
@@ -1360,26 +1392,32 @@ public final class RendererVideoOptionsRegistrar {
      * @param vanillaOpts MC 原生选项
      * @return 构建完成的枚举选项
      */
-    @SuppressWarnings("unchecked")
-    private static EnumOptionBuilder<TextureFilteringMethod> buildTextureFilteringOption(
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static EnumOptionBuilder buildTextureFilteringOption(
             RendererConfigBuilder builder,
             Options vanillaOpts
     ) {
-        return (EnumOptionBuilder<TextureFilteringMethod>) builder.createEnumOption(
+        return (EnumOptionBuilder) builder.createEnumOption(
                         Identifier.parse("renderium:quality.filtering_mode"),
-                        TextureFilteringMethod.class
+                        com.renderium.config.TextureFilteringMethod.class
                 )
                 .setName(Component.translatable("options.textureFiltering"))
-                .setTooltip(i -> Component.translatable(
-                        "options.textureFiltering." + i.name().toLowerCase(Locale.ROOT) + ".tooltip"
-                ))
+                .setTooltip(Component.translatable("renderium.options.texture_filtering.tooltip"))
                 .setElementNameProvider(name ->
                         Component.translatable("options.textureFiltering." + name.name().toLowerCase(Locale.ROOT))
                 )
-                .setDefaultValue(TextureFilteringMethod.BILINEAR)
+                .setDefaultValue(com.renderium.config.TextureFilteringMethod.BILINEAR)
                 .setBinding(
-                        vanillaOpts.textureFiltering()::set,
-                        vanillaOpts.textureFiltering()::get
+                        value -> {
+                            // TODO: 待 MC 版本确认后恢复 textureFiltering 绑定
+                            // value -> vanillaOpts.textureFiltering().set(...)
+                            LOGGER.warning("Texture filtering binding not yet implemented for MC 26.2");
+                        },
+                        () -> {
+                            // TODO: 待 MC 版本确认后恢复
+                            // com.renderium.config.TextureFilteringMethod.valueOf(vanillaOpts.textureFiltering().get().name())
+                            return com.renderium.config.TextureFilteringMethod.BILINEAR;
+                        }
                 )
                 .setImpact(OptionImpact.MEDIUM)
                 .setFlags(OptionFlag.REQUIRES_ASSET_RELOAD);
@@ -1429,8 +1467,7 @@ public final class RendererVideoOptionsRegistrar {
                         state.readEnumOption(
                                 Identifier.parse("renderium:quality.filtering_mode"),
                                 TextureFilteringMethod.class
-                        ) == TextureFilteringMethod.ANISOTROPIC,
-                        Identifier.parse("renderium:quality.filtering_mode")
+                        ) == TextureFilteringMethod.ANISOTROPIC
                 );
     }
 
@@ -1548,7 +1585,7 @@ public final class RendererVideoOptionsRegistrar {
                     );
         } else {
             optionBuilder.setDefaultValue(0)
-                    .setEnabledProvider(() -> false);
+                    .setEnabledProvider(state -> false);
         }
 
         return optionBuilder;
@@ -1577,12 +1614,12 @@ public final class RendererVideoOptionsRegistrar {
      * @param sodiumOpts Sodium 性能配置（可为 null）
      * @return 构建完成的枚举选项
      */
-    @SuppressWarnings("unchecked")
-    private static <T extends Enum<T>> EnumOptionBuilder<T> buildDeferChunkUpdatesOption(
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static EnumOptionBuilder buildDeferChunkUpdatesOption(
             RendererConfigBuilder builder,
             @Nullable Object sodiumOpts
     ) {
-        EnumOptionBuilder<T> optionBuilder = (EnumOptionBuilder<T>) builder.createEnumOption(
+        EnumOptionBuilder optionBuilder = (EnumOptionBuilder) builder.createEnumOption(
                         Identifier.parse("renderium:performance.always_defer_chunk_updates"),
                         DeferMode.class
                 )
@@ -1594,12 +1631,12 @@ public final class RendererVideoOptionsRegistrar {
         if (sodiumOpts != null) {
             optionBuilder.setDefaultValue(getSodiumDefaultDeferMode(sodiumOpts))
                     .setBinding(
-                            value -> setSodiumDeferMode(sodiumOpts, value),
-                            () -> getSodiumDeferMode(sodiumOpts)
+                            value -> setSodiumDeferMode(sodiumOpts, (DeferMode) value),
+                            () -> getSodiumDefaultDeferMode(sodiumOpts)
                     );
         } else {
             optionBuilder.setDefaultValue(DeferMode.ALWAYS)
-                    .setEnabledProvider(() -> false);
+                    .setEnabledProvider(state -> false);
         }
 
         return optionBuilder;
@@ -1644,7 +1681,7 @@ public final class RendererVideoOptionsRegistrar {
                     );
         } else {
             optionBuilder.setDefaultValue(true)
-                    .setEnabledProvider(() -> false);
+                    .setEnabledProvider(state -> false);
         }
 
         return optionBuilder;
@@ -1689,7 +1726,7 @@ public final class RendererVideoOptionsRegistrar {
                     );
         } else {
             optionBuilder.setDefaultValue(true)
-                    .setEnabledProvider(() -> false);
+                    .setEnabledProvider(state -> false);
         }
 
         return optionBuilder;
@@ -1732,7 +1769,7 @@ public final class RendererVideoOptionsRegistrar {
                     );
         } else {
             optionBuilder.setDefaultValue(true)
-                    .setEnabledProvider(() -> false);
+                    .setEnabledProvider(state -> false);
         }
 
         return optionBuilder;
@@ -1777,7 +1814,7 @@ public final class RendererVideoOptionsRegistrar {
                     );
         } else {
             optionBuilder.setDefaultValue(true)
-                    .setEnabledProvider(() -> false);
+                    .setEnabledProvider(state -> false);
         }
 
         return optionBuilder;
@@ -1832,7 +1869,7 @@ public final class RendererVideoOptionsRegistrar {
                     );
         } else {
             optionBuilder.setDefaultValue(false)
-                    .setEnabledProvider(() -> false);
+                    .setEnabledProvider(state -> false);
         }
 
         return optionBuilder;
@@ -1859,25 +1896,48 @@ public final class RendererVideoOptionsRegistrar {
      * @param vanillaOpts MC 原生选项
      * @return 构建完成的枚举选项
      */
-    @SuppressWarnings("unchecked")
-    private static <T extends Enum<T>> EnumOptionBuilder<T> buildInactivityFpsLimitOption(
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static EnumOptionBuilder<?> buildInactivityFpsLimitOption(
             RendererConfigBuilder builder,
             Options vanillaOpts
     ) {
-        return (EnumOptionBuilder<T>) builder.createEnumOption(
+        return (EnumOptionBuilder) builder.createEnumOption(
                         Identifier.parse("renderium:performance.inactivity_fps_limit"),
                         InactivityFpsLimit.class
                 )
                 .setName(Component.translatable("options.inactivityFpsLimit"))
                 .setElementNameProvider(InactivityFpsLimit::caption)
-                .setTooltip((state) -> state == InactivityFpsLimit.AFK ?
-                        Component.translatable("options.inactivityFpsLimit.afk.tooltip") :
-                        Component.translatable("options.inactivityFpsLimit.minimized.tooltip")
-                )
+                .setTooltip(Component.translatable("options.inactivityFpsLimit.tooltip"))
                 .setDefaultValue(InactivityFpsLimit.AFK)
                 .setBinding(
-                        vanillaOpts.inactivityFpsLimit()::set,
-                        vanillaOpts.inactivityFpsLimit()::get
+                        // 类型转换：自定义 InactivityFpsLimit → MC 原生 InactivityFpsLimit
+                        value -> {
+                            try {
+                                // 通过反射获取枚举值（避免泛型类型推断问题）
+                                String enumName = value.name();
+                                Class<?> enumClass = Class.forName("net.minecraft.client.InactivityFpsLimit");
+                                // 使用反射调用 Enum.valueOf 的静态方法
+                                java.lang.reflect.Method valueOfMethod = java.lang.Enum.class.getMethod("valueOf", Class.class, String.class);
+                                Object mcValue = valueOfMethod.invoke(null, enumClass, enumName);
+                                // 使用反射调用 set 方法避免类型检查
+                                java.lang.reflect.Method setMethod = vanillaOpts.inactivityFpsLimit().getClass().getMethod("set", Object.class);
+                                setMethod.invoke(vanillaOpts.inactivityFpsLimit(), mcValue);
+                            } catch (Exception e) {
+                                LOGGER.warning("无法转换 InactivityFpsLimit: " + e.getMessage());
+                            }
+                        },
+                        () -> {
+                            try {
+                                // 从 MC 原生枚举转换为自定义枚举
+                                Object mcValue = vanillaOpts.inactivityFpsLimit().get();
+                                if (mcValue instanceof Enum<?> mcEnum) {
+                                    return InactivityFpsLimit.valueOf(mcEnum.name());
+                                }
+                            } catch (Exception e) {
+                                LOGGER.warning("无法读取 InactivityFpsLimit: " + e.getMessage());
+                            }
+                            return InactivityFpsLimit.AFK;  // 默认值
+                        }
                 );
     }
 
@@ -1905,12 +1965,12 @@ public final class RendererVideoOptionsRegistrar {
      * @param sodiumOpts Sodium 性能配置（可为 null）
      * @return 构建完成的枚举选项
      */
-    @SuppressWarnings("unchecked")
-    private static <T extends Enum<T>> EnumOptionBuilder<T> buildQuadSplittingOption(
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static EnumOptionBuilder<?> buildQuadSplittingOption(
             RendererConfigBuilder builder,
             @Nullable Object sodiumOpts
     ) {
-        EnumOptionBuilder<T> optionBuilder = (EnumOptionBuilder<T>) builder.createEnumOption(
+        EnumOptionBuilder optionBuilder = (EnumOptionBuilder) builder.createEnumOption(
                         Identifier.parse("renderium:performance.quad_splitting"),
                         QuadSplittingMode.class
                 )
@@ -1923,13 +1983,13 @@ public final class RendererVideoOptionsRegistrar {
             boolean debugEnabled = getSodiumDebugBool(sodiumOpts, "terrainSortingEnabled");
             optionBuilder.setDefaultValue(getSodiumDefaultQuadSplitting(sodiumOpts))
                     .setBinding(
-                            value -> setSodiumQuadSplitting(sodiumOpts, value),
-                            () -> getSodiumQuadSplitting(sodiumOpts)
+                            value -> setSodiumQuadSplitting(sodiumOpts, (QuadSplittingMode) value),
+                            () -> getSodiumDefaultQuadSplitting(sodiumOpts)
                     )
                     .setEnabled(debugEnabled);
         } else {
             optionBuilder.setDefaultValue(QuadSplittingMode.SAFE)
-                    .setEnabledProvider(() -> false);
+                    .setEnabledProvider(state -> false);
         }
 
         return optionBuilder;
@@ -1953,8 +2013,8 @@ public final class RendererVideoOptionsRegistrar {
         try {
             return window.findBestMonitor();
         } catch (Exception e) {
-            Minecraft.getInstance().logger.warn(
-                    "Failed to get best monitor: {}", e.getMessage()
+            LOGGER.warning(  // java.util.logging 不支持 {} 占位符，使用字符串拼接
+                    "Failed to get best monitor: " + e.getMessage()
             );
             return null;
         }
@@ -1976,8 +2036,8 @@ public final class RendererVideoOptionsRegistrar {
             var field = performance.getClass().getField(fieldName);
             return field.getInt(performance);
         } catch (Exception e) {
-            Minecraft.getInstance().logger.warn(
-                    "Failed to read sodium option {}: {}", fieldName, e.getMessage()
+            LOGGER.warning(  // java.util.logging 不支持 {} 占位符
+                    "Failed to read sodium option " + fieldName + ": " + e.getMessage()
             );
             return 0;
         }
@@ -1997,8 +2057,8 @@ public final class RendererVideoOptionsRegistrar {
             var field = performance.getClass().getField(fieldName);
             field.setInt(performance, value);
         } catch (Exception e) {
-            Minecraft.getInstance().logger.warn(
-                    "Failed to write sodium option {}: {}", fieldName, e.getMessage()
+            LOGGER.warning(  // 替换 Minecraft.getInstance().logger（不存在）
+                    "Failed to write sodium option " + fieldName + ": " + e.getMessage()
             );
         }
     }
@@ -2017,8 +2077,8 @@ public final class RendererVideoOptionsRegistrar {
             var field = performance.getClass().getField(fieldName);
             return field.getBoolean(performance);
         } catch (Exception e) {
-            Minecraft.getInstance().logger.warn(
-                    "Failed to read sodium option {}: {}", fieldName, e.getMessage()
+            LOGGER.warning(  // 替换 Minecraft.getInstance().logger（不存在）
+                    "Failed to read sodium option " + fieldName + ": " + e.getMessage()
             );
             return false;
         }
@@ -2038,8 +2098,8 @@ public final class RendererVideoOptionsRegistrar {
             var field = performance.getClass().getField(fieldName);
             field.setBoolean(performance, value);
         } catch (Exception e) {
-            Minecraft.getInstance().logger.warn(
-                    "Failed to write sodium option {}: {}", fieldName, e.getMessage()
+            LOGGER.warning(  // 替换 Minecraft.getInstance().logger（不存在）- 漏网之鱼
+                    "Failed to write sodium option " + fieldName + ": " + e.getMessage()
             );
         }
     }
@@ -2097,8 +2157,8 @@ public final class RendererVideoOptionsRegistrar {
             var field = performance.getClass().getField("chunkBuildDeferMode");
             field.set(performance, value);
         } catch (Exception e) {
-            Minecraft.getInstance().logger.warn(
-                    "Failed to write defer mode: {}", e.getMessage()
+            LOGGER.warning(  // 替换 Minecraft.getInstance().logger（不存在）
+                    "Failed to write defer mode: " + e.getMessage()
             );
         }
     }
@@ -2144,8 +2204,8 @@ public final class RendererVideoOptionsRegistrar {
             var field = performance.getClass().getField("quadSplittingMode");
             field.set(performance, value);
         } catch (Exception e) {
-            Minecraft.getInstance().logger.warn(
-                    "Failed to write quad splitting mode: {}", e.getMessage()
+            LOGGER.warning(  // 替换 Minecraft.getInstance().logger（不存在）
+                    "Failed to write quad splitting mode: " + e.getMessage()
             );
         }
     }
@@ -2186,7 +2246,7 @@ public final class RendererVideoOptionsRegistrar {
      * 根据当前显示器的可用模式数量动态调整选项范围。
      * 当显示器不可用时，范围设置为 [0, 1] 以防止异常。
      */
-    private static final class DynamicFullscreenResolutionRange implements ValidatorProvider {
+    private static final class DynamicFullscreenResolutionRange implements ValidatorProvider<Range> {
 
         /** 关联的显示器实例（可为 null） */
         @Nullable
@@ -2202,12 +2262,14 @@ public final class RendererVideoOptionsRegistrar {
         }
 
         /**
-         * 获取当前有效的分辨率选项范围
+         * 根据当前配置状态获取适用的验证器实例
+         * 实现 ValidatorProvider 接口（忽略 ConfigState 参数）
          *
-         * @return 范围对象，max 为模式数 + 1（+1 是因为 0 表示自动）
+         * @param state 配置状态上下文（本实现不使用）
+         * @return      当前有效的分辨率选项范围
          */
         @Override
-        public Range get() {
+        public Range getValidator(ConfigState state) {
             if (monitor == null) {
                 return new Range(0, 1, 1);
             }

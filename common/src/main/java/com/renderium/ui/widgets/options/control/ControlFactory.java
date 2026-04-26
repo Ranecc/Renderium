@@ -108,9 +108,9 @@ public final class ControlFactory {
 
         } else if (option instanceof IntegerOption intOpt) {
             var range = intOpt.getRange();
-            int rangeSize = range.max() - range.min();
+            int rangeSize = range.getMax() - range.getMin();
 
-            if (range.step() == 1 && rangeSize <= SMALL_RANGE_THRESHOLD) {
+            if (range.getStep() == 1 && rangeSize <= SMALL_RANGE_THRESHOLD) {
                 return createSmallRangeControl(intOpt);
             } else {
                 return createSlider(intOpt);
@@ -217,7 +217,7 @@ public final class ControlFactory {
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static CyclingControl createSmallRangeControl(IntegerOption option) {
         return new CyclingControl(
-            (RendererOption) option,
+            option,
             () -> option.formatValue(option.getValidatedValue()),
             null
         );
@@ -245,7 +245,11 @@ public final class ControlFactory {
         return new CyclingControl(
             option,
             option.getEnumClass(),
-            () -> option.getElementName(option.getValue()),
+            () -> {
+                // 使用原始类型绕过泛型检查
+                Object value = option.getValue();
+                return ((EnumOption) option).getElementName((Enum) value);
+            },
             null
         );
     }

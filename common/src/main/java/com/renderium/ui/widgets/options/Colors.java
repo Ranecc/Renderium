@@ -167,7 +167,7 @@ public final class Colors {
         float[] hsv = ColorHelper.toHSV(color);
         float s = clamp(hsv[1] * (1 - Math.abs(factor)), 0, 1);
         float b = clamp(hsv[2] * (1 + factor), 0, 1);
-        return transferAlpha(fromHSV(hsv[0], s, b), color);
+        return ColorHelper.transferAlpha(ColorHelper.fromHSV(hsv[0], s, b), color);
     }
 
     /**

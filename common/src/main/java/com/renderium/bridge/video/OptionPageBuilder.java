@@ -2,6 +2,7 @@ package com.renderium.bridge.video;
 
 import net.minecraft.network.chat.Component;
 
+import com.renderium.config.structure.RendererOptionGroup;
 import com.renderium.config.structure.RendererOptionPage;
 
 import java.util.ArrayList;
@@ -80,6 +81,18 @@ public class OptionPageBuilder {
         return this;
     }
 
+    public OptionPageBuilder displayName(String name) {
+        return setName(Component.literal(name));
+    }
+
+    public OptionPageBuilder description(String desc) {
+        return this;
+    }
+
+    public OptionPageBuilder icon(String icon) {
+        return this;
+    }
+
     /**
      * 向页面添加一个选项组
      * <p>
@@ -96,6 +109,13 @@ public class OptionPageBuilder {
         }
         this.groups.add(group);
         return this;
+    }
+
+    public OptionGroupBuilder group(String name) {
+        OptionGroupBuilder g = new OptionGroupBuilder();
+        g.setName(Component.literal(name));
+        this.groups.add(g);
+        return g;
     }
 
     /**

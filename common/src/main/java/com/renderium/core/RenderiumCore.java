@@ -31,7 +31,7 @@ import com.renderium.backend.BackendInterceptor;
 import com.renderium.backend.FrameData;
 import com.renderium.config.RenderiumConfig;
 import com.renderium.core.component.*;
-import com.renderium.core.memory.FrameDataArena;
+import com.renderium.core.memory.OffHeapFrameArena;
 import com.renderium.core.phase.PhaseTransitionDetector;
 import com.renderium.core.quality.LyapunovQualityChecker;
 import com.renderium.core.precision.AdaptivePrecisionManager;
@@ -39,10 +39,12 @@ import com.renderium.core.quality.ConvergenceMonitor;
 import com.renderium.pipeline.AdaptivePathSelector;
 import com.renderium.pipeline.AsyncRenderPipeline;
 import com.renderium.platform.PlatformHelper;
-import com.renderium.interception.post.SuperResolutionManager;
+import com.renderium.superres.SuperResolutionManager;
 import com.renderium.framegen.FrameGeneratorManager;
 import com.renderium.reflex.ReflexManager;
 import com.renderium.streamline.SLContext;
+import com.renderium.streamline.SLConfigLoader;
+import com.renderium.streamline.StreamlineInitializationResult;
 import com.renderium.streamline.VulkanStreamlineBridge;
 import com.renderium.streamline.FrameEvaluator;
 import com.renderium.accel.RenderiumAccelerator;
@@ -166,8 +168,12 @@ public final class RenderiumCore implements AutoCloseable {
     /** 后端拦截器 */
     private BackendInterceptor backendInterceptor;
 
-    /** VMA Arena 对象池 */
-    private final FrameDataArena frameDataArena;
+    /** Off-heap frame arena (FFM MemorySegment + native memory) */
+    private final OffHeapFrameArena frameDataArena;
+    private long currentDepthTexture;
+    private long currentColorTexture;
+    private int currentWidth = 1920;
+    private int currentHeight = 1080;
 
     /** 自适应路径选择器 */
     private final AdaptivePathSelector pathSelector = new AdaptivePathSelector();
@@ -179,7 +185,7 @@ public final class RenderiumCore implements AutoCloseable {
         this.cullers = new ConcurrentHashMap<>();
         this.postProcessors = new CopyOnWriteArrayList<>();
         this.currentTextures = new TextureHolder();
-        this.frameDataArena = new FrameDataArena(DEFAULT_RENDER_WIDTH, DEFAULT_RENDER_HEIGHT);
+        this.frameDataArena = new OffHeapFrameArena(DEFAULT_RENDER_WIDTH, DEFAULT_RENDER_HEIGHT);
         this.qualityAssurance = new QualityAssuranceManager();
     }
 
@@ -563,6 +569,9 @@ public final class RenderiumCore implements AutoCloseable {
     public String getShortCircuitReason() { return shortCircuitReason; }
     public boolean isActive() { return initialized && !shortCircuited; }
     public long getVulkanDevice() { return vulkanDevice; }
+
+    /** 获取 Vulkan 实例句柄（当前实现返回设备句柄作为兼容） */
+    public long getVulkanInstance() { return vulkanDevice; }
     public int getCurrentFrame() { return currentFrame; }
     public float getLastDeltaTime() { return lastDeltaTime; }
 
@@ -640,8 +649,41 @@ public final class RenderiumCore implements AutoCloseable {
         return streamlineInit != null ? streamlineInit.getFrameEvaluator() : null;
     }
 
-    public FrameDataArena getFrameDataArena() { return frameDataArena; }
+    public OffHeapFrameArena getFrameDataArena() { return frameDataArena; }
     public RenderiumConfig getConfig() { return config; }
+
+    /**
+     * 保存配置到文件（公共 API）
+     * <p>
+     * 将当前配置持久化到磁盘，供设置界面调用。
+     *
+     * @throws IllegalStateException 若未初始化或配置为 null
+     */
+    public void saveConfig() {
+        if (!initialized) {
+            throw new IllegalStateException("Renderium 未初始化，无法保存配置");
+        }
+        saveConfigSafely();
+        LOGGER.info("配置已保存");
+    }
+
+    /**
+     * 重置配置为默认值（公共 API）
+     * <p>
+     * 将所有配置项恢复到出厂默认值，
+     * 供设置界面的"恢复默认"功能使用。
+     *
+     * @throws IllegalStateException 若未初始化
+     */
+    public void resetConfig() {
+        if (!initialized) {
+            throw new IllegalStateException("Renderium 未初始化，无法重置配置");
+        }
+        if (config != null) {
+            config.resetToDefaults();
+            LOGGER.info("配置已重置为默认值");
+        }
+    }
 
     public LyapunovQualityChecker getLyapunovQualityChecker() {
         return qualityAssurance.getLyapunovChecker();
@@ -649,6 +691,29 @@ public final class RenderiumCore implements AutoCloseable {
 
     public PhaseTransitionDetector getPhaseDetector() {
         return qualityAssurance.getPhaseDetector();
+    }
+
+    public void updateTextures(long depthTexture, long colorTexture, int width, int height) {
+        this.currentDepthTexture = depthTexture;
+        this.currentColorTexture = colorTexture;
+        this.currentWidth = width;
+        this.currentHeight = height;
+    }
+
+    public boolean isSuperResolutionEnabled() {
+        return techManager != null && techManager.isSuperResolutionEnabled();
+    }
+
+    public boolean isFrameGenerationEnabled() {
+        return techManager != null && techManager.isFrameGenerationEnabled();
+    }
+
+    public void presentFrame() {
+        if (techManager != null) {
+            if (techManager.isFrameGenerationEnabled()) {
+                frameDataArena.beginFrame(currentFrame++);
+            }
+        }
     }
 
     public AdaptivePrecisionManager getAdaptivePrecisionManager() {
@@ -714,7 +779,7 @@ public final class RenderiumCore implements AutoCloseable {
 
     private void initializeStreamline() {
         streamlineInit = new StreamlineInitializer();
-        StreamlineInitializationResult result = streamlineInit.initialize(null);
+        var result = streamlineInit.initialize(null);
         if (!result.isSuccess()) {
             LOGGER.warning("Streamline initialization failed: " + result.getErrorMessage());
         }
@@ -726,9 +791,10 @@ public final class RenderiumCore implements AutoCloseable {
         SLContext slContext = streamlineInit != null ? streamlineInit.getSLContext() : null;
         SLConfigLoader configLoader = streamlineInit != null ? streamlineInit.getConfigLoader() : null;
         FrameEvaluator evaluator = streamlineInit != null ? streamlineInit.getFrameEvaluator() : null;
+        VulkanStreamlineBridge bridge = streamlineInit != null ? streamlineInit.getBridge() : null;
 
-        techManager.initializeSuperResolution(slContext, configLoader);
-        techManager.initializeFrameGeneration(slContext, evaluator);
+        techManager.initializeSuperResolution(slContext, configLoader, bridge, evaluator);
+        techManager.initializeFrameGeneration(slContext, evaluator, bridge);
         techManager.initializeReflex(slContext);
     }
 

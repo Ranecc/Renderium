@@ -12,6 +12,9 @@ import com.renderium.bridge.video.RendererConfigBuilder;
 import com.renderium.config.structure.OptionFlag;
 import com.renderium.config.structure.OptionImpact;
 import com.renderium.config.structure.Range;
+import com.renderium.superres.SuperResolutionAdapter;
+import com.renderium.config.RenderiumConfig.ReflexMode;  // 导入 ReflexMode 枚举
+import com.renderium.framegen.FrameGenMode;  // 导入 FrameGenMode 枚举
 import com.renderium.ui.widgets.options.control.ControlValueFormatterImpls;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -119,15 +122,21 @@ public final class RendererSpecialOptionsRegistrar {
                                         case NONE -> SuperResolutionAdapter.Technology.DLSS;  // 默认回退
                                         case DLSS -> SuperResolutionAdapter.Technology.DLSS;
                                         case FSR -> SuperResolutionAdapter.Technology.FSR;
-                                        case NIS -> SuperResolutionAdapter.Technology.NIS;
-                                        case XeSS -> SuperResolutionAdapter.Technology.DLSS;  // 暂不支持
+                                        case NIS -> SuperResolutionAdapter.Technology.FSR;  // Technology 枚举没有 NIS，使用 FSR
+                                        case XeSS -> SuperResolutionAdapter.Technology.DLSS;  // 暂不支持（Technology 没有 XeSS）
                                     }
                                 ),
-                                () -> switch (config.getTechnology()) {
-                                    case DLSS -> SuperResolutionTechnique.DLSS;
-                                    case FSR -> SuperResolutionTechnique.FSR;
-                                    case NIS -> SuperResolutionTechnique.NIS;
-                                    default -> SuperResolutionTechnique.NONE;
+                                () -> {
+                                    // 将 SuperResolutionAdapter.Technology 转换为 SuperResolutionTechnique
+                                    var tech = config.getTechnology();
+                                    return switch (tech) {
+                                        case DLSS -> SuperResolutionTechnique.DLSS;
+                                        case FSR -> SuperResolutionTechnique.FSR;
+                                        case XESS -> SuperResolutionTechnique.FSR;  // XeSS 映射到 FSR
+                                        case NATIVE -> SuperResolutionTechnique.NONE;
+                                        case AUTO -> SuperResolutionTechnique.DLSS;  // Auto 默认 DLSS
+                                        default -> SuperResolutionTechnique.NONE;
+                                    };
                                 }
                             )
                             .setEnabledProvider(state ->
@@ -154,15 +163,21 @@ public final class RendererSpecialOptionsRegistrar {
                                         case PERFORMANCE -> SuperResolutionAdapter.Quality.PERFORMANCE;
                                         case BALANCED -> SuperResolutionAdapter.Quality.BALANCED;
                                         case QUALITY -> SuperResolutionAdapter.Quality.QUALITY;
-                                        case ULTRA -> SuperResolutionAdapter.Quality.ULTRA;
+                                        case ULTRA -> SuperResolutionAdapter.Quality.ULTRA_QUALITY;  // Quality 枚举使用 ULTRA_QUALITY（最高质量级别）
                                     }
                                 ),
-                                () -> switch (config.getQuality()) {
-                                    case PERFORMANCE -> QualityPreset.PERFORMANCE;
-                                    case BALANCED -> QualityPreset.BALANCED;
-                                    case QUALITY -> QualityPreset.QUALITY;
-                                    case ULTRA -> QualityPreset.ULTRA;
-                                    default -> QualityPreset.BALANCED;
+                                () -> {
+                                    // 将 SuperResolutionAdapter.Quality 转换为 QualityPreset
+                                    var quality = config.getQuality();
+                                    return switch (quality) {
+                                        case ULTRA_QUALITY -> QualityPreset.ULTRA;  // ULTRA_QUALITY 映射到 ULTRA
+                                        case QUALITY -> QualityPreset.QUALITY;
+                                        case BALANCED -> QualityPreset.BALANCED;
+                                        case PERFORMANCE -> QualityPreset.PERFORMANCE;
+                                        case ULTRA_PERFORMANCE -> QualityPreset.PERFORMANCE;  // 超高性能映射到性能模式
+                                        case NATIVE -> QualityPreset.ULTRA;  // 原生质量映射到极致
+                                        default -> QualityPreset.BALANCED;
+                                    };
                                 }
                             )
                             .setEnabledProvider(state ->
@@ -283,13 +298,12 @@ public final class RendererSpecialOptionsRegistrar {
                                 value -> config.setFrameGenMode(
                                     switch (value) {
                                         case NONE -> FrameGenMode.FIXED_2X;  // 默认
-                                        case DLSS_FG -> FrameGenMode.DLSS_FG;
-                                        case FG_X -> FrameGenMode.FG_X;
+                                        case DLSS_FG -> FrameGenMode.FIXED_2X;  // DLSS 帧生成，回退到 FIXED_2X
+                                        case FG_X -> FrameGenMode.DYNAMIC;  // 通用帧生成，使用 DYNAMIC 模式
                                     }
                                 ),
                                 () -> switch (config.getFrameGenMode()) {
-                                    case DLSS_FG -> FrameGenModeOption.DLSS_FG;
-                                    case FG_X -> FrameGenModeOption.FG_X;
+                                    case FIXED_2X -> FrameGenModeOption.DLSS_FG;
                                     default -> FrameGenModeOption.NONE;
                                 }
                             )
@@ -401,12 +415,12 @@ public final class RendererSpecialOptionsRegistrar {
                                     switch (value) {
                                         case OFF -> ReflexMode.LOW_LATENCY;  // 默认
                                         case LOW -> ReflexMode.LOW_LATENCY;
-                                        case ULTRA -> ReflexMode.ULTRA_LOW_LATENCY;
+                                        case ULTRA -> ReflexMode.LOW_LATENCY_BOOST;  // 使用 BOOST 代替不存在的 ULTRA
                                     }
                                 ),
                                 () -> switch (config.getReflexMode()) {
                                     case LOW_LATENCY -> LatencyModeOption.LOW;
-                                    case ULTRA_LOW_LATENCY -> LatencyModeOption.ULTRA;
+                                    case LOW_LATENCY_BOOST -> LatencyModeOption.ULTRA;  // 映射 BOOST 到 ULTRA
                                     default -> LatencyModeOption.OFF;
                                 }
                             )

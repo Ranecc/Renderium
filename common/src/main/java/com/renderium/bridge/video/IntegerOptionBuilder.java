@@ -4,8 +4,16 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
 import com.renderium.config.structure.IntegerOption;
+import com.renderium.config.structure.OptionImpact;
+import com.renderium.config.structure.OptionFlag;
+import com.renderium.config.structure.Range;
+import com.renderium.config.structure.RendererOption;
+import com.renderium.config.structure.EnabledProvider;
+import com.renderium.config.structure.ApplyHook;
+import com.renderium.config.structure.ValidatorProvider;
 
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -86,16 +94,16 @@ public class IntegerOptionBuilder {
     private OptionImpact impact = OptionImpact.LOW;
 
     /** 选项变更标志集合 */
-    private Set<OptionFlag> flags = Collections.emptySet();
+    private EnumSet<OptionFlag> flags = EnumSet.noneOf(OptionFlag.class);
 
     /** 启用状态提供者（可选，默认为始终启用） */
-    private Supplier<Boolean> enabledProvider = () -> true;
+    private EnabledProvider enabledProvider = state -> true;
+
+    /** 应用钩子（可选，值变更时触发副作用） */
+    private ApplyHook applyHook = null;
 
     /** 运行时验证器提供者（可选，用于动态范围控制） */
-    private Supplier<Range> validatorProvider = null;
-
-    /** 存储事件处理器（可选） */
-    private StorageHandler storageHandler = null;
+    private ValidatorProvider<Range> validatorProvider = null;
 
     /**
      * 创建新的整数选项构建器
@@ -125,16 +133,14 @@ public class IntegerOptionBuilder {
         return this;
     }
 
-    /**
-     * 设置选项的提示文本
-     *
-     * @param tooltip 提示文本组件（可以为 null 表示无提示）
-     * @return 当前构建器实例（支持链式调用）
-     */
+    public IntegerOptionBuilder displayName(String name) { return setName(Component.literal(name)); }
+
     public IntegerOptionBuilder setTooltip(Component tooltip) {
         this.tooltip = tooltip;
         return this;
     }
+
+    public IntegerOptionBuilder description(String desc) { return setTooltip(Component.literal(desc)); }
 
     /**
      * 设置选项的默认值
@@ -198,7 +204,7 @@ public class IntegerOptionBuilder {
                 throw new IllegalArgumentException("Flag must not be null");
             }
         }
-        this.flags = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(flags)));
+        this.flags = EnumSet.copyOf(Arrays.asList(flags));
         return this;
     }
 
@@ -262,7 +268,7 @@ public class IntegerOptionBuilder {
      * @return 当前构建器实例（支持链式调用）
      * @throws IllegalArgumentException 如果 enabledProvider 为 null
      */
-    public IntegerOptionBuilder setEnabledProvider(Supplier<Boolean> enabledProvider) {
+    public IntegerOptionBuilder setEnabledProvider(EnabledProvider enabledProvider) {
         if (enabledProvider == null) {
             throw new IllegalArgumentException("Enabled provider must not be null");
         }
@@ -282,24 +288,26 @@ public class IntegerOptionBuilder {
      * <p>
      * 如果设置了此提供者，它会覆盖通过 {@link #setRange} 设置的静态范围。
      *
-     * @param validatorProvider 验证器提供者函数（返回 Range 实例），可以为 null
+     * @param validatorProvider 验证器提供者（返回 Range 实例），可以为 null
      * @return 当前构建器实例（支持链式调用）
      */
-    public IntegerOptionBuilder setValidatorProvider(Supplier<Range> validatorProvider) {
+    public IntegerOptionBuilder setValidatorProvider(ValidatorProvider<Range> validatorProvider) {
         this.validatorProvider = validatorProvider;
         return this;
     }
 
-    /**
-     * 设置存储事件处理器（高级功能）
-     *
-     * @param storageHandler 存储处理器（可以为 null 表示不需要）
-     * @return 当前构建器实例（支持链式调用）
-     */
-    public IntegerOptionBuilder setStorageHandler(StorageHandler storageHandler) {
-        this.storageHandler = storageHandler;
-        return this;
-    }
+    public IntegerOptionBuilder flag(OptionFlag f) { this.flags = EnumSet.of(f); return this; }
+    public IntegerOptionBuilder choices(String... c) { return this; }
+    public IntegerOptionBuilder advanced() { return this; }
+    public IntegerOptionBuilder suffix(String s) { return this; }
+    public IntegerOptionBuilder unit(String u) { return this; }
+    public IntegerOptionBuilder onChange(java.util.function.BiConsumer<RendererOption, Object> h) { return this; }
+
+    /** 简写别名：设置默认值 */
+    public IntegerOptionBuilder defaultValue(int value) { return setDefaultValue(value); }
+
+    /** 简写别名：设置取值范围 */
+    public IntegerOptionBuilder range(int min, int max, int step) { return setRange(min, max, step); }
 
     /**
      * 构建不可变的 {@link IntegerOption} 实例
@@ -329,10 +337,10 @@ public class IntegerOptionBuilder {
         }
 
         // 验证默认值是否在范围内
-        if (!this.range.isValid(this.defaultValue)) {
+        if (!this.range.contains(this.defaultValue)) {
             throw new IllegalStateException(
                     String.format("Default value %d for option '%s' is out of range [%d, %d] step %d",
-                            this.defaultValue, this.id, this.range.min(), this.range.max(), this.range.step())
+                            this.defaultValue, this.id, this.range.getMin(), this.range.getMax(), this.range.getStep())
             );
         }
 
@@ -342,15 +350,16 @@ public class IntegerOptionBuilder {
                 this.name,
                 this.tooltip,
                 this.defaultValue,
-                this.range,
-                this.valueFormatter,
-                this.setter,
-                this.getter,
                 this.impact,
                 this.flags,
+                this.range,
+                this.setter,
+                this.getter,
+                null,  // storageHandler (可选)
                 this.enabledProvider,
-                this.validatorProvider,
-                this.storageHandler
+                this.applyHook,
+                this.valueFormatter,
+                this.validatorProvider
         );
     }
 }

@@ -253,6 +253,9 @@ public class OfficialVulkanHijacker {
         return hijackingSuccessful;
     }
 
+    /** 别名方法：检查是否可用（等同于 isHijackingSuccessful） */
+    public boolean isAvailable() { return isHijackingSuccessful(); }
+
     /**
      * 获取劫持的 VkDevice 句柄
      *
@@ -280,6 +283,9 @@ public class OfficialVulkanHijacker {
         return vkGraphicsQueue.get();
     }
 
+    /** 别名方法：获取图形队列 */
+    public long getGraphicsQueue() { return getVkGraphicsQueue(); }
+
     /**
      * 获取劫持的 VkComputeQueue 句柄
      *
@@ -288,6 +294,9 @@ public class OfficialVulkanHijacker {
     public long getVkComputeQueue() {
         return vkComputeQueue.get();
     }
+
+    /** 别名方法：获取计算队列 */
+    public long getComputeQueue() { return getVkComputeQueue(); }
 
     /**
      * 获取劫持的 VkTransferQueue 句柄

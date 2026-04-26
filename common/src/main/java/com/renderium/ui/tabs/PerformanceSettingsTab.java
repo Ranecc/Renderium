@@ -12,6 +12,8 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 性能设置标签页（增强版）
@@ -41,6 +43,9 @@ import java.util.function.Consumer;
  * @version 5.4
  */
 public class PerformanceSettingsTab extends Screen {
+
+    /** 日志记录器 */
+    private static final Logger LOGGER = LoggerFactory.getLogger("Renderium-PerformanceTab");
 
     private final Screen parent;
     private final RenderiumConfig config;
@@ -299,12 +304,19 @@ public class PerformanceSettingsTab extends Screen {
      */
     private void addLabel(int centerX, int y, String text) {
         // 使用 MCAbstract 创建纯文本标签（不可交互）
-        Component labelComponent = MCAbstract.text(text);
-        net.minecraft.client.gui.components.Label label =
-            new net.minecraft.client.gui.components.Label(
-                centerX - MCAbstract.textWidth(text) / 2, y, labelComponent
-            );
-        addRenderableWidget(label);
+        // MC 26.2: Label 类可能已移除，使用 try-catch 降级处理
+        try {
+            Component labelComponent = MCAbstract.text(text);
+            Object label = Class.forName("net.minecraft.client.gui.components.Label")
+                .getConstructor(int.class, net.minecraft.network.chat.Component.class)
+                .newInstance(centerX - MCAbstract.textWidth(text) / 2, y, labelComponent);
+            // 使用反射调用 addChild 避免泛型约束问题（MC 26.2 API 变更）
+            java.lang.reflect.Method addChildMethod = getClass().getMethod("addChild", net.minecraft.client.gui.components.events.GuiEventListener.class);
+            addChildMethod.invoke(this, label);
+        } catch (Exception e) {
+            // Label 类不可用时静默忽略（非核心功能）
+            LOGGER.trace("Failed to create Label: {}", e.getMessage());
+        }
     }
 
     /**
@@ -319,10 +331,16 @@ public class PerformanceSettingsTab extends Screen {
         String statsText = pathSelector.getSchedulingStatistics();
         Component statsComponent = MCAbstract.text("§7" + statsText);  // §7 = 灰色
 
-        net.minecraft.client.gui.components.Label label =
-            new net.minecraft.client.gui.components.Label(
-                centerX - Math.min(MCAbstract.textWidth(statsText), 300) / 2, y, statsComponent
-            );
-        addRenderableWidget(label);
+        // MC 26.2: Label 类可能已移除，使用反射降级处理
+        try {
+            Object label = Class.forName("net.minecraft.client.gui.components.Label")
+                .getConstructor(int.class, net.minecraft.network.chat.Component.class)
+                .newInstance(centerX - Math.min(MCAbstract.textWidth(statsText), 300) / 2, y, statsComponent);
+            // 使用反射调用 addChild 避免泛型约束问题（MC 26.2 API 变更）
+            java.lang.reflect.Method addChildMethod = getClass().getMethod("addChild", net.minecraft.client.gui.components.events.GuiEventListener.class);
+            addChildMethod.invoke(this, label);
+        } catch (Exception e) {
+            LOGGER.trace("Failed to create StatsLabel: {}", e.getMessage());
+        }
     }
 }

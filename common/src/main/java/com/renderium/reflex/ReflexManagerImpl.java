@@ -38,7 +38,7 @@ import java.util.logging.Logger;
  * @see <a href="file:///e:/DEV/Renderium/env/streamline-sdk-v2.10.3/include/sl_pcl.h">sl_pcl.h</a>
  * @since 5.2.0
  */
-final class ReflexManagerImpl {
+public final class ReflexManagerImpl {
 
     private static final Logger LOGGER = Logger.getLogger("Renderium|ReflexImpl");
 
@@ -231,6 +231,50 @@ final class ReflexManagerImpl {
     boolean isAvailable() { return available; }
     boolean isEnabled() { return enabled; }
     int getCurrentMode() { return currentMode; }
+
+    // ==================== 静态工厂方法 ====================
+
+    /** 静态实例持有者（延迟初始化） */
+    private static volatile ReflexManagerImpl staticInstance;
+
+    /**
+     * 获取静态实例（如果已初始化）
+     *
+     * @return ReflexManagerImpl 实例，未初始化时返回 null
+     */
+    public static ReflexManagerImpl getInstanceOrNull() {
+        return staticInstance;
+    }
+
+    /**
+     * 设置静态实例（由初始化代码调用）
+     *
+     * @param instance 已初始化的 ReflexManagerImpl 实例
+     */
+    public static void setInstance(ReflexManagerImpl instance) {
+        staticInstance = instance;
+    }
+
+    /**
+     * 设置 Reflex 模式（从选项值）
+     *
+     * @param value 模式值（String 或 Integer）
+     */
+    public void setReflexMode(Object value) {
+        int mode = REFLEX_MODE_OFF;
+        if (value instanceof String) {
+            String strVal = ((String) value).toUpperCase();
+            switch (strVal) {
+                case "LOW": mode = REFLEX_MODE_LOW_LATENCY; break;
+                case "MEDIUM":
+                case "HIGH": mode = REFLEX_MODE_LOW_LATENCY_BOOST; break;
+                default: mode = REFLEX_MODE_OFF; break;
+            }
+        } else if (value instanceof Number) {
+            mode = ((Number) value).intValue();
+        }
+        enable(mode);
+    }
 
     /**
      * 关闭管理器

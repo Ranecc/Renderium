@@ -63,8 +63,23 @@ import org.jspecify.annotations.Nullable;
  */
 public abstract class AbstractWidget implements Renderable, GuiEventListener, NarratableEntry {
 
-    /** Minecraft 字体实例（全局共享） */
-    protected final Font font = Minecraft.getInstance().font;
+    /** Minecraft 字体实例（全局共享，MC 26.2 兼容） */
+    @SuppressWarnings("deprecation")
+    protected final Font font = getFontSafely();
+
+    /**
+     * 安全获取 Minecraft 字体实例（兼容 MC 26.2 API 变更）
+     *
+     * 【返回值】
+     * @return Font - 字体实例，如果获取失败返回 null
+     */
+    private static Font getFontSafely() {
+        try {
+            return (Font) Minecraft.getInstance().getClass().getField("font").get(Minecraft.getInstance());
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /** 组件的尺寸和位置信息（不可变） */
     private final Dim2i dim;

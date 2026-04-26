@@ -260,7 +260,7 @@ public final class ShaderGraphicsConfig {
      */
     public int syncToParameterRegistry() {
         ParameterRegistry registry = ParameterRegistry.getInstance();
-        int syncedCount = 0;
+        int[] syncedCount = new int[1];
 
         try {
             // 阴影相关参数
@@ -290,13 +290,13 @@ public final class ShaderGraphicsConfig {
             syncParam(registry, "advanced.auto_exposure", autoExposure, syncedCount);
 
             clearDirty();
-            LOGGER.fine("参数同步完成: " + syncedCount + " 个参数");
+            LOGGER.fine("参数同步完成: " + syncedCount[0] + " 个参数");
 
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "参数同步失败（部分管线节点可能未注册）", e);
         }
 
-        return syncedCount;
+        return syncedCount[0];
     }
 
     /**

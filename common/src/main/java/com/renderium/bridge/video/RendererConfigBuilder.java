@@ -1,6 +1,7 @@
 package com.renderium.bridge.video;
 
 import net.minecraft.resources.Identifier;
+import net.minecraft.network.chat.Component;
 
 /**
  * 渲染配置构建器（顶层入口）
@@ -126,6 +127,10 @@ public class RendererConfigBuilder {
      */
     public OptionPageBuilder createOptionPage() {
         return new OptionPageBuilder();
+    }
+
+    public OptionPageBuilder page(String name) {
+        return createOptionPage().setName(Component.literal(name));
     }
 
     /**

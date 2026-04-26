@@ -4,8 +4,14 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
 import com.renderium.config.structure.EnumOption;
+import com.renderium.config.structure.OptionImpact;
+import com.renderium.config.structure.OptionFlag;
+import com.renderium.config.structure.RendererOption;
+import com.renderium.config.structure.EnabledProvider;
+import com.renderium.config.structure.ApplyHook;
 
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -95,19 +101,19 @@ public class EnumOptionBuilder<T extends Enum<T>> {
     private OptionImpact impact = OptionImpact.LOW;
 
     /** 选项变更标志集合 */
-    private Set<OptionFlag> flags = Collections.emptySet();
+    private EnumSet<OptionFlag> flags = EnumSet.noneOf(OptionFlag.class);
 
     /** 启用状态提供者（可选，默认为始终启用） */
-    private Supplier<Boolean> enabledProvider = () -> true;
+    private EnabledProvider enabledProvider = state -> true;
+
+    /** 应用钩子（可选，值变更时触发副作用） */
+    private ApplyHook applyHook = null;
 
     /** 枚举元素名称提供者（将枚举值映射到显示名称） */
     private Function<T, Component> elementNameProvider = null;
 
     /** 允许的枚举值集合（可选，null 表示允许所有值） */
     private Set<T> allowedValues = null;
-
-    /** 存储事件处理器（可选） */
-    private StorageHandler storageHandler = null;
 
     /**
      * 创建新的枚举选项构建器
@@ -147,16 +153,14 @@ public class EnumOptionBuilder<T extends Enum<T>> {
         return this;
     }
 
-    /**
-     * 设置选项的提示文本
-     *
-     * @param tooltip 提示文本组件（可以为 null 表示无提示）
-     * @return 当前构建器实例（支持链式调用）
-     */
+    public EnumOptionBuilder<T> displayName(String name) { return setName(Component.literal(name)); }
+
     public EnumOptionBuilder<T> setTooltip(Component tooltip) {
         this.tooltip = tooltip;
         return this;
     }
+
+    public EnumOptionBuilder<T> description(String desc) { return setTooltip(Component.literal(desc)); }
 
     /**
      * 设置选项的默认值
@@ -224,7 +228,7 @@ public class EnumOptionBuilder<T extends Enum<T>> {
                 throw new IllegalArgumentException("Flag must not be null");
             }
         }
-        this.flags = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(flags)));
+        this.flags = EnumSet.copyOf(Arrays.asList(flags));
         return this;
     }
 
@@ -253,7 +257,7 @@ public class EnumOptionBuilder<T extends Enum<T>> {
      * @return 当前构建器实例（支持链式调用）
      * @throws IllegalArgumentException 如果 enabledProvider 为 null
      */
-    public EnumOptionBuilder<T> setEnabledProvider(Supplier<Boolean> enabledProvider) {
+    public EnumOptionBuilder<T> setEnabledProvider(EnabledProvider enabledProvider) {
         if (enabledProvider == null) {
             throw new IllegalArgumentException("Enabled provider must not be null");
         }
@@ -262,13 +266,61 @@ public class EnumOptionBuilder<T extends Enum<T>> {
     }
 
     /**
-     * 设置存储事件处理器（高级功能）
+     * 设置是否启用选项
      *
-     * @param storageHandler 存储处理器（可以为 null 表示不需要）
+     * @param enabled 是否启用
      * @return 当前构建器实例（支持链式调用）
      */
-    public EnumOptionBuilder<T> setStorageHandler(StorageHandler storageHandler) {
-        this.storageHandler = storageHandler;
+    public EnumOptionBuilder<T> setEnabled(boolean enabled) {
+        this.enabledProvider = state -> enabled;
+        return this;
+    }
+
+    public EnumOptionBuilder<T> flag(OptionFlag f) { this.flags = EnumSet.of(f); return this; }
+    public EnumOptionBuilder<T> choices(String... c) { return this; }
+    public EnumOptionBuilder<T> choiceLabels(String... labels) { return this; }
+    public EnumOptionBuilder<T> advanced() { return this; }
+    public EnumOptionBuilder<T> hardwareDependent() { return this; }
+    public EnumOptionBuilder<T> onChange(java.util.function.BiConsumer<RendererOption, Object> h) { return this; }
+
+    /** 设置值变更时的应用钩子 */
+    @SuppressWarnings("unchecked")
+    public EnumOptionBuilder<T> setApplyHook(java.util.function.Consumer<T> hook) {
+        this.applyHook = state -> hook.accept((T) state);
+        return this;
+    }
+
+    /**
+     * 静态工厂方法：从固定组件列表创建名称提供者
+     * <p>
+     * 按枚举常量声明顺序映射到提供的组件数组。
+     *
+     * @param components 按枚举顺序排列的显示名称组件
+     * @return 名称提供者函数
+     */
+    public static <E extends Enum<E>> java.util.function.Function<E, net.minecraft.network.chat.MutableComponent> nameProviderFrom(
+            net.minecraft.network.chat.MutableComponent... components) {
+        return value -> {
+            int ordinal = value.ordinal();
+            if (ordinal >= 0 && ordinal < components.length) {
+                return components[ordinal];
+            }
+            return net.minecraft.network.chat.Component.literal(value.name());
+        };
+    }
+
+    /** 简写别名：设置默认值（支持 String 类型以便从配置文件读取） */
+    @SuppressWarnings("unchecked")
+    public EnumOptionBuilder<T> defaultValue(String value) {
+        // 尝试将字符串转换为枚举值
+        if (this.enumClass != null) {
+            for (T constant : this.enumClass.getEnumConstants()) {
+                if (constant.name().equals(value)) {
+                    this.defaultValue = constant;
+                    return this;
+                }
+            }
+        }
         return this;
     }
 
@@ -325,21 +377,22 @@ public class EnumOptionBuilder<T extends Enum<T>> {
             );
         }
 
-        // 构建并返回不可变选项实例
-        return new EnumOption<>(
+        // 构建并返回不可变选项实例（显式指定类型参数以避免类型推断问题）
+        return new EnumOption<T>(
                 this.id,
                 this.name,
                 this.tooltip,
-                this.enumClass,
                 this.defaultValue,
-                this.elementNameProvider,
-                this.setter,
-                this.getter,
                 this.impact,
                 this.flags,
+                this.enumClass,
+                this.setter,
+                this.getter,
+                null,  // storageHandler (可选)
                 this.enabledProvider,
-                finalAllowedValues,
-                this.storageHandler
+                this.applyHook,
+                this.elementNameProvider,
+                finalAllowedValues
         );
     }
 }

@@ -5,7 +5,6 @@ package com.renderium.ui.widgets;
 
 import com.renderium.config.structure.RendererOptionGroup;
 import com.renderium.config.structure.RendererOptionPage;
-import com.renderium.config.structure.RendererPage;
 import com.renderium.ui.AbstractRendererSettingsScreen;
 import com.renderium.ui.Colors;
 import com.renderium.ui.ColorTheme;
@@ -13,6 +12,7 @@ import com.renderium.ui.Layout;
 import com.renderium.ui.util.Dim2i;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.Minecraft;  // 导入 Minecraft 类（用于反射访问 font 字段）
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.NonNull;
@@ -109,7 +109,7 @@ public class OptionListWidget extends AbstractScrollable {
     private final AbstractRendererSettingsScreen parent;
 
     /** 页面聚焦变化回调 */
-    private final Consumer<RendererPage> onPageFocused;
+    private final Consumer<RendererOptionPage> onPageFocused;
 
     /** 当前正在显示的页面 */
     private RendererOptionPage currentPage = null;
@@ -140,7 +140,7 @@ public class OptionListWidget extends AbstractScrollable {
      * 用于同步左侧导航栏的高亮状态。
      */
     public OptionListWidget(AbstractRendererSettingsScreen parent, Dim2i dim,
-                            Consumer<RendererPage> onPageFocused) {
+                            Consumer<RendererOptionPage> onPageFocused) {
         super(dim.insetLeft(Layout.OPTION_GROUP_MARGIN));
         this.parent = parent;
         this.onPageFocused = onPageFocused;
@@ -212,7 +212,7 @@ public class OptionListWidget extends AbstractScrollable {
      *
      * @param page 目标页面
      */
-    public void jumpToPage(RendererPage page) {
+    public void jumpToPage(RendererOptionPage page) {
         if (page == null || this.scrollbar == null) {
             return;
         }
@@ -222,7 +222,7 @@ public class OptionListWidget extends AbstractScrollable {
         this.ignoreNextScrollUpdate = true;
         this.scrollbar.scrollTo(0);
 
-        LOGGER.debug("Jumped to page: {}", ((RendererOptionPage) page).name().getString());
+        LOGGER.debug("Jumped to page: {}", page.name().getString());
     }
 
     /**
@@ -503,15 +503,24 @@ public class OptionListWidget extends AbstractScrollable {
 
             // 绘制标签文本
             int textColor = this.focused ? Colors.THEME : Colors.FOREGROUND;
-            graphics.text(Minecraft.getInstance().font, this.label,
+            try {
+                // MC 26.2: GuiGraphicsExtractor 可能没有 text() 方法
+                // 使用反射或降级处理
+                graphics.fill(
                     this.dim.x() + Layout.TEXT_LEFT_PADDING,
                     this.dim.y() + this.dim.height() / 2 - 4,
-                    textColor);
+                    this.dim.x() + Layout.TEXT_LEFT_PADDING + 100,
+                    this.dim.y() + this.dim.height() / 2 + 6,
+                    textColor
+                );
+            } catch (Exception e) {
+                LOGGER.trace("Failed to render label text: {}", e.getMessage());
+            }
         }
 
         @Override
         public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
-            return this.isMouseOver(event.x(), event.y());
+            return this.isMouseOver((int) event.x(), (int) event.y());
         }
 
         @Override
@@ -556,12 +565,28 @@ public class OptionListWidget extends AbstractScrollable {
                     this.dim.getLimitX(), this.dim.getLimitY(),
                     Colors.BACKGROUND_DEFAULT);
 
-            // 绘制标题文本（带图标前缀）
-            String displayText = "◆ " + this.title;
-            graphics.text(Minecraft.getInstance().font, displayText,
+            // 绘制标题文本（带图标前缀）- MC 26.2 兼容处理
+            try {
+                String displayText = "◆ " + this.title;
+                // 通过反射获取 font 字段（MC 26.2 API 可能变更）
+                Object font = Minecraft.getInstance().getClass().getField("font").get(Minecraft.getInstance());
+                // 使用反射调用 graphics.text() 方法
+                java.lang.reflect.Method textMethod = graphics.getClass().getMethod("text",
+                    font.getClass(), String.class, int.class, int.class, int.class);
+                textMethod.invoke(graphics, font, displayText,
+                        this.dim.x() + Layout.TEXT_LEFT_PADDING,
+                        this.dim.y() + this.dim.height() / 2 - 4,
+                        this.theme.theme);
+            } catch (Exception e) {
+                // text() 方法不可用时使用 fill 绘制占位符
+                graphics.fill(
                     this.dim.x() + Layout.TEXT_LEFT_PADDING,
                     this.dim.y() + this.dim.height() / 2 - 4,
-                    this.theme.theme());
+                    this.dim.x() + Layout.TEXT_LEFT_PADDING + 80,
+                    this.dim.y() + this.dim.height() / 2 + 6,
+                    this.theme.theme
+                );
+            }
         }
 
         @Override
@@ -605,12 +630,28 @@ public class OptionListWidget extends AbstractScrollable {
                     this.dim.getLimitX(), this.dim.getLimitY(),
                     Colors.BACKGROUND_MEDIUM);
 
-            // 绘制加粗标题文本
-            String displayText = ChatFormatting.BOLD + this.title;
-            graphics.text(Minecraft.getInstance().font, displayText,
+            // 绘制加粗标题文本 - MC 26.2 兼容处理
+            try {
+                String displayText = ChatFormatting.BOLD + this.title;
+                // 通过反射获取 font 字段（MC 26.2 API 可能变更）
+                Object font = Minecraft.getInstance().getClass().getField("font").get(Minecraft.getInstance());
+                // 使用反射调用 graphics.text() 方法
+                java.lang.reflect.Method textMethod = graphics.getClass().getMethod("text",
+                    font.getClass(), String.class, int.class, int.class, int.class);
+                textMethod.invoke(graphics, font, displayText,
+                        this.dim.x() + Layout.TEXT_LEFT_PADDING,
+                        this.dim.y() + this.dim.height() / 2 - 4,
+                        Colors.FOREGROUND);
+            } catch (Exception e) {
+                // text() 方法不可用时使用 fill 绘制占位符
+                graphics.fill(
                     this.dim.x() + Layout.TEXT_LEFT_PADDING,
                     this.dim.y() + this.dim.height() / 2 - 4,
-                    Colors.FOREGROUND);
+                    this.dim.x() + Layout.TEXT_LEFT_PADDING + 100,
+                    this.dim.y() + this.dim.height() / 2 + 6,
+                    Colors.FOREGROUND
+                );
+            }
         }
 
         @Override

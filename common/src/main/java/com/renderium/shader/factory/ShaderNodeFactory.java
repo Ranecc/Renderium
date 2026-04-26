@@ -20,6 +20,10 @@ package com.renderium.shader.factory;
 import com.renderium.interception.context.RenderContext;
 import com.renderium.pipeline.node.PipelineNode;
 import com.renderium.pipeline.parameter.*;
+import com.renderium.pipeline.parameter.impl.BoolKnob;
+import com.renderium.pipeline.parameter.impl.EnumKnob;
+import com.renderium.pipeline.parameter.impl.FloatKnob;
+import com.renderium.pipeline.parameter.impl.IntKnob;
 import com.renderium.shader.comp.ShaderCompDescriptor;
 import com.renderium.shader.registry.ShaderNodeRegistry;
 import com.renderium.shader.spirv.SPIRVShaderModule;
@@ -528,10 +532,11 @@ public final class ShaderNodeFactory {
             String className = builtinNodeTypeMap.get(nodeId);
             if (className != null) {
                 try {
-                    @SuppressWarnings("unchecked")
                     Class<?> rawClass = Class.forName(className);
                     if (PipelineNode.class.isAssignableFrom(rawClass)) {
-                        nodeClass = (Class<? extends PipelineNode>) rawClass;
+                        @SuppressWarnings("unchecked")
+                        Class<? extends PipelineNode> typedClass = (Class<? extends PipelineNode>) rawClass;
+                        nodeClass = typedClass;
                     }
                 } catch (ClassNotFoundException e) {
                     LOGGER.warning(String.format("内置节点类未找到: %s (节点 %s)", className, nodeId));

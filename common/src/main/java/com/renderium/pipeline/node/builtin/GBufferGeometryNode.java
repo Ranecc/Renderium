@@ -16,6 +16,7 @@ import com.renderium.bridge.mc.FrameDataSnapshot;
 import com.renderium.bridge.mc.MCRenderBridge;
 import com.renderium.interception.context.RenderContext;
 import com.renderium.pipeline.node.AbstractPipelineNode;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**

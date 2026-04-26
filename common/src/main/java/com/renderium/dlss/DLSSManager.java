@@ -7,7 +7,6 @@ package com.renderium.dlss;
 import com.renderium.platform.PlatformHelper;
 import com.renderium.streamline.CameraMatrixHelper;
 import com.renderium.streamline.FrameEvaluator;
-import com.renderium.streamline.ResourceTagData;
 import com.renderium.streamline.SLAutoExtractor;
 import com.renderium.streamline.SLConfigLoader;
 import com.renderium.streamline.SLContext;
@@ -301,17 +300,17 @@ public final class DLSSManager {
         }
 
         // 2. 标记资源（使用 FFM Bridge 进行真实的资源标记）
-        ResourceTagData[] resources = {
-            new ResourceTagData(
+        VulkanStreamlineBridge.ResourceTagData[] resources = {
+            new VulkanStreamlineBridge.ResourceTagData(
                 SLFFMBindings.BUFFER_TYPE_HUDLESS_COLOR, colorTexture,
                 textureWidth, textureHeight),
-            new ResourceTagData(
+            new VulkanStreamlineBridge.ResourceTagData(
                 SLFFMBindings.BUFFER_TYPE_DEPTH, depthTexture,
                 textureWidth, textureHeight),
-            new ResourceTagData(
+            new VulkanStreamlineBridge.ResourceTagData(
                 SLFFMBindings.BUFFER_TYPE_MOTION_VECTORS, motionVectors,
                 textureWidth, textureHeight),
-            new ResourceTagData(
+            new VulkanStreamlineBridge.ResourceTagData(
                 SLFFMBindings.BUFFER_TYPE_SCALING_OUTPUT_COLOR, outputTexture,
                 displayWidth, displayHeight)
         };

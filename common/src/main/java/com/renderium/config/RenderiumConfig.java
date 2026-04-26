@@ -748,6 +748,42 @@ public final class RenderiumConfig {
     }
 
     /**
+     * 重置所有配置为默认值
+     * <p>
+     * 将所有配置项恢复到初始状态，
+     * 供设置界面的"恢复默认"功能调用。
+     */
+    public void resetToDefaults() {
+        // 超分辨率配置
+        this.technology = SuperResolutionAdapter.Technology.DLSS;
+        this.quality = SuperResolutionAdapter.Quality.BALANCED;
+
+        // 帧生成配置
+        this.frameGenerationEnabled = false;
+        this.frameGenMode = FrameGenMode.FIXED_2X;
+
+        // Reflex 配置
+        this.reflexEnabled = false;
+        this.reflexMode = ReflexMode.LOW_LATENCY;
+
+        // 通用配置
+        this.streamlineSdkPath = null;
+        this.enabled = true;
+        this.debugMode = false;
+        this.sharpening = 0.0f;
+        this.dynamicResolution = false;
+
+        // Blaze3D 优化配置（重置为保守值）
+        this.frameGraphOptimizationEnabled = false;
+        this.vulkanCommandOptimizationEnabled = false;
+        this.memoryOptimizationEnabled = false;
+        this.shaderPipelineOptimizationEnabled = false;
+        this.vmaEnhancementEnabled = false;
+
+        LOGGER.info("配置已重置为默认值");
+    }
+
+    /**
      * 保存配置到文件
      *
      * @param configDir 配置目录路径

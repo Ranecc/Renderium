@@ -134,7 +134,7 @@ public class MixinGameRenderer {
                 LOGGER.info("║ Core active={}, initialized={}{}",
                         queryCoreStatus("active"),
                         queryCoreStatus("initialized"),
-                        queryCoreStatus("shortCircuited")
+                        "true".equals(queryCoreStatus("shortCircuited"))
                                 ? " | Shorted: " + queryCoreStatus("shortCircuitReason") : "");
 
                 LOGGER.info("╚════════════════════════════════════════════╝");
@@ -295,16 +295,21 @@ public class MixinGameRenderer {
         try {
             Class<?> coreClass = Class.forName("com.renderium.core.RenderiumCore");
             Object coreInstance = coreClass.getMethod("getInstance").invoke(null);
-            return switch (property) {
-                case "active" -> String.valueOf(coreClass.getMethod("isActive").invoke(coreInstance));
-                case "initialized" -> String.valueOf(coreClass.getMethod("isInitialized").invoke(coreInstance));
-                case "shortCircuited" -> String.valueOf(coreClass.getMethod("isShortCircuited").invoke(coreInstance));
-                case "shortCircuitReason" -> {
+            // MC 26.2 / Java 25: 使用传统 switch 避免预览特性兼容性问题
+            switch (property) {
+                case "active":
+                    return String.valueOf(coreClass.getMethod("isActive").invoke(coreInstance));
+                case "initialized":
+                    return String.valueOf(coreClass.getMethod("isInitialized").invoke(coreInstance));
+                case "shortCircuited":
+                    return String.valueOf(coreClass.getMethod("isShortCircuited").invoke(coreInstance));
+                case "shortCircuitReason": {
                     Object reason = coreClass.getMethod("getShortCircuitReason").invoke(coreInstance);
                     return reason != null ? reason.toString() : "";
                 }
-                default -> "unknown";
-            };
+                default:
+                    return "unknown";
+            }
         } catch (Exception e) {
             return "N/A";
         }

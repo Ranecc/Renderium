@@ -4,7 +4,7 @@
 
 package com.renderium.ui.widgets.options.control;
 
-import com.mojang.blaze3d.platform.CursorTypes;
+import com.mojang.blaze3d.platform.cursor.CursorTypes;
 import com.renderium.config.structure.IntegerOption;
 import com.renderium.config.structure.RendererOption;
 import com.renderium.ui.Layout;
@@ -243,9 +243,18 @@ public class SliderControl implements Control {
             }
 
             if (isMouseOverSlider(mouseX, mouseY)) {
-                Minecraft.getInstance().getWindow().setCursor(
-                    this.dragging ? CursorTypes.RESIZE_EW : CursorTypes.POINTING_HAND
-                );
+                // TODO: MC API 变更 - setCursor 方法在当前版本可能不可用
+                try {
+                    var window = Minecraft.getInstance().getWindow();
+                    var setCursorMethod = window.getClass().getMethod("setCursor", Class.forName("com.mojang.blaze3d.platform.cursor.CursorType"));
+                    var cursorTypesClass = Class.forName("com.mojang.blaze3d.platform.cursor.CursorTypes");
+                    Object cursorType = this.dragging
+                        ? cursorTypesClass.getField("RESIZE_EW").get(null)
+                        : cursorTypesClass.getField("POINTING_HAND").get(null);
+                    setCursorMethod.invoke(window, cursorType);
+                } catch (Exception e) {
+                    // 光标设置失败时静默忽略
+                }
             }
         }
 
@@ -300,8 +309,8 @@ public class SliderControl implements Control {
          */
         public double getNormalizedPosition(int value) {
             var range = this.option.getRange();
-            int min = range.min();
-            int max = range.max();
+            int min = range.getMin();
+            int max = range.getMax();
 
             if (max == min) {
                 return 0.5;  // 避免除零
@@ -319,9 +328,9 @@ public class SliderControl implements Control {
          */
         private int getValueFromPosition() {
             var range = this.option.getRange();
-            int step = range.step();
-            int min = range.min();
-            int max = range.max();
+            int step = range.getStep();
+            int min = range.getMin();
+            int max = range.getMax();
 
             if (max == min) {
                 return min;
@@ -351,7 +360,7 @@ public class SliderControl implements Control {
          */
         public void adjustValue(int delta) {
             int currentValue = this.option.getValidatedValue();
-            int step = this.option.getRange().step();
+            int step = this.option.getRange().getStep();
             this.option.setValue(currentValue + delta * step);
         }
 
@@ -501,11 +510,11 @@ public class SliderControl implements Control {
 
             var range = this.option.getRange();
             boolean isLeft = keyCode == 263;  // Left Arrow
-            boolean isRight = keyCode = 262;  // Right Arrow
+            boolean isRight = keyCode == 262;  // Right Arrow
 
             if (isLeft || isRight) {
                 int currentValue = this.option.getValidatedValue();
-                int step = range.step();
+                int step = range.getStep();
 
                 if (isLeft) {
                     this.option.setValue(currentValue - step);

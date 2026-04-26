@@ -54,7 +54,9 @@ public class LightingNode extends AbstractPipelineNode {
         /** 高质量 (2048² PCSS) */
         HIGH,
         /** 极致 (4096² RT 过滤) */
-        ULTRA
+        ULTRA,
+        /** PCSS 软阴影（百分比接近软阴影） */
+        PCSS
     }
 
     public static final int DEFAULT_LIGHT_COUNT = 4;

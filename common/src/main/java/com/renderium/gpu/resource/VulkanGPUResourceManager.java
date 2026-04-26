@@ -20,6 +20,7 @@ import org.lwjgl.vulkan.VkImageCreateInfo;
 import org.lwjgl.vulkan.VkImageViewCreateInfo;
 import org.lwjgl.vulkan.VK10;
 
+import java.nio.LongBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
@@ -546,8 +547,14 @@ public final class VulkanGPUResourceManager {
             // 准备输出
             LongBuffer pView = stack.mallocLong(1);
 
-            // 调用 Vulkan API 创建视图
-            int result = VK10.vkCreateImageView(vkDevice, viewInfo, null, pView);
+            // 调用 Vulkan API 创建视图（使用 VkDevice 包装器）
+            // 注意: LWJGL VkDevice 构造函数需要 VkPhysicalDevice，此处传 null（仅用于 API 调用）
+            int result = VK10.vkCreateImageView(
+                    new org.lwjgl.vulkan.VkDevice(vkDevice, null, null),
+                    viewInfo,
+                    null,
+                    pView
+            );
             if (result != VK10.VK_SUCCESS) {
                 LOGGER.severe(String.format("vkCreateImageView 失败: VkResult=%d", result));
                 return 0L;

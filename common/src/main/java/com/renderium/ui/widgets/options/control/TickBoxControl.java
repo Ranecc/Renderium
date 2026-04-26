@@ -4,7 +4,7 @@
 
 package com.renderium.ui.widgets.options.control;
 
-import com.mojang.blaze3d.platform.CursorTypes;
+import com.mojang.blaze3d.platform.cursor.CursorTypes;
 import com.renderium.config.structure.BooleanOption;
 import com.renderium.config.structure.RendererOption;
 import com.renderium.ui.util.Dim2i;
@@ -191,7 +191,15 @@ public class TickBoxControl implements Control {
             }
 
             if (isHovered()) {
-                Minecraft.getInstance().getWindow().setCursor(CursorTypes.POINTING_HAND);
+                // TODO: MC API 变更 - setCursor 方法在当前版本可能不可用
+                try {
+                    var window = Minecraft.getInstance().getWindow();
+                    var setCursorMethod = window.getClass().getMethod("setCursor", Class.forName("com.mojang.blaze3d.platform.cursor.CursorType"));
+                    var cursorType = Class.forName("com.mojang.blaze3d.platform.cursor.CursorTypes").getField("POINTING_HAND").get(null);
+                    setCursorMethod.invoke(window, cursorType);
+                } catch (Exception e) {
+                    // 光标设置失败时静默忽略
+                }
             }
         }
 

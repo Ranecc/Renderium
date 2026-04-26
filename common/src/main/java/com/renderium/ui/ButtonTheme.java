@@ -97,7 +97,7 @@ public class ButtonTheme extends ColorTheme {
      * @param bgInactive  禁用背景色（ARGB 格式）
      */
     public ButtonTheme(ColorTheme theme, int bgHighlight, int bgDefault, int bgInactive) {
-        this(theme.theme(), theme.themeLighter(), theme.themeDarker(),
+        this(theme.theme, theme.themeLighter, theme.themeDarker,
              bgHighlight, bgDefault, bgInactive);
     }
 }

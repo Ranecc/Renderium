@@ -13,6 +13,7 @@ import com.renderium.pipeline.parameter.ParameterKnob;
 import com.renderium.shader.comp.ShaderCompDescriptor;
 import com.renderium.shader.spirv.SPIRVShaderModule;
 import com.renderium.gpu.resource.VulkanGPUResourceManager;
+import com.renderium.vulkan.adapter.VulkanConst;
 
 import org.lwjgl.vulkan.VK10;
 

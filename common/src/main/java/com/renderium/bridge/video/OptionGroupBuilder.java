@@ -2,11 +2,12 @@ package com.renderium.bridge.video;
 
 import net.minecraft.network.chat.Component;
 
+import com.renderium.config.structure.OptionImpact;
 import com.renderium.config.structure.RendererOption;
 import com.renderium.config.structure.RendererOptionGroup;
 
+import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -78,6 +79,22 @@ public class OptionGroupBuilder {
         return this;
     }
 
+    public OptionGroupBuilder displayName(String name) {
+        return setName(Component.literal(name));
+    }
+
+    public OptionGroupBuilder description(String desc) {
+        return this;
+    }
+
+    public OptionGroupBuilder optionImpact(OptionImpact impact) {
+        return this;
+    }
+
+    public OptionGroupBuilder collapsible(boolean collapsible) {
+        return this;
+    }
+
     /**
      * 向选项组添加一个已构建完成的选项
      * <p>
@@ -98,6 +115,37 @@ public class OptionGroupBuilder {
     }
 
     /**
+     * 添加选项（接受 Builder，自动调用 build()）
+     *
+     * @param builder 选项构建器（不能为 null）
+     * @return 当前构建器实例
+     */
+    @SuppressWarnings("rawtypes")
+    public OptionGroupBuilder addOption(IntegerOptionBuilder builder) {
+        if (builder == null) throw new IllegalArgumentException("Builder must not be null");
+        this.options.add(builder.build());
+        return this;
+    }
+
+    public OptionGroupBuilder addOption(BooleanOptionBuilder builder) {
+        if (builder == null) throw new IllegalArgumentException("Builder must not be null");
+        this.options.add(builder.build());
+        return this;
+    }
+
+    public OptionGroupBuilder addOption(EnumOptionBuilder builder) {
+        if (builder == null) throw new IllegalArgumentException("Builder must not be null");
+        this.options.add(builder.build());
+        return this;
+    }
+
+    public OptionGroupBuilder addOption(FloatOptionBuilder builder) {
+        if (builder == null) throw new IllegalArgumentException("Builder must not be null");
+        this.options.add(builder.build());
+        return this;
+    }
+
+    /**
      * 构建不可变的 {@link RendererOptionGroup} 实例
      * <p>
      * 此方法会将所有添加的选项封装到不可变列表中，
@@ -108,7 +156,38 @@ public class OptionGroupBuilder {
     public RendererOptionGroup build() {
         return new RendererOptionGroup(
                 this.name,
-                Collections.unmodifiableList(new ArrayList<>(this.options))
+                ImmutableList.copyOf(this.options)
         );
     }
+
+    public OptionGroupBuilder group(String name) {
+        return setName(Component.literal(name));
+    }
+
+    public FloatOptionBuilder floatOption(String id) {
+        FloatOptionBuilder b = new FloatOptionBuilder(net.minecraft.resources.Identifier.parse(id));
+        this.pendingBuilder = b;
+        return b;
+    }
+
+    public IntegerOptionBuilder intOption(String id) {
+        IntegerOptionBuilder b = new IntegerOptionBuilder(net.minecraft.resources.Identifier.parse(id));
+        this.pendingBuilder = b;
+        return b;
+    }
+
+    public BooleanOptionBuilder boolOption(String id) {
+        BooleanOptionBuilder b = new BooleanOptionBuilder(net.minecraft.resources.Identifier.parse(id));
+        this.pendingBuilder = b;
+        return b;
+    }
+
+    @SuppressWarnings("unchecked")
+    public EnumOptionBuilder<?> enumOption(String id) {
+        EnumOptionBuilder<?> b = new EnumOptionBuilder(net.minecraft.resources.Identifier.parse(id), Object.class);
+        this.pendingBuilder = b;
+        return b;
+    }
+
+    private Object pendingBuilder;
 }

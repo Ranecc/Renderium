@@ -500,7 +500,7 @@ public final class ShaderNodeRegistry {
 
         // 递归扫描子目录（限制深度为 3 层，防止过深递归）
         try (DirectoryStream<Path> subDirs = Files.newDirectoryStream(directory, entry ->
-                Files.isDirectory(entry) && !entry.isHidden())) {
+                Files.isDirectory(entry) && !Files.isHidden(entry))) {
             for (Path subDir : subDirs) {
                 try {
                     loadedCount += scanDirectory(subDir);

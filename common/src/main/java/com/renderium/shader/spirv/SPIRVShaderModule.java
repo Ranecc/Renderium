@@ -395,6 +395,14 @@ public final class SPIRVShaderModule {
     /** @return List - Uniform 布局反射结果 */
     public List<UniformEntry> getUniformLayout() { return uniformLayout; }
 
+    /**
+     * 获取 Uniform 变量列表（别名方法）
+     *
+     * @return List<UniformEntry> - 所有 Uniform 变量条目
+     * @see #getUniformLayout()
+     */
+    public List<UniformEntry> getUniforms() { return uniformLayout; }
+
     /** @return List - 推送常量列表 */
     public List<SpecConstantEntry> getSpecConstants() { return specConstants; }
 

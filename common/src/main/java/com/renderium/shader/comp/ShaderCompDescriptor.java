@@ -1118,6 +1118,20 @@ public final class ShaderCompDescriptor {
     // ==================== 便捷查询方法 ====================
 
     /**
+     * 检查是否有存储图像输出（Storage Image Output）
+     *
+     * @return boolean - 如果有 IMAGE2D 类型的输出插槽返回 true
+     */
+    public boolean hasStorageImageOutput() {
+        for (OutputSlotDef output : outputs) {
+            if (output.getType() == SlotType.IMAGE2D) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 根据 ID 查找参数定义
      *
      * 【方法参数】

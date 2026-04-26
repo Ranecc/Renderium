@@ -4,10 +4,11 @@
 
 package com.renderium.ui.widgets.options.control;
 
-import com.mojang.blaze3d.platform.CursorTypes;
+import com.mojang.blaze3d.platform.cursor.CursorTypes;
 import com.renderium.config.structure.BooleanOption;
 import com.renderium.config.structure.EnumOption;
 import com.renderium.config.structure.RendererOption;
+import com.renderium.ui.Layout;
 import com.renderium.ui.util.Dim2i;
 import com.renderium.ui.widgets.options.ColorTheme;
 import com.renderium.ui.widgets.options.Colors;
@@ -69,6 +70,29 @@ public class CyclingControl implements Control {
     /** 枚举类型（仅 EnumOption 使用） */
     @SuppressWarnings("rawtypes")
     private final Class enumType;
+
+    /**
+     * 创建通用渲染器选项的循环控件。
+     *
+     * <p>用于 IntegerOption 等非布尔、非枚举类型的选项。
+     * 通过 valueLabelProvider 显示当前值，不进行枚举循环。
+     *
+     * @param option             渲染器选项实例
+     * @param valueLabelProvider 当前值显示名称提供者
+     * @param onValueChange      值变更回调（可为 null）
+     */
+    public CyclingControl(
+        RendererOption option,
+        Supplier<Component> valueLabelProvider,
+        Runnable onValueChange
+    ) {
+        this.option = java.util.Objects.requireNonNull(option, "Option cannot be null");
+        this.valueLabelProvider = java.util.Objects.requireNonNull(
+            valueLabelProvider, "Value label provider cannot be null"
+        );
+        this.onValueChange = onValueChange;
+        this.enumType = null;
+    }
 
     /**
      * 创建布尔选项的循环控件。
@@ -235,7 +259,16 @@ public class CyclingControl implements Control {
             );
 
             if (isHovered()) {
-                Minecraft.getInstance().getWindow().setCursor(CursorTypes.POINTING_HAND);
+                // TODO: MC API 变更 - setCursor 方法在当前版本可能不可用
+                // 使用反射调用以避免编译错误
+                try {
+                    var window = Minecraft.getInstance().getWindow();
+                    var setCursorMethod = window.getClass().getMethod("setCursor", Class.forName("com.mojang.blaze3d.platform.cursor.CursorType"));
+                    var cursorType = Class.forName("com.mojang.blaze3d.platform.cursor.CursorTypes").getField("POINTING_HAND").get(null);
+                    setCursorMethod.invoke(window, cursorType);
+                } catch (Exception e) {
+                    // 光标设置失败时静默忽略
+                }
             }
         }
 
@@ -317,9 +350,9 @@ public class CyclingControl implements Control {
                         currentIndex = (currentIndex + 1) % this.baseValues.length;
                     }
                     currentValue = this.baseValues[currentIndex];
-                } while (!enumOpt.isValueAllowed(currentValue));
+                } while (!enumOpt.isValueAllowed((Enum) currentValue));
 
-                enumOpt.setValue(currentValue);
+                enumOpt.setValue((Enum) currentValue);
             }
 
             if (this.onValueChange != null) {

@@ -18,6 +18,7 @@ package com.renderium.pipeline.strategy;
 
 import com.renderium.accel.BfsOcclusion;
 import com.renderium.accel.RenderiumAccelerator;
+import com.renderium.pipeline.BfsOcclusionEngine;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 

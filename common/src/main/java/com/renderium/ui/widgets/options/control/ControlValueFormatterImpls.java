@@ -10,6 +10,8 @@ import net.minecraft.network.chat.Component;
 import java.util.function.Function;
 import java.util.function.IntFunction;
 import java.util.function.Supplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * 控件值格式化器工具类。
@@ -57,6 +59,9 @@ import java.util.function.Supplier;
  * @since 5.0.0
  */
 public final class ControlValueFormatterImpls {
+
+    /** 日志记录器 */
+    private static final Logger LOGGER = Logger.getLogger(ControlValueFormatterImpls.class.getName());
 
     /** 私有构造器防止实例化 */
     private ControlValueFormatterImpls() {
@@ -449,9 +454,7 @@ public final class ControlValueFormatterImpls {
                 return width + " x " + height;
             }
         } catch (Exception e) {
-            Minecraft.getInstance().logger.warn(
-                "Failed to get resolution from monitor: {}", e.getMessage()
-            );
+            LOGGER.log(Level.WARNING, "Failed to get resolution from monitor: {0}", e.getMessage());
         }
 
         return "Unknown";

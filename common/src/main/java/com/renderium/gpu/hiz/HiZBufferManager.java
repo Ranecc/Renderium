@@ -70,6 +70,12 @@ public final class HiZBufferManager {
     /** 日志记录器 */
     private static final Logger LOGGER = Logger.getLogger(HiZBufferManager.class.getName());
 
+    /** 单例实例 */
+    private static volatile HiZBufferManager instance;
+
+    /** 是否启用 */
+    private volatile boolean enabled = true;
+
     /** Hi-Z 最大 Mipmap 层数（与 GLSL shader 和 OcclusionCullConfig 一致） */
     public static final int HIZ_MAX_MIP_LEVELS = 10;
 
@@ -226,6 +232,52 @@ public final class HiZBufferManager {
             throw new IllegalArgumentException("VulkanDeviceHolder 不能为 null");
         }
         this.deviceHolder = deviceHolder;
+    }
+
+    /**
+     * 获取单例实例
+     *
+     * @return HiZBufferManager 单例实例，如果未初始化返回 null
+     */
+    public static HiZBufferManager getInstance() {
+        return instance;
+    }
+
+    /**
+     * 初始化并设置单例实例
+     *
+     * @param deviceHolder VulkanDeviceHolder 设备持有者
+     * @return HiZBufferManager 实例
+     */
+    public static synchronized HiZBufferManager initializeInstance(VulkanDeviceHolder deviceHolder) {
+        if (instance == null) {
+            instance = new HiZBufferManager(deviceHolder);
+        }
+        return instance;
+    }
+
+    /**
+     * 设置是否启用 Hi-Z 遮挡剔除
+     *
+     * @param enabled 是否启用
+     */
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+        LOGGER.info("HiZ 遮挡剔除: " + (enabled ? "启用" : "禁用"));
+    }
+
+    /**
+     * 设置最大 Mipmap 层数
+     *
+     * @param maxMipLevels 最大层数（4-14）
+     */
+    public void setMaxMipLevels(int maxMipLevels) {
+        int clamped = Math.max(4, Math.min(14, maxMipLevels));
+        if (clamped != maxMipLevels) {
+            LOGGER.warning("setMaxMipLayers: " + maxMipLevels + " 超出范围 [4, 14]，钳制为 " + clamped);
+        }
+        // 注意：实际修改需要重新初始化，这里仅记录日志
+        LOGGER.info("设置 Hi-Z 最大 Mipmap 层数: " + clamped + "（需重新初始化生效）");
     }
 
     // ==================== 核心生命周期方法 ====================

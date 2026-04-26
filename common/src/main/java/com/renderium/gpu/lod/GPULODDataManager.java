@@ -183,6 +183,52 @@ public final class GPULODDataManager {
      */
     private volatile int[] visibilityResults;
 
+    // ==================== 单例支持 ====================
+
+    /** 单例实例（volatile 保证可见性） */
+    private static volatile GPULODDataManager instance;
+
+    /** 最大 LOD 距离（方块单位） */
+    private int maxDistance = 256;
+
+    /**
+     * 获取单例实例（懒加载，线程安全）
+     *
+     * @return GPULODDataManager 单例实例
+     */
+    public static GPULODDataManager getInstance() {
+        if (instance == null) {
+            synchronized (GPULODDataManager.class) {
+                if (instance == null) {
+                    instance = new GPULODDataManager();
+                }
+            }
+        }
+        return instance;
+    }
+
+    /**
+     * 设置最大 LOD 距离
+     *
+     * @param distance 最大距离（方块单位）
+     */
+    public void setMaxDistance(int distance) {
+        this.maxDistance = Math.max(64, Math.min(512, distance));
+        // 更新最高级 LOD 阈值
+        if (this.lodDistances.length > 0) {
+            this.lodDistances[this.lodDistances.length - 1] = this.maxDistance;
+        }
+    }
+
+    /**
+     * 设置 LOD 偏移量
+     *
+     * @param bias 偏移值（负数=更精细，正数=更粗糙）
+     */
+    public void setLodBias(int bias) {
+        this.lodBias = Math.max(-4.0f, Math.min(4.0f, bias));
+    }
+
     // ==================== 性能统计字段（volatile）====================
 
     /**

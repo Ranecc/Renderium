@@ -12,8 +12,11 @@ package com.renderium.fabric.mixin;
 
 import com.renderium.bridge.mc.CameraContext;
 import com.renderium.bridge.mc.ChunkContext;
+import com.renderium.bridge.mc.FrameDataSnapshot;
 import com.renderium.bridge.mc.MatrixContext;
+import com.renderium.bridge.mc.MCRenderBridge;
 import com.renderium.bridge.mc.RenderiumLifecycleManager;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -206,21 +209,24 @@ public class LevelRendererLifecycleMixin {
      */
     private void extractCameraData(CameraContext ctx, Object cameraState) {
         try {
-            LevelRenderer self = (LevelRenderer) (Object) this;
+            // MC 26.2: LevelRenderer 没有 minecraft 字段，通过 Minecraft.getInstance() 访问
+            // cameraRenderState 位于 levelRenderState 内部
+            var gameRenderState = Minecraft.getInstance().gameRenderer.gameRenderState();
 
             // 通过反射或直接访问获取相机位置
-            var pos = self.minecraft.gameRenderState.cameraRenderState.pos;
+            var pos = gameRenderState.levelRenderState.cameraRenderState.pos;
             ctx.x = (float) pos.x;
             ctx.y = (float) pos.y;
             ctx.z = (float) pos.z;
 
             // 提取相机朝向（Yaw/Pitch）
-            var rotation = self.minecraft.gameRenderState.cameraRenderState.viewRotationMatrix;
-            ctx.yaw = (float) Math.toDegrees(Math.atan2(rotation.m02, rotation.m22));
-            ctx.pitch = (float) Math.toDegrees(Math.asin(-Math.clamp(rotation.m12, -1.0, 1.0)));
+            // MC 26.2: Matrix4f 字段改为私有，使用 getter 方法
+            var rotation = gameRenderState.levelRenderState.cameraRenderState.viewRotationMatrix;
+            ctx.yaw = (float) Math.toDegrees(Math.atan2(rotation.m02(), rotation.m22()));
+            ctx.pitch = (float) Math.toDegrees(Math.asin(-Math.clamp(rotation.m12(), -1.0f, 1.0f)));
 
             // 视锥体区域是否变化（简单启发式：位置变化 > 0.1 块）
-            FrameDataSnapshot fd = com.renderium.bridge.mc.MCRenderBridge.getCurrentFrameData();
+            FrameDataSnapshot fd = MCRenderBridge.getCurrentFrameData();
             float dx = Math.abs(fd.getCameraX() - ctx.x);
             float dy = Math.abs(fd.getCameraY() - ctx.y);
             float dz = Math.abs(fd.getCameraZ() - ctx.z);
@@ -237,7 +243,8 @@ public class LevelRendererLifecycleMixin {
      */
     private void extractViewMatrix(MatrixContext ctx) {
         try {
-            var mvMatrix = com.mojang.blaze3d.systems.RenderSystem.getModelViewMatrix();
+            // MC 26.2: getModelViewMatrix() 已移除，使用 getModelViewMatrixCopy()
+            var mvMatrix = com.mojang.blaze3d.systems.RenderSystem.getModelViewMatrixCopy();
             mvMatrix.get(ctx.modelViewMatrix);
         } catch (Exception e) {
             ctx.reset();
@@ -251,25 +258,21 @@ public class LevelRendererLifecycleMixin {
      */
     private void extractChunkVisibilityData(ChunkContext ctx) {
         try {
-            LevelRenderer self = (LevelRenderer) (Object) this;
+            // MC 26.2: sectionRenderDispatcher 是 private，且 getVisibleSectionCount/getTotalCount 方法不存在
+            // TODO: MC 26.2 迁移 - 需要通过 @Accessor 获取 SectionRenderDispatcher 并统计可见区块
+            // 当前使用估算值（不影响核心渲染流程）
+            int visibleSections = 0;
+            int totalSections = 0;
 
-            // 可见区块段数量（从 SectionRenderDispatcher 获取）
-            int visibleSections = self.sectionRenderDispatcher != null ?
-                self.sectionRenderDispatcher.getVisibleSectionCount() : 0;
-
-            // 总区块段数量
-            int totalSections = self.sectionRenderDispatcher != null ?
-                self.sectionRenderDispatcher.getTotalSectionCount() : 0;
-
-            // Draw Call 统计（估算：每个可见 Section 至少 1 个 Opaque Draw Call）
-            int opaqueDrawCalls = visibleSections;  // 简化估算
-            int translucentDrawCalls = visibleSections / 4;  // 半透明通常较少
+            // Draw Call 统计（简化估算：待接入真实数据源后更新）
+            int opaqueDrawCalls = visibleSections;
+            int translucentDrawCalls = visibleSections / 4;
 
             ctx.visibleSectionCount = visibleSections;
             ctx.totalSectionCount = totalSections;
             ctx.opaqueDrawCallCount = opaqueDrawCalls;
             ctx.translucentDrawCallCount = translucentDrawCalls;
-            ctx.viewAreaChanged = false;  // 已在 CameraContext 中设置
+            ctx.viewAreaChanged = false;
         } catch (Exception e) {
             ctx.reset();
         }

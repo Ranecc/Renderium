@@ -539,7 +539,7 @@ public final class ParameterRegistry {
     /**
      * 通知所有全局监听器
      */
-    private void notifyGlobalListener(RegistryChangeType type, String knobId, Object data) {
+    private void notifyGlobalListeners(RegistryChangeType type, String knobId, Object data) {
         for (RegistryChangeListener listener : globalListeners) {
             try {
                 listener.onRegistryChanged(type, knobId, data);

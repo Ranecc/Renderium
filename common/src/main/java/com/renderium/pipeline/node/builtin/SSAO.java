@@ -17,6 +17,7 @@ import com.renderium.interception.context.RenderContext;
 import com.renderium.pipeline.node.AbstractPipelineNode;
 import com.renderium.pipeline.node.PipelineNode;
 import com.renderium.gpu.resource.VulkanGPUResourceManager;
+import com.renderium.vulkan.adapter.VulkanConst;
 
 import org.lwjgl.vulkan.VK10;
 
@@ -148,6 +149,9 @@ public class SSAO extends AbstractPipelineNode {
      * 默认值: {@value #SAMPLE_COUNT_DEFAULT}
      */
     private volatile int sampleCount = SAMPLE_COUNT_DEFAULT;
+
+    /** 是否启用 SSAO */
+    private volatile boolean enabled = true;
 
     /**
      * 采样半径（视图空间单位）
@@ -688,9 +692,9 @@ public class SSAO extends AbstractPipelineNode {
         for (int i = 0; i < count; i++) {
             // ---- 步骤 1: 在单位立方体中生成随机点，然后映射到单位球 ----
             // 使用确定性伪随机种子（基于索引 i 保证可重现性）
-            float x = pseudoRandom(i * 4 + 0);
-            float y = pseudoRandom(i * 4 + 1);
-            float z = pseudoRandom(i * 4 + 2);
+            float x = (float) pseudoRandom(i * 4 + 0);
+            float y = (float) pseudoRandom(i * 4 + 1);
+            float z = (float) pseudoRandom(i * 4 + 2);
 
             // 映射到 [-1, 1] 范围
             x = x * 2.0f - 1.0f;
@@ -886,6 +890,48 @@ public class SSAO extends AbstractPipelineNode {
      */
     public void setEnableBlur(boolean enable) {
         this.enableBlur = enable;
+    }
+
+    /**
+     * 设置 SSAO 质量预设
+     *
+     * @param preset 质量预设字符串（LOW/MEDIUM/HIGH/ULTRA）
+     */
+    public void setQualityPreset(Object preset) {
+        String presetStr = preset != null ? preset.toString().toUpperCase() : "MEDIUM";
+        switch (presetStr) {
+            case "LOW":
+                setSampleCount(8);
+                setRadius(0.3f);
+                break;
+            case "MEDIUM":
+                setSampleCount(32);
+                setRadius(0.5f);
+                break;
+            case "HIGH":
+                setSampleCount(48);
+                setRadius(0.8f);
+                break;
+            case "ULTRA":
+                setSampleCount(64);
+                setRadius(1.2f);
+                break;
+            default:
+                LOGGER.warning("未知的 SSAO 质量预设: " + presetStr + ", 使用 MEDIUM");
+                setSampleCount(32);
+                setRadius(0.5f);
+        }
+        LOGGER.info("SSAO 质量预设设置为: " + presetStr);
+    }
+
+    /**
+     * 设置是否启用 SSAO
+     *
+     * @param enabled 是否启用
+     */
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+        LOGGER.info("SSAO: " + (enabled ? "启用" : "禁用"));
     }
 
     /**

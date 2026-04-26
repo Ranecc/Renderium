@@ -114,6 +114,27 @@ public final class CommandBatcher {
     /** 单条命令提交数（未命中批量） */
     private long singleCommits;
 
+    // ==================== 单例支持 ====================
+
+    /** 单例实例 */
+    private static volatile CommandBatcher instance;
+
+    /**
+     * 获取单例实例
+     *
+     * @return CommandBatcher 单例
+     */
+    public static CommandBatcher getInstance() {
+        if (instance == null) {
+            synchronized (CommandBatcher.class) {
+                if (instance == null) {
+                    instance = new CommandBatcher();
+                }
+            }
+        }
+        return instance;
+    }
+
     // ==================== 构造函数 ====================
 
     public CommandBatcher() {
@@ -171,6 +192,30 @@ public final class CommandBatcher {
      */
     public boolean enqueueMatrixUpload(long handle, Object data) {
         return enqueue(CommandType.MATRIX_UPLOAD, handle, 0, 64, data);
+    }
+
+    /**
+     * 入队 Compute Shader 分发命令
+     *
+     * @param pipelineHandle Compute 管线句柄
+     * @param groupX X 方向工作组数量
+     * @param groupY Y 方向工作组数量
+     * @param groupZ Z 方向工作组数量
+     * @return true 如果成功入队
+     */
+    public boolean enqueueComputeDispatch(long pipelineHandle, int groupX, int groupY, int groupZ) {
+        int[] dispatchParams = {groupX, groupY, groupZ};
+        return enqueue(CommandType.DRAW_CALL, pipelineHandle, 0, 12, dispatchParams);
+    }
+
+    /**
+     * 提交绘制命令（带名称标识）
+     *
+     * @param drawCallId 绘制调用标识符
+     * @param vertexCount 顶点数量
+     */
+    public void submitDrawCall(String drawCallId, int vertexCount) {
+        enqueue(CommandType.DRAW_CALL, 0L, vertexCount, 0, drawCallId);
     }
 
     /**

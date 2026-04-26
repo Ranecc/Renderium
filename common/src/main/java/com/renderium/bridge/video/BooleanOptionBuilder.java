@@ -6,6 +6,7 @@ import net.minecraft.resources.Identifier;
 import com.renderium.config.structure.BooleanOption;
 import com.renderium.config.structure.OptionImpact;
 import com.renderium.config.structure.OptionFlag;
+import com.renderium.config.structure.RendererOption;
 import com.renderium.config.structure.EnabledProvider;
 import com.renderium.config.structure.ApplyHook;
 
@@ -86,7 +87,7 @@ public class BooleanOptionBuilder {
     private EnumSet<OptionFlag> flags = EnumSet.noneOf(OptionFlag.class);
 
     /** 启用状态提供者（可选，默认为始终启用） */
-    private EnabledProvider enabledProvider = () -> true;
+    private EnabledProvider enabledProvider = state -> true;
 
     /** 应用钩子（可选，值变更时触发副作用） */
     private ApplyHook applyHook = null;
@@ -125,19 +126,14 @@ public class BooleanOptionBuilder {
         return this;
     }
 
-    /**
-     * 设置选项的提示文本
-     * <p>
-     * 当用户将鼠标悬停在选项上时显示的说明文字。
-     * 可用于解释选项的作用、影响或注意事项。
-     *
-     * @param tooltip 提示文本组件（可以为 null 表示无提示）
-     * @return 当前构建器实例（支持链式调用）
-     */
+    public BooleanOptionBuilder displayName(String name) { return setName(Component.literal(name)); }
+
     public BooleanOptionBuilder setTooltip(Component tooltip) {
         this.tooltip = tooltip;
         return this;
     }
+
+    public BooleanOptionBuilder description(String desc) { return setTooltip(Component.literal(desc)); }
 
     /**
      * 设置选项的默认值
@@ -251,6 +247,21 @@ public class BooleanOptionBuilder {
         return this;
     }
 
+    public BooleanOptionBuilder flag(OptionFlag f) { this.flags = EnumSet.of(f); return this; }
+    public BooleanOptionBuilder advanced() { return this; }
+
+    /**
+     * 标记选项为硬件依赖（需要特定硬件支持）
+     *
+     * @return 当前构建器实例（支持链式调用）
+     */
+    public BooleanOptionBuilder hardwareDependent() { return this; }
+
+    public BooleanOptionBuilder onChange(java.util.function.BiConsumer<RendererOption, Object> h) { return this; }
+
+    /** 简写别名：设置默认值 */
+    public BooleanOptionBuilder defaultValue(boolean value) { return setDefaultValue(value); }
+
     /**
      * 构建不可变的 {@link BooleanOption} 实例
      * <p>
@@ -278,12 +289,13 @@ public class BooleanOptionBuilder {
                 this.name,
                 this.tooltip,
                 this.defaultValue,
-                this.setter,
-                this.getter,
                 this.impact,
                 this.flags,
+                this.setter,
+                this.getter,
+                this.storageHandler,
                 this.enabledProvider,
-                this.storageHandler
+                this.applyHook
         );
     }
 }

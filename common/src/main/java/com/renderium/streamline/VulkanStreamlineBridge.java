@@ -363,4 +363,51 @@ public class VulkanStreamlineBridge {
             LOGGER.info("Vulkan Streamline Bridge 已关闭");
         }
     }
+
+    // ==================== 内部数据结构 ====================
+
+    /**
+     * 资源标记数据（用于帧生成资源标记）
+     * <p>
+     * 封装需要标记给 Streamline SDK 的 Vulkan 资源信息，
+     * 包括缓冲区类型、图像视图句柄和尺寸。
+     *
+     * <h3>字段说明：</h3>
+     * <ul>
+     *   <li><b>bufferType</b>: 缓冲区类型（颜色/深度/运动向量等）</li>
+     *   <li><b>imageView</b>: VkImageView 句柄</li>
+     *   <li><b>width/height</b>: 纹理尺寸（像素）</li>
+     * </ul>
+     *
+     * @see #tagResources(ResourceTagData[])
+     * @since 3.0.0
+     */
+    public static class ResourceTagData {
+        /** 缓冲区类型（对应 SLFFMBindings.BUFFER_TYPE_* 常量） */
+        public final int bufferType;
+
+        /** VkImageView 句柄 */
+        public final long imageView;
+
+        /** 纹理宽度（像素） */
+        public final int width;
+
+        /** 纹理高度（像素） */
+        public final int height;
+
+        /**
+         * 构建资源标记数据
+         *
+         * @param bufferType 缓冲区类型常量
+         * @param imageView  VkImageView 句柄
+         * @param width      纹理宽度
+         * @param height     纹理高度
+         */
+        public ResourceTagData(int bufferType, long imageView, int width, int height) {
+            this.bufferType = bufferType;
+            this.imageView = imageView;
+            this.width = width;
+            this.height = height;
+        }
+    }
 }

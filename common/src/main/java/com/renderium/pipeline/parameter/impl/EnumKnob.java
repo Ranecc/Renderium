@@ -98,7 +98,7 @@ public final class EnumKnob implements ParameterKnob<String> {
         this.description = builder.description != null ? builder.description : "";
 
         // 深拷贝选项列表并包装为不可变视图
-        if (builder.options == null || builder.options.isEmpty()) {
+        if (builder.options == null || builder.options.length == 0) {
             throw new IllegalArgumentException("枚举参数必须至少有一个选项");
         }
         this.options = Collections.unmodifiableList(List.of(builder.options));
@@ -450,6 +450,25 @@ public final class EnumKnob implements ParameterKnob<String> {
          */
         public Builder defaultIndex(int index) {
             this.defaultIndex = index;
+            return this;
+        }
+
+        /**
+         * 通过值字符串设置默认选中项
+         *
+         * @param value String - 默认值字符串，会匹配 options 中的项
+         * @return this
+         */
+        public Builder defaultValue(String value) {
+            if (value != null && options != null) {
+                for (int i = 0; i < options.length; i++) {
+                    if (value.equals(options[i])) {
+                        this.defaultIndex = i;
+                        return this;
+                    }
+                }
+            }
+            // 未找到匹配项，保持默认索引 0
             return this;
         }
 

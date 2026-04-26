@@ -231,6 +231,25 @@ public final class VideoOptionsRegistry {
     }
 
     /**
+     * 检查是否有任何选项发生了变更（静态便捷方法）
+     * <p>
+     * 供设置界面快速查询全局变更状态。
+     * 注意：此方法需要通过 VideoSettingsBridge 获取注册表实例。
+     *
+     * @return 如果存在未保存的修改返回 true
+     */
+    public static boolean anyOptionChanged() {
+        // 通过 VideoSettingsBridge 获取当前注册表实例
+        try {
+            VideoOptionsRegistry registry = VideoSettingsBridge.getVideoOptionsRegistry();
+            return registry != null && registry.hasUnsavedChanges();
+        } catch (Exception e) {
+            LOGGER.warn("Failed to check option changes: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * 获取未保存修改的数量
      * @return 未保存选项的数量
      */

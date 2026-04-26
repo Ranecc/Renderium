@@ -796,7 +796,7 @@ public final class EnumOption<T extends Enum<T>> implements SearchableOption {
                 this.storageHandler,
                 this.enabledProvider,
                 this.applyHook,
-                (Function<T, Component>) this.elementNameProvider,
+                (Function) this.elementNameProvider,
                 this.allowedValues
             );
         }
