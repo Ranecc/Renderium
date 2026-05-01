@@ -7,8 +7,8 @@ tasks.register<Delete>("clean") {
 }
 
 allprojects {
-    group = "com.renderium"
-    version = "1.0.0-SNAPSHOT"
+    group = "com.ranecc.renderium"
+    version = "1.1.0-SNAPSHOT"
 
     // 配置仓库 - 使用镜像加速
     repositories {

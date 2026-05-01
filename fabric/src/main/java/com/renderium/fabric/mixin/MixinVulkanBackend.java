@@ -79,7 +79,7 @@ public abstract class MixinVulkanBackend {
 
         // Future: Here we can hook into the device for:
         // - Custom memory allocator (VMA configuration)
-        - Additional extensions
+        // - Additional extensions
         // - Performance monitoring hooks
         // - Streamline SDK initialization
     }
