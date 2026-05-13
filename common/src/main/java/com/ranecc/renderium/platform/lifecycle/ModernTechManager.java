@@ -17,11 +17,10 @@
 package com.ranecc.renderium.platform.lifecycle;
 
 import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.renderium.framegen.*;
-import com.ranecc.renderium.None;
-import com.renderium.streamline.*;
-import com.renderium.superres.*;
+import com.ranecc.renderium.tech.framegen.*;
+import com.ranecc.renderium.tech.streamline.*;
+import com.ranecc.renderium.tech.superres.*;
+import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 
 /**
  * 现代渲染技术管理器

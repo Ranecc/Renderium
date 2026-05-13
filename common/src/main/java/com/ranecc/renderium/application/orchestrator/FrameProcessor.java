@@ -268,12 +268,12 @@ public class FrameProcessor {
         double minMs = getMinFrameTimeMs();
 
         LOGGER.info(String.format(
-            "=== FrameProcessor Final Statistics ===" +
-            "\nTotal frames processed: %d" +
-            "\nTotal processing time: %d ms" +
-            "\nAverage frame time: %.3f ms" +
-            "\nMax frame time: %.3f ms" +
-            "\nMin frame time: %.3f ms",
+            "=== FrameProcessor Final Statistics ===%n" +
+            "Total frames processed: %d%n" +
+            "Total processing time: %d ms%n" +
+            "Average frame time: %.3f ms%n" +
+            "Max frame time: %.3f ms%n" +
+            "Min frame time: %.3f ms",
             frames, totalTimeMs, avgMs, maxMs, minMs
         ));
     }

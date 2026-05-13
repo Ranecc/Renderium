@@ -198,17 +198,17 @@ public enum ShaderPermission {
     public String buildUserNotification(String shaderPackName) {
         return switch (this) {
             case SANDBOX -> String.format(
-                    "§9[Renderium 光影] §f%s 已加载（%s）\n  §7%s",
+                    "\u00a79[Renderium \u00a7f%s \u00a7f已加载（%s）%n\u00a77%s",
                     shaderPackName, displayName, description);
             case INJECTION -> String.format(
-                    "§e[Renderium 光影] §f%s 已加载（%s）\n  %s\n  §6▸ 此光影包含自定义 SPIR-V 管线\n  §6▸ 部分 Renderium 引擎优化已被禁用",
+                    "\u00a7e[Renderium \u00a7f%s \u00a7f已加载（%s）%n%s%n\u00a76\u25b8 此光影包含自定义 SPIR-V 管线%n\u00a76\u25b8 部分 Renderium 引擎优化已被禁用",
                     shaderPackName, uiLabel, description);
             case TAKEOVER -> String.format(
-                    "§c[Renderium 光影] §f%s 已加载（%s）\n  %s\n  §4§l!!! 严重警告 !!!§r\n" +
-                    "  §c▸ 此光影已完全接管渲染管线\n" +
-                    "  §c▸ Renderium 所有优化均已失效\n" +
-                    "  §c▸ 如遇崩溃，请勿反馈给 Renderium\n" +
-                    "  §c▸ 请联系光影作者 %s 获取支持",
+                    "\u00a7c[Renderium \u00a7f%s \u00a7f已加载（%s）%n%s%n\u00a74\u00a7l!!! 严重警告 !!!\u00a7r%n" +
+                    "  \u00a7c\u25b8 此光影已完全接管渲染管线%n" +
+                    "  \u00a7c\u25b8 Renderium 所有优化均已失效%n" +
+                    "  \u00a7c\u25b8 如遇崩溃，请勿反馈给 Renderium%n" +
+                    "  \u00a7c\u25b8 请联系光影作者 %s 获取支持",
                     shaderPackName, uiLabel, description, shaderPackName);
         };
     }

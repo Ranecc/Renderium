@@ -4,14 +4,14 @@ import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
 import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 
 /**
  * RenderSystem Mixin - Vulkan 设备句柄提取
@@ -108,7 +108,7 @@ public abstract class MixinRenderSystem {
 
         if (!backendObj.getClass().getName().contains("VulkanDevice")) {
             LOGGER.warning(
-                "RenderSystem 后端不是 VulkanDevice (实际: " +
+                "RenderSystem 后端不是 VulkanDevice (实际: " +"
                 (backendObj != null ? backendObj.getClass().getSimpleName() : "null") +
                 ")，跳过 Renderium Vulkan 初始化"
             );

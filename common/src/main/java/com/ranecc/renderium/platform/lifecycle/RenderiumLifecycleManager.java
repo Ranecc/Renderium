@@ -5,6 +5,7 @@ package com.ranecc.renderium.platform.lifecycle;
 
 import java.util.Arrays;
 import java.util.logging.Logger;
+import com.ranecc.renderium.domain.model.FrameData;
 
 /**
  * 渲染生命周期管理器

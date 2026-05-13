@@ -7,11 +7,12 @@ import org.jetbrains.annotations.Nullable;
 import java.util.EnumSet;
 import java.util.Objects;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 import com.ranecc.renderium.None;
-
+import java.util.function.Function;
+import net.minecraft.network.chat.Component;
+import com.ranecc.renderium.infrastructure.config.structure.OptionImpact;
 public final class FloatOption implements SearchableOption {
 
     private final Identifier id;

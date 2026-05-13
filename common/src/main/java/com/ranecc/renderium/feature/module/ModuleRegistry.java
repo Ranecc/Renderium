@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
+import com.ranecc.renderium.feature.module.RenderiumModule;
+import com.ranecc.renderium.feature.module.ModuleContext;
 
 /**
  * 模块注册表

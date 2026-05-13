@@ -192,7 +192,7 @@ public final class ConfigValidator {
         // 性能警告：极端 FOV 可能导致性能问题
         if (fov >= 120.0f && fov <= 150.0f) {
             warnings.add(String.format(
-                "Very wide FOV (%.1f) may impact rendering performance", fov
+                "Very wide FOV (%.1f) may impact rendering performance", fov"
             ));
         }
     }
@@ -223,7 +223,7 @@ public final class ConfigValidator {
         // 性能警告：高 LOD 级别增加计算开销
         if (maxLevels > 3 && maxLevels <= ConfigConstants.LOD_MAX_LEVELS) {
             warnings.add(String.format(
-                "High LOD levels (%d) may increase computation overhead", maxLevels
+                "High LOD levels (%d) may increase computation overhead", maxLevels"
             ));
         }
     }
@@ -257,14 +257,14 @@ public final class ConfigValidator {
 
         if (near > 0 && far > 0 && far <= near) {
             errors.add(String.format(
-                "Far plane (%.4f) must be greater than near plane (%.4f)", far, near
+                "Far plane (%.4f) must be greater than near plane (%.4f)", far, near"
             ));
         }
 
         // 精度警告：Z-fighting 风险
         if (near > 0 && far > 0 && (far / near) > 100000) {
             warnings.add(String.format(
-                "Large depth range ratio (far/near=%.0f) may cause Z-fighting", far / near
+                "Large depth range ratio (far/near=%.0f) may cause Z-fighting", far / near"
             ));
         }
     }
@@ -294,7 +294,7 @@ public final class ConfigValidator {
         // 性能警告：超高分辨率可能影响性能
         if (width > 3840 || height > 2160) {
             warnings.add(String.format(
-                "High resolution (%dx%d) may require powerful GPU", width, height
+                "High resolution (%dx%d) may require powerful GPU", width, height"
             ));
         }
     }

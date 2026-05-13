@@ -61,10 +61,10 @@ public final class ResourceTagData {
     @Override
     public String toString() {
         return "ResourceTagData{" +
-               "bufferType=" + bufferType +
-               ", imageView=0x" + Long.toHexString(imageView) +
-               ", width=" + width +
-               ", height=" + height +
+               "bufferType=" + bufferType +"
+               ", imageView=0x" + Long.toHexString(imageView) +"
+               ", width=" + width +"
+               ", height=" + height +"
                '}';
     }
 }

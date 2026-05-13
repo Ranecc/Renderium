@@ -12,6 +12,7 @@
 //   java --enable-preview --source 25 StandalonePerfBenchmark
 
 package com.renderium.benchmark;
+import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob;
 
 import com.renderium.bridge.batch.BatchTransformEngineV3;
 import com.renderium.shader.performance.ShaderPerformanceOptimizer;

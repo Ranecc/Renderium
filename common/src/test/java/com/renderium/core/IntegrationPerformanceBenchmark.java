@@ -26,6 +26,7 @@
 // ============================================================
 
 package com.renderium.core;
+import com.ranecc.renderium.feature.pipeline.BfsOcclusionEngine;
 
 import com.renderium.core.quality.LyapunovQualityChecker;
 

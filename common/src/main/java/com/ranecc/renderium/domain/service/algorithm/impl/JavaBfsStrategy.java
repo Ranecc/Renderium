@@ -3,9 +3,11 @@
 // 迁移规则: 优先使用 snapshot 1.1.0 版本，修改 package/import，保持业务逻辑不变
 
 package com.ranecc.renderium.domain.service.algorithm.impl;
+import com.ranecc.renderium.feature.pipeline.strategy.AlgorithmStrategy;
+import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
+import com.ranecc.renderium.feature.pipeline.strategy.AlgorithmStrategy;
+import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
 
-import com.ranecc.renderium.domain.service.algorithm.AlgorithmStrategy;
-import com.ranecc.renderium.domain.service.algorithm.BfsInput;
 import com.ranecc.renderium.domain.model.VisibilityResult;
 import java.util.BitSet;
 import java.util.logging.Logger;

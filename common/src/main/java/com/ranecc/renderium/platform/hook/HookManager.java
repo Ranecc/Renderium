@@ -4,7 +4,7 @@
 
 package com.ranecc.renderium.platform.hook;
 
-import com.renderium.mixin.abstracts.hooks.*;
+import com.ranecc.renderium.platform.hook.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**

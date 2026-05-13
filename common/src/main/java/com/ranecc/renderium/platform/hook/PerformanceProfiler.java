@@ -251,14 +251,7 @@ public final class PerformanceProfiler {
     static {
         // 为每种 Hook 类型预创建计时区域（名称与 HookDispatcher.HOOK_NAMES 一致）
         for (int i = 0; i < HookDispatcher.HOOK_COUNT; i++) {
-            zones[i] = new Zone(HookDispatcher.DRAW_INDEXED == i ? "DrawIndexed"
-                    : HookDispatcher.SET_PIPELINE == i ? "SetPipeline"
-                    : HookDispatcher.BIND_TEXTURE == i ? "BindTexture"
-                    : HookDispatcher.COMMAND_ENCODER_SUBMIT == i ? "CommandEncoderSubmit"
-                    : HookDispatcher.POST_CHAIN == i ? "PostChain"
-                    : HookDispatcher.FRAME_GRAPH_EXECUTE == i ? "FrameGraphExecute"
-                    : HookDispatcher.RENDER_PASS_CLOSE == i ? "RenderPassClose"
-                    : "GpuDeviceBuffer");
+            ": HookDispatcher.SET_PIPELINE == i ? \"SetPipeline\": HookDispatcher.BIND_TEXTURE == i ? \"BindTexture\": HookDispatcher.COMMAND_ENCODER_SUBMIT == i ? \"CommandEncoderSubmit\": HookDispatcher.POST_CHAIN == i ? \"PostChain\": HookDispatcher.FRAME_GRAPH_EXECUTE == i ? \"FrameGraphExecute\": HookDispatcher.RENDER_PASS_CLOSE == i ? \"RenderPassClose\": \"GpuDeviceBuffer\");
         }
         LOGGER.fine(() -> "PerformanceProfiler initialized with " + zones.length + " zones");
     }
@@ -292,7 +285,7 @@ public final class PerformanceProfiler {
         // 参数校验（热路径分支预测友好：合法值远多于非法值）
         if (hookIndex < 0 || hookIndex >= HookDispatcher.HOOK_COUNT) {
             throw new IllegalArgumentException(
-                    "hookIndex out of range [0, " + HookDispatcher.HOOK_COUNT + "): " + hookIndex
+                    "hookIndex out of range [0, " + HookDispatcher.HOOK_COUNT + "): " + hookIndex"
             );
         }
 
@@ -403,10 +396,12 @@ public final class PerformanceProfiler {
      */
     public static String getReport() {
         StringBuilder sb = new StringBuilder(1024);
-        sb.append("=== PerformanceProfiler Report ===\n");
+        sb.append("=== PerformanceProfiler Report ===
+");
         sb.append(String.format("Global frame count: %d%n", globalFrameCount.get()));
         sb.append(String.format("Registered zones: %d%n", zones.length));
-        sb.append("---\n");
+        sb.append("---
+");
 
         for (int i = 0; i < zones.length; i++) {
             Zone zone = zones[i];
@@ -420,7 +415,7 @@ public final class PerformanceProfiler {
             sb.append(String.format("  P50:     %.1f μs%n", zone.getP50() / 1000.0));
             sb.append(String.format("  P95:     %.1f μs%n", zone.getP95() / 1000.0));
             sb.append(String.format("  P99:     %.1f μs%n", zone.getP99() / 1000.0));
-            sb.append("\n");
+            "\");
         }
 
         return sb.toString();

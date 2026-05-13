@@ -5,9 +5,6 @@
 package com.ranecc.renderium.infrastructure.gpu.gl;
 
 import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.ConcurrentHashMap;

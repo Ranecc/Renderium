@@ -48,7 +48,7 @@ public final class SodiumCompatibleProvider implements VideoSettingsProvider {
      * <p>用于运行时反射检测 Sodium 是否已加载
      */
     private static final String SODIUM_VIDEO_SETTINGS_CLASS =
-            "net.caffeinemc.mods.sodium.client.gui.VideoSettingsScreen";
+            "net.caffeinemc.mods.sodium.client.gui.VideoSettingsScreen";"
 
     /** Sodium 检测缓存（volatile 保证多线程可见性） */
     private static volatile Boolean sodiumDetectedCache = null;

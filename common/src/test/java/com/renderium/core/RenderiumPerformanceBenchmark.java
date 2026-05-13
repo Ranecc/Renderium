@@ -1,4 +1,5 @@
 package com.renderium.core;
+import com.ranecc.renderium.feature.pipeline.BfsOcclusionEngine;
 
 import com.renderium.pipeline.BfsOcclusionEngine;
 import com.renderium.pipeline.BfsOcclusionEngine.OcclusionTask;

@@ -4,6 +4,7 @@
 // 验证 AdaptivePrecisionManager 和 ConvergenceMonitor 的核心功能
 
 package com.renderium.core;
+import com.ranecc.renderium.domain.model.FrameData;
 
 import com.renderium.core.quality.ConvergenceMonitor;
 import com.renderium.core.precision.AdaptivePrecisionManager;

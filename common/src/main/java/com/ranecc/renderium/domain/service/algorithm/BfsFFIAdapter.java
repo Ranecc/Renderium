@@ -1,4 +1,6 @@
 package com.ranecc.renderium.domain.service.algorithm;
+import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
+import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
 
 /**
  * BFS 遮挡剔除 FFI 适配器专用接口
@@ -12,7 +14,7 @@ package com.ranecc.renderium.domain.service.algorithm;
  *   <li>{@code destroyContext()}: 释放 Native 资源</li>
  * </ul>
  *
- * @see com.ranecc.renderium.infrastructure.nativeLib.ffi.BfsOcclusionFFIAdapter
+ * @see com.ranecc.renderium.infrastructure.nativeLib.binding.BfsOcclusionFFIAdapter
  * @since 1.1.0
  */
 public interface BfsFFIAdapter extends FFIAdapter<BfsInput> {

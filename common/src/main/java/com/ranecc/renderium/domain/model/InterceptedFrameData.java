@@ -2,6 +2,7 @@
 // 拦截帧数据容器 - 扩展 FrameData，支持 HDR 和元数据
 
 package com.ranecc.renderium.domain.model;
+import com.ranecc.renderium.domain.model.InterceptedFrameData;
 
 import com.ranecc.renderium.domain.model.FrameData;
 import java.time.Instant;

@@ -14,6 +14,7 @@
 //   - 总管线执行时间 < 2.50ms/帧 v 对应 ~400 FPS
 
 package com.renderium.benchmark;
+import com.ranecc.renderium.feature.intercept.base.RenderContext;
 
 import com.renderium.bridge.batch.BatchTransformEngine;
 import com.renderium.bridge.batch.BatchTransformEngineV3;

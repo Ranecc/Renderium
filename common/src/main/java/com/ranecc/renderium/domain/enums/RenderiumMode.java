@@ -1,4 +1,5 @@
 package com.ranecc.renderium.domain.enums;
+import com.ranecc.renderium.domain.enums.RenderiumMode;
 
 public enum RenderiumMode {
 

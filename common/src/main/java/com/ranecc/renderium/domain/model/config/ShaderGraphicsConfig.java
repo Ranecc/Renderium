@@ -14,16 +14,17 @@
 
 package com.ranecc.renderium.domain.model.config;
 
-import com.ranecc.renderium.pipeline.parameter.ParameterKnob;
-import com.ranecc.renderium.pipeline.parameter.ParameterRegistry;
-import com.ranecc.renderium.pipeline.parameter.impl.BoolKnob;
-import com.ranecc.renderium.pipeline.parameter.impl.FloatKnob;
-import com.ranecc.renderium.pipeline.parameter.impl.IntKnob;
-import com.ranecc.renderium.pipeline.parameter.impl.EnumKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.ParameterRegistry;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.BoolKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.FloatKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.IntKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.EnumKnob;
 
 import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 
 /**
  * Shader 图形配置中心

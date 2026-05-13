@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.ranecc.renderium.mock.MockMinecraft;
+import com.ranecc.renderium.feature.intercept.base.RenderContext;
 
 /**
  * RealDataProvider - 真实 Minecraft 数据桥接层 🌉

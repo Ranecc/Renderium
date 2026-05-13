@@ -44,6 +44,7 @@
 // ============================================================
 
 package com.ranecc.renderium.domain.service.phase;
+import com.ranecc.renderium.domain.service.quality.PhaseEvent;
 
 import java.time.Instant;
 import java.util.*;
@@ -411,12 +412,12 @@ public final class PhaseTransitionDetector {
         // 参数校验
         if (smoothingWindow <= 0) {
             throw new IllegalArgumentException(
-                "滑动窗口大小必须为正数: " + smoothingWindow
+                "滑动窗口大小必须为正数: " + smoothingWindow"
             );
         }
         if (diagnosticHistorySize <= 0) {
             throw new IllegalArgumentException(
-                "诊断历史容量必须为正数: " + diagnosticHistorySize
+                "诊断历史容量必须为正数: " + diagnosticHistorySize"
             );
         }
 
@@ -487,8 +488,8 @@ public final class PhaseTransitionDetector {
         }
         if (currentFrame.length != previousFrame.length) {
             throw new IllegalArgumentException(
-                "帧数据长度不一致: current=" + currentFrame.length +
-                ", previous=" + previousFrame.length
+                "帧数据长度不一致: current=" + currentFrame.length +"
+                ", previous=" + previousFrame.length"
             );
         }
         if (currentFrame.length == 0) {
@@ -773,7 +774,7 @@ public final class PhaseTransitionDetector {
             } catch (Exception e) {
                 // 回调异常不应影响主流程，仅记录警告
                 LOGGER.log(Level.WARNING,
-                    "相变回调执行异常 [type=" + phaseType + "]: " + e.getMessage(),
+                    "相变回调执行异常 [type=" + phaseType + "]: " + e.getMessage(),"
                     e
                 );
             }
@@ -959,34 +960,34 @@ public final class PhaseTransitionDetector {
      */
     public String getDiagnosticReport() {
         StringBuilder sb = new StringBuilder();
-        sb.append("\n========== 相变检测器诊断报告 ==========\n");
-        sb.append(String.format("总处理帧数: %d\n", totalFrameCount));
-        sb.append(String.format("滑动窗口大小: %d\n", intensityHistory.length));
-        sb.append(String.format("上次检测类型: %s\n", lastDetectedPhase));
-        sb.append(String.format("上次平滑强度: %.6f\n", lastSmoothedIntensity));
-        sb.append("----------------------------------------\n");
+        sb.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500 相变检测器诊断报告 \u2500\u2500\u2500\u2500\u2500\u2500\u2500%n");
+        sb.append(String.format("总处理帧数: %d%n", totalFrameCount));
+        sb.append(String.format("滑动窗口大小: %d%n", intensityHistory.length));
+        sb.append(String.format("上次检测类型: %s%n", lastDetectedPhase));
+        sb.append(String.format("上次平滑强度: %.6f%n", lastSmoothedIntensity));
+        sb.append("----------------------------------------%n");
 
         // 统计摘要
-        sb.append("\n【检测统计】\n");
+        sb.append("\u3010检测统计\u3011%n");
         for (PhaseType type : PhaseType.values()) {
             int count = detectionCounts.get(type).get();
             if (count > 0 || type == PhaseType.NONE) {
-                sb.append(String.format("  %-20s: %d 次\n", type.getName(), count));
+                sb.append(String.format("  %-20s: %d 次%n", type.getName(), count));
             }
         }
 
         // 最近的历史记录
-        sb.append("\n【最近检测历史（最新在前）】\n");
-        sb.append(String.format("%-8s %-12s %-10s %-10s %-12s %-15s\n",
-            "帧号", "原始强度", "平滑强度", "差异均值", "方差", "检测类型"));
-        sb.append("--------------------------------------------------------------------------------\n");
+        sb.append("\u3010最近检测历史（最新在前）\u3011%n");
+        sb.append("%-8s %-12s %-10s %-10s %-12s %-15s%n",
+            "帧号", "原始强度", "平滑强度", "差异均值", "方差", "检测类型");
+        sb.append("--------------------------------------------------------------------------------%n");
 
         List<DiagnosticRecord> records = diagnosticHistory.toList();
         // 反向遍历（最新的在前）
         for (int i = records.size() - 1; i >= Math.max(0, records.size() - 20); i--) {
             DiagnosticRecord record = records.get(i);
             sb.append(String.format(
-                "%-8d %-12.6f %-10.6f %-10.2f %-12.2f %-15s\n",
+                "%-8d %-12.6f %-10.6f %-10.2f %-12.2f %-15s%n",
                 record.frameNumber,
                 record.rawIntensity,
                 record.smoothedIntensity,
@@ -996,7 +997,7 @@ public final class PhaseTransitionDetector {
             ));
         }
 
-        sb.append("\n==========================================\n");
+        sb.append("--------------------------------------------------------------------------------%n");
         return sb.toString();
     }
 

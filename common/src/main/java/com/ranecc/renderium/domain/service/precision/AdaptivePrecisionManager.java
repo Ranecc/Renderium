@@ -25,6 +25,7 @@
 // ============================================================
 
 package com.ranecc.renderium.domain.service.precision;
+import com.ranecc.renderium.domain.model.FrameData;
 
 import java.util.Arrays;
 import java.util.logging.Level;
@@ -260,7 +261,7 @@ public final class AdaptivePrecisionManager {
     public AdaptivePrecisionManager(int tileSize) {
         if (tileSize < 8 || (tileSize & (tileSize - 1)) != 0) {
             throw new IllegalArgumentException(
-                "Tile大小必须 >= 8 且为2的幂次方: " + tileSize
+                "Tile大小必须 >= 8 且为2的幂次方: " + tileSize"
             );
         }
         this.tileSize = tileSize;
@@ -475,13 +476,13 @@ public final class AdaptivePrecisionManager {
      */
     public String getStatusSummary() {
         return String.format(
-            "AdaptivePrecisionManager{\n" +
-            "  tileSize=%dpx,\n" +
-            "  resourcePressure=%.2f,\n" +
-            "  thresholds=[high=%.3f, mid=%.3f, low=%.3f],\n" +
-            "  tileDistribution=[SKIP=%d, INT8=%d, FP16=%d, FP32=%d],\n" +
-            "  totalAnalyses=%d,\n" +
-            "  avgAnalysisTime=%.2fμs\n" +
+            "AdaptivePrecisionManager{%n" +
+            "  tileSize=%dpx,%n" +
+            "  resourcePressure=%.2f,%n" +
+            "  thresholds=[high=%.3f, mid=%.3f, low=%.3f],%n" +
+            "  tileDistribution=[SKIP=%d, INT8=%d, FP16=%d, FP32=%d],%n" +
+            "  totalAnalyses=%d,%n" +
+            "  avgAnalysisTime=%.2fμs%n" +
             "}",
             tileSize,
             currentResourcePressure,
@@ -737,12 +738,12 @@ public final class AdaptivePrecisionManager {
         @Override
         public String toString() {
             return String.format(
-                "FrameAnalysisResult{\n" +
-                "  tiles=%dx%d,\n" +
-                "  distribution=[SKIP=%d(%d%%), INT8=%d(%d%%), FP16=%d(%d%%), FP32=%d(%d%%)],\n" +
-                "  thresholds=[%.3f, %.3f, %.3f],\n" +
-                "  pressure=%.2f, time=%.2fμs,\n" +
-                "  estimatedSavings=%.1f%%\n" +
+                "FrameAnalysisResult{%n" +
+                "  tiles=%dx%d,%n" +
+                "  distribution=[SKIP=%d(%d%%), INT8=%d(%d%%), FP16=%d(%d%%), FP32=%d(%d%%)],%n" +
+                "  thresholds=[%.3f, %.3f, %.3f],%n" +
+                "  pressure=%.2f, time=%.2fμs,%n" +
+                "  estimatedSavings=%.1f%%%n" +
                 "}",
                 tilesX, tilesY,
                 tileDistribution[0], percentOf(0),

@@ -5,12 +5,6 @@
 package com.ranecc.renderium.platform.hook;
 
 import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
 
 /**
  * Central registry for all optimizer instances used by Mixin hooks.

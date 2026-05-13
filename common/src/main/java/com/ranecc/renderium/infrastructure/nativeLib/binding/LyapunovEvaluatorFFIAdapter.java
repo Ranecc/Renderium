@@ -5,6 +5,7 @@ package com.ranecc.renderium.infrastructure.nativeLib.binding;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import com.ranecc.renderium.domain.model.FrameData;
 
 /**
  * Lyapunov质量评估器 FFI适配器 - 基于Lyapunov指数的帧质量评估

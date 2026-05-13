@@ -4,6 +4,7 @@ import com.ranecc.renderium.domain.enums.AlgorithmPath;
 import com.ranecc.renderium.domain.constant.ConfigConstants;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
+import com.ranecc.renderium.domain.model.FrameData;
 
 /**
  * 自适应路径选择器（Domain 层纯净版）

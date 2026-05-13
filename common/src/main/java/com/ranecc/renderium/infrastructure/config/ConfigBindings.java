@@ -3,6 +3,7 @@ package com.ranecc.renderium.infrastructure.config;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 
 /**
  * 配置绑定工具类（自动快照提交）

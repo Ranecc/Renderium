@@ -3,6 +3,16 @@
 // 验证狂暴模式下所有优化模块、性能提升和稳定性
 
 package com.renderium.interception.test;
+import com.ranecc.renderium.domain.model.InterceptedFrameData;
+import com.ranecc.renderium.feature.intercept.base.LODContext;
+import com.ranecc.renderium.domain.model.FrameData;
+import com.ranecc.renderium.feature.culling.core.CullingContext;
+import com.ranecc.renderium.feature.intercept.base.InterceptionCallback;
+import com.ranecc.renderium.feature.intercept.base.RenderContext;
+import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
+import com.ranecc.renderium.domain.model.FrameCaptureContext;
+import com.ranecc.renderium.feature.culling.core.CullingContext;
+import com.ranecc.renderium.domain.enums.RenderiumMode;
 
 import com.renderium.interception.base.InterceptionCallback;
 import com.renderium.interception.base.InterceptionPermission;

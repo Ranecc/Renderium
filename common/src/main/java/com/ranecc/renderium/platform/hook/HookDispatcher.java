@@ -245,9 +245,9 @@ public final class HookDispatcher {
             // 检查是否已有注册（instance 非 null 且处于活跃状态）
             if (existing.getInstance() != null && existing.isActive()) {
                 throw new IllegalStateException(
-                        "Hook already registered for type [" + HOOK_NAMES[type] +
-                                "] (index=" + type +
-                                "). Current: " + existing.getInstance().getClass().getName() +
+                        "Hook already registered for type [" + HOOK_NAMES[type] +"
+                                "] (index=" + type +"
+                                "). Current: " + existing.getInstance().getClass().getName() +"
                                 ". Call unregister(" + type + ") first."
                 );
             }
@@ -682,7 +682,8 @@ public final class HookDispatcher {
      */
     public static String getPerformanceReport() {
         StringBuilder sb = new StringBuilder(512);
-        sb.append("=== HookDispatcher Performance Report ===\n");
+        sb.append("=== HookDispatcher Performance Report ===
+");
 
         // 全局统计
         long dispatches = totalDispatches.get();
@@ -696,7 +697,8 @@ public final class HookDispatcher {
                 enabledFlags, Integer.bitCount(enabledFlags)));
 
         // 每个 hook 类型的详细统计
-        sb.append("--- Per-Hook Statistics ---\n");
+        sb.append("--- Per-Hook Statistics ---
+");
         for (int i = 0; i < HOOK_COUNT; i++) {
             HookEntry entry = hooks[i];
             if (entry != null && entry.getTotalCalls() > 0) {

@@ -1,7 +1,7 @@
 package com.ranecc.renderium.application.controller;
 
 import com.ranecc.renderium.application.core.RenderiumCore;
-import com.ranecc.renderium.application.core.RenderiumCore.CoreState;
+import com.ranecc.renderium.application.core.CoreState;
 
 import java.util.logging.Logger;
 

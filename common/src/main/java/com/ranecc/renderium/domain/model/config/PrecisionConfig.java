@@ -1,6 +1,6 @@
-// ============================================================
+// ===========================
 // PrecisionConfig - 动态精度管理器配置
-// ============================================================
+/// ===========================
 // 提供 DynamicPrecisionManager 所需的所有可配置参数
 //
 // 设计原则：
@@ -23,14 +23,14 @@
 //       .build();
 //
 // @see DynamicPrecisionManager
-// ============================================================
+/// ===========================
 
 package com.ranecc.renderium.domain.model.config;
 
 /**
  * 动态精度管理器配置（不可变）
  * <p>
- * 封装 {@link com.ranecc.renderium.core.DynamicPrecisionManager} 的所有可配置参数。
+ * 封装 {@link com.ranecc.renderium.application.core.DynamicPrecisionManager} 的所有可配置参数。
  * 使用 Builder 模式创建实例，创建后所有属性不可修改。
  * <p>
  *
@@ -75,7 +75,7 @@ package com.ranecc.renderium.domain.model.config;
  * @author Renderium Team
  * @version 1.0
  * @since 3.0.0
- * @see com.ranecc.renderium.core.DynamicPrecisionManager
+ * @see com.ranecc.renderium.application.core.DynamicPrecisionManager
  */
 public final class PrecisionConfig {
 
@@ -94,13 +94,13 @@ public final class PrecisionConfig {
      * 适用场景：电竞游戏、VR 应用、实时渲染演示
      */
     public static final PrecisionConfig DEFAULT_1000FPS = new Builder()
-        .targetFrameTimeMs(com.ranecc.renderium.core.DynamicPrecisionManager.DEFAULT_TARGET_FRAME_TIME_MS)
-        .defaultHotPathPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.INT8_FAST)
-        .defaultTileStatsPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM)
-        .defaultFrameAccumulationPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.FP32_FULL)
-        .defaultOfflineAnalysisPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE)
+        .targetFrameTimeMs(com.ranecc.renderium.application.core.DynamicPrecisionManager.DEFAULT_TARGET_FRAME_TIME_MS)
+        .defaultHotPathPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.INT8_FAST)
+        .defaultTileStatsPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM)
+        .defaultFrameAccumulationPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.FP32_FULL)
+        .defaultOfflineAnalysisPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE)
         .enableAutoAdjustment(true)
-        .adjustmentIntervalFrames(com.ranecc.renderium.core.DynamicPrecisionManager.DEFAULT_ADJUSTMENT_INTERVAL_FRAMES)
+        .adjustmentIntervalFrames(com.ranecc.renderium.application.core.DynamicPrecisionManager.DEFAULT_ADJUSTMENT_INTERVAL_FRAMES)
         .averageWindowSize(30)
         .decisionLogSize(50)
         .build();
@@ -119,10 +119,10 @@ public final class PrecisionConfig {
      */
     public static final PrecisionConfig QUALITY_PRIORITY = new Builder()
         .targetFrameTimeMs(2.0f)
-        .defaultHotPathPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM)
-        .defaultTileStatsPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.FP32_FULL)
-        .defaultFrameAccumulationPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE)
-        .defaultOfflineAnalysisPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE)
+        .defaultHotPathPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM)
+        .defaultTileStatsPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.FP32_FULL)
+        .defaultFrameAccumulationPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE)
+        .defaultOfflineAnalysisPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE)
         .enableAutoAdjustment(true)
         .adjustmentIntervalFrames(60)
         .averageWindowSize(30)
@@ -143,10 +143,10 @@ public final class PrecisionConfig {
      */
     public static final PrecisionConfig BALANCED = new Builder()
         .targetFrameTimeMs(15.0f)
-        .defaultHotPathPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM)
-        .defaultTileStatsPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.FP32_FULL)
-        .defaultFrameAccumulationPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.FP32_FULL)
-        .defaultOfflineAnalysisPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE)
+        .defaultHotPathPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM)
+        .defaultTileStatsPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.FP32_FULL)
+        .defaultFrameAccumulationPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.FP32_FULL)
+        .defaultOfflineAnalysisPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE)
         .enableAutoAdjustment(true)
         .adjustmentIntervalFrames(30)
         .averageWindowSize(20)
@@ -161,11 +161,11 @@ public final class PrecisionConfig {
      */
     public static final PrecisionConfig DEBUG_PERFORMANCE = new Builder()
         .targetFrameTimeMs(0.5f)
-        .defaultGlobalPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.SKIP)
-        .defaultHotPathPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.SKIP)
-        .defaultTileStatsPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.INT8_FAST)
-        .defaultFrameAccumulationPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.INT8_FAST)
-        .defaultOfflineAnalysisPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.INT8_FAST)
+        .defaultGlobalPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.SKIP)
+        .defaultHotPathPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.SKIP)
+        .defaultTileStatsPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.INT8_FAST)
+        .defaultFrameAccumulationPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.INT8_FAST)
+        .defaultOfflineAnalysisPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.INT8_FAST)
         .enableAutoAdjustment(false)
         .adjustmentIntervalFrames(Integer.MAX_VALUE)
         .averageWindowSize(10)
@@ -178,19 +178,19 @@ public final class PrecisionConfig {
     private final float targetFrameTimeMs;
 
     /** 全局默认精度级别（当没有类别特定设置时的回退值） */
-    private final com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel defaultGlobalPrecision;
+    private final com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel defaultGlobalPrecision;
 
     /** 热路径（每像素操作）默认精度 */
-    private final com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel defaultHotPathPrecision;
+    private final com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel defaultHotPathPrecision;
 
     /** 温路径（Tile级统计）默认精度 */
-    private final com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel defaultTileStatsPrecision;
+    private final com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel defaultTileStatsPrecision;
 
     /** 冷路径（帧级累加）默认精度 */
-    private final com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel defaultFrameAccumulationPrecision;
+    private final com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel defaultFrameAccumulationPrecision;
 
     /** 离线路径（质量检测）默认精度 */
-    private final com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel defaultOfflineAnalysisPrecision;
+    private final com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel defaultOfflineAnalysisPrecision;
 
     /** 是否启用自动调整 */
     private final boolean autoAdjustmentEnabled;
@@ -240,7 +240,7 @@ public final class PrecisionConfig {
      *
      * @return 默认的全局精度级别（非 null）
      */
-    public com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel getDefaultGlobalPrecision() {
+    public com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel getDefaultGlobalPrecision() {
         return defaultGlobalPrecision;
     }
 
@@ -249,7 +249,7 @@ public final class PrecisionConfig {
      *
      * @return HOT_PATH_PER_PIXEL 类别的推荐精度
      */
-    public com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel getDefaultHotPathPrecision() {
+    public com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel getDefaultHotPathPrecision() {
         return defaultHotPathPrecision;
     }
 
@@ -258,7 +258,7 @@ public final class PrecisionConfig {
      *
      * @return TILE_LEVEL_STATS 类别的推荐精度
      */
-    public com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel getDefaultTileStatsPrecision() {
+    public com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel getDefaultTileStatsPrecision() {
         return defaultTileStatsPrecision;
     }
 
@@ -267,7 +267,7 @@ public final class PrecisionConfig {
      *
      * @return FRAME_LEVEL_ACCUMULATION 类别的推荐精度
      */
-    public com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel getDefaultFrameAccumulationPrecision() {
+    public com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel getDefaultFrameAccumulationPrecision() {
         return defaultFrameAccumulationPrecision;
     }
 
@@ -276,7 +276,7 @@ public final class PrecisionConfig {
      *
      * @return OFFLINE_ANALYSIS 类别的推荐精度
      */
-    public com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel getDefaultOfflineAnalysisPrecision() {
+    public com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel getDefaultOfflineAnalysisPrecision() {
         return defaultOfflineAnalysisPrecision;
     }
 
@@ -321,12 +321,12 @@ public final class PrecisionConfig {
     @Override
     public String toString() {
         return String.format(
-            "PrecisionConfig{\n" +
-            "  targetFrameTime=%.2fms,\n" +
-            "  globalDefault=%s,\n" +
-            "  hotPath=%s, tileStats=%s, frameAcc=%s, offline=%s,\n" +
-            "  autoAdjustment=%s, interval=%dframes,\n" +
-            "  avgWindowSize=%d, logSize=%d\n" +
+            "PrecisionConfig{%n" +
+            "  targetFrameTime=%.2fms,%n" +
+            "  globalDefault=%s,%n" +
+            "  hotPath=%s, tileStats=%s, frameAcc=%s, offline=%s,%n" +
+            "  autoAdjustment=%s, interval=%dframes,%n" +
+            "  avgWindowSize=%d, logSize=%d%n" +
             "}",
             targetFrameTimeMs,
             defaultGlobalPrecision.name(),
@@ -378,33 +378,33 @@ public final class PrecisionConfig {
         // ===== 可配置参数（带默认值） =====
 
         /** 目标帧时间（毫秒）: 默认 0.9ms (~1100 FPS) */
-        private float targetFrameTimeMs = com.ranecc.renderium.core.DynamicPrecisionManager.DEFAULT_TARGET_FRAME_TIME_MS;
+        private float targetFrameTimeMs = com.ranecc.renderium.application.core.DynamicPrecisionManager.DEFAULT_TARGET_FRAME_TIME_MS;
 
         /** 全局默认精度: 默认 FP16_MEDIUM */
-        private com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel defaultGlobalPrecision =
-            com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM;
+        private com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel defaultGlobalPrecision =
+            com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM;
 
         /** 热路径默认精度: 默认 INT8_FAST */
-        private com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel defaultHotPathPrecision =
-            com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.INT8_FAST;
+        private com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel defaultHotPathPrecision =
+            com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.INT8_FAST;
 
         /** 温路径默认精度: 默认 FP16_MEDIUM */
-        private com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel defaultTileStatsPrecision =
-            com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM;
+        private com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel defaultTileStatsPrecision =
+            com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM;
 
         /** 冷路径默认精度: 默认 FP32_FULL */
-        private com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel defaultFrameAccumulationPrecision =
-            com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.FP32_FULL;
+        private com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel defaultFrameAccumulationPrecision =
+            com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.FP32_FULL;
 
         /** 离线路径默认精度: 默认 KAHAN_PRECISE */
-        private com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel defaultOfflineAnalysisPrecision =
-            com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE;
+        private com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel defaultOfflineAnalysisPrecision =
+            com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE;
 
         /** 自动调整开关: 默认启用 */
         private boolean autoAdjustmentEnabled = true;
 
         /** 调整间隔（帧数）: 默认 60 帧 */
-        private int adjustmentIntervalFrames = com.ranecc.renderium.core.DynamicPrecisionManager.DEFAULT_ADJUSTMENT_INTERVAL_FRAMES;
+        private int adjustmentIntervalFrames = com.ranecc.renderium.application.core.DynamicPrecisionManager.DEFAULT_ADJUSTMENT_INTERVAL_FRAMES;
 
         /** 滑动平均窗口大小: 默认 30 帧 */
         private int averageWindowSize = 30;
@@ -445,7 +445,7 @@ public final class PrecisionConfig {
          * @param precision 全局默认精度（不能为 null）
          * @return this（支持链式调用）
          */
-        public Builder defaultGlobalPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel precision) {
+        public Builder defaultGlobalPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel precision) {
             if (precision == null) {
                 throw new IllegalArgumentException("全局默认精度不能为 null");
             }
@@ -459,7 +459,7 @@ public final class PrecisionConfig {
          * @param precision 热路径推荐精度（不能为 null）
          * @return this（支持链式调用）
          */
-        public Builder defaultHotPathPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel precision) {
+        public Builder defaultHotPathPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel precision) {
             if (precision == null) {
                 throw new IllegalArgumentException("热路径精度不能为 null");
             }
@@ -473,7 +473,7 @@ public final class PrecisionConfig {
          * @param precision 温路径推荐精度（不能为 null）
          * @return this（支持链式调用）
          */
-        public Builder defaultTileStatsPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel precision) {
+        public Builder defaultTileStatsPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel precision) {
             if (precision == null) {
                 throw new IllegalArgumentException("温路径精度不能为 null");
             }
@@ -487,7 +487,7 @@ public final class PrecisionConfig {
          * @param precision 冷路径推荐精度（不能为 null）
          * @return this（支持链式调用）
          */
-        public Builder defaultFrameAccumulationPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel precision) {
+        public Builder defaultFrameAccumulationPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel precision) {
             if (precision == null) {
                 throw new IllegalArgumentException("冷路径精度不能为 null");
             }
@@ -501,7 +501,7 @@ public final class PrecisionConfig {
          * @param precision 离线路径推荐精度（不能为 null）
          * @return this（支持链式调用）
          */
-        public Builder defaultOfflineAnalysisPrecision(com.ranecc.renderium.core.DynamicPrecisionManager.PrecisionLevel precision) {
+        public Builder defaultOfflineAnalysisPrecision(com.ranecc.renderium.application.core.DynamicPrecisionManager.PrecisionLevel precision) {
             if (precision == null) {
                 throw new IllegalArgumentException("离线路径精度不能为 null");
             }
@@ -588,7 +588,7 @@ public final class PrecisionConfig {
             // 参数一致性校验
             if (autoAdjustmentEnabled && adjustmentIntervalFrames < 1) {
                 throw new IllegalStateException(
-                    "自动调整已启用但调整间隔无效: " + adjustmentIntervalFrames
+                    "自动调整已启用但调整间隔无效: " + adjustmentIntervalFrames"
                 );
             }
 

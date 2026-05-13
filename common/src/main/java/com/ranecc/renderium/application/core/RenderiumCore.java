@@ -182,7 +182,7 @@ public final class RenderiumCore {
     public void processFrame(float deltaTime) {
         if (state != CoreState.READY && state != CoreState.RUNNING) {
             throw new IllegalStateException(
-                "Cannot process frame in current state: " + state +
+                "Cannot process frame in current state: " + state +"
                 ". Expected: READY or RUNNING"
             );
         }

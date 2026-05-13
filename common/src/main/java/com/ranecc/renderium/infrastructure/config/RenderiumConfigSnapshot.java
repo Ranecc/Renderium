@@ -1,4 +1,5 @@
 package com.ranecc.renderium.infrastructure.config;
+import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 
 /**
  * Renderium 配置快照（热路径只读视图）

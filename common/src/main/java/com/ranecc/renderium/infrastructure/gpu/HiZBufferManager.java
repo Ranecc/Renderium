@@ -7,6 +7,7 @@ package com.ranecc.renderium.infrastructure.gpu;
 import com.ranecc.renderium.None;
 
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 
 /**
  * Hi-Z 纹理数组管理器（准备性类）
@@ -363,11 +364,11 @@ public final class HiZBufferManager {
         }
 
         LOGGER.info(String.format(
-            "═══════════════════════════════════════\n" +
-            "HiZBufferManager 正在初始化...\n" +
-            "  分辨率: %dx%d\n" +
-            "  Mipmap 层数: %d\n" +
-            "  格式: RGBA32F (R32G32B32A32_SFLOAT)\n" +
+            "═══════════════════════════════════════" +
+            "HiZBufferManager 正在初始化..." +
+            "  分辨率: %dx%d" +
+            "  Mipmap 层数: %d" +
+            "  格式: RGBA32F (R32G32B32A32_SFLOAT)" +
             "═══════════════════════════════════════",
             width, height, HIZ_MAX_MIP_LEVELS));
 

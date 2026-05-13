@@ -3,6 +3,8 @@
 
 package com.ranecc.renderium.domain.model;
 
+import com.ranecc.renderium.feature.renderopt.mesh.MeshBuildTask;
+
 /**
  * 网格构建结果。
  *

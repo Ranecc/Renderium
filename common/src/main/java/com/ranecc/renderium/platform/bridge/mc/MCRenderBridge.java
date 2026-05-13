@@ -4,9 +4,8 @@
 package com.ranecc.renderium.platform.bridge.mc;
 
 import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.domain.model.FrameData;
+import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 
 /**
  * MC 渲染桥接器（无状态静态接口）

@@ -2,6 +2,7 @@
 // 帧捕获上下文类 - 封装帧捕获的配置参数
 
 package com.ranecc.renderium.domain.model;
+import com.ranecc.renderium.domain.model.FrameCaptureContext;
 
 /**
  * 帧捕获上下文

@@ -2,6 +2,7 @@
 // Streamline 帧数据容器
 
 package com.ranecc.renderium.domain.model;
+import com.ranecc.renderium.presentation.plugin.streamline.StreamlineInputType;
 
 /**
  * Streamline 帧数据

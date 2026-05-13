@@ -1,6 +1,6 @@
 package com.ranecc.renderium.presentation.ui;
 
-import com.ranecc.renderium.platform.bridge.VideoSettingsBridge;
+import com.ranecc.renderium.platform.bridge.video.VideoSettingsBridge;
 
 import java.util.logging.Logger;
 

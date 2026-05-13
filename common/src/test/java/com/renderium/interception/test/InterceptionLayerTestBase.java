@@ -3,6 +3,15 @@
 // 提供共享的 setup/teardown 逻辑和通用工具方法
 
 package com.renderium.interception.test;
+import com.ranecc.renderium.feature.intercept.base.LODContext;
+import com.ranecc.renderium.domain.model.FrameData;
+import com.ranecc.renderium.feature.culling.core.CullingContext;
+import com.ranecc.renderium.feature.intercept.base.InterceptionCallback;
+import com.ranecc.renderium.feature.intercept.base.RenderContext;
+import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
+import com.ranecc.renderium.domain.model.FrameCaptureContext;
+import com.ranecc.renderium.feature.culling.core.CullingContext;
+import com.ranecc.renderium.domain.enums.RenderiumMode;
 
 import com.renderium.interception.base.InterceptionCallback;
 import com.renderium.interception.base.InterceptionPermission;

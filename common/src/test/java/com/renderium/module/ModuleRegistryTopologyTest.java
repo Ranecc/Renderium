@@ -1,6 +1,8 @@
 // Renderium - ModuleRegistry 拓扑排序单元测试
 
 package com.renderium.module;
+import com.ranecc.renderium.feature.module.ModuleContext;
+import com.ranecc.renderium.feature.module.RenderiumModule;
 
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;

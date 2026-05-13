@@ -4,6 +4,7 @@
 package com.ranecc.renderium.domain.model;
 
 import java.util.Objects;
+import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
 
 /**
  * 渲染上下文
@@ -718,7 +719,7 @@ public final class RenderContext {
          * @param snapshot 帧数据快照
          * @return this（链式调用）
          */
-        public Builder matrixDataFrom(com.ranecc.renderium.bridge.mc.FrameDataSnapshot snapshot) {
+        public Builder matrixDataFrom(com.ranecc.renderium.platform.bridge.mc.FrameDataSnapshot snapshot) {
             if (snapshot != null) {
                 this.projectionMatrix = snapshot.getProjectionMatrix();
                 this.viewMatrix = snapshot.getViewMatrix();

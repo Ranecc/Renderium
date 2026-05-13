@@ -430,19 +430,19 @@ public final class FrameGenContext {
     @Override
     public String toString() {
         return String.format(
-            "FrameGenContext{\n" +
-            "  generateCount=%d,\n" +
-            "  jitterPhase=%d,\n" +
-            "  textures={\n" +
-            "    currentColor=0x%s,\n" +
-            "    previousColor=0x%s,\n" +
-            "    motionVector=0x%s,\n" +
-            "    depth=0x%s,\n" +
-            "    uiMask=0x%s,\n" +
-            "    outputColor=0x%s\n" +
-            "  },\n" +
-            "  jitter=(%.4f, %.4f),\n" +
-            "  frameTimeNs=%d\n" +
+            "FrameGenContext{%n" +
+            "  generateCount=%d,%n" +
+            "  jitterPhase=%d,%n" +
+            "  textures={%n" +
+            "    currentColor=0x%s,%n" +
+            "    previousColor=0x%s,%n" +
+            "    motionVector=0x%s,%n" +
+            "    depth=0x%s,%n" +
+            "    uiMask=0x%s,%n" +
+            "    outputColor=0x%s%n" +
+            "  },%n" +
+            "  jitter=(%.4f, %.4f),%n" +
+            "  frameTimeNs=%d%n" +
             "}",
             generateCount,
             jitterPhase,

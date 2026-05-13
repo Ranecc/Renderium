@@ -1,4 +1,5 @@
 package com.ranecc.renderium.application.usecase;
+import com.ranecc.renderium.domain.model.FrameData;
 
 import com.ranecc.renderium.domain.model.FrameDataSnapshot;
 import com.ranecc.renderium.domain.service.scheduling.AdaptivePathSelector;
@@ -264,7 +265,7 @@ public class ProcessFrameUseCase {
      */
     private Object getMCRenderBridgeInstance() {
         try {
-            Class<?> bridgeClass = Class.forName("com.ranecc.renderium.platform.bridge.MCRenderBridge");
+            Class<?> bridgeClass = Class.forName("com.ranecc.renderium.platform.bridge.mc.MCRenderBridge");
             java.lang.reflect.Method getInstanceMethod = bridgeClass.getMethod("getInstance");
             return getInstanceMethod.invoke(null);
         } catch (ClassNotFoundException e) {

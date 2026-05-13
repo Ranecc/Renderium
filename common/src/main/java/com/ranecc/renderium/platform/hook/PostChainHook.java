@@ -2,6 +2,7 @@
 // Abstracts post-processing chain integration
 
 package com.ranecc.renderium.platform.hook;
+import com.ranecc.renderium.domain.model.FrameData;
 
 /**
  * Functional interface for PostChain (post-processing) integration.

@@ -2,15 +2,15 @@
 // Shader 节点参数配置容器 - 关联 PipelineNode 并批量应用 GPU Uniforms
 
 package com.ranecc.renderium.domain.model.config;
+import com.ranecc.renderium.feature.intercept.base.RenderContext;
 
-import com.ranecc.renderium.interception.context.RenderContext;
-import com.ranecc.renderium.pipeline.node.PipelineNode;
-import com.ranecc.renderium.pipeline.parameter.impl.BoolKnob;
-import com.ranecc.renderium.pipeline.parameter.impl.EnumKnob;
-import com.ranecc.renderium.pipeline.parameter.impl.FloatKnob;
-import com.ranecc.renderium.pipeline.parameter.impl.IntKnob;
-import com.ranecc.renderium.pipeline.parameter.ParameterKnob;
-import com.ranecc.renderium.pipeline.parameter.ParameterRegistry;
+import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.BoolKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.EnumKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.FloatKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.IntKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.ParameterRegistry;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;

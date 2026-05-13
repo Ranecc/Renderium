@@ -1,4 +1,5 @@
 package com.ranecc.renderium.domain.model.config;
+import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 
 import com.ranecc.renderium.domain.constant.ConfigConstants;
 import com.ranecc.renderium.domain.enums.QualityLevel;
@@ -846,7 +847,7 @@ public final class RenderiumConfig {
             public ValidationResult validate() {
                 if (maxLevels < 1 || maxLevels > ConfigConstants.LOD_MAX_LEVELS) {
                     return ValidationResult.error(String.format(
-                        "maxLevels must be in range [1, %d]", ConfigConstants.LOD_MAX_LEVELS
+                        "maxLevels must be in range [1, %d]", ConfigConstants.LOD_MAX_LEVELS"
                     ));
                 }
                 return ValidationResult.ok();
@@ -1010,7 +1011,7 @@ public final class RenderiumConfig {
          * @return 验证结果（OK 级别）
          */
         public static ValidationResult ok() {
-            return new ValidationResult(Level.OK, "", "");
+            return new ValidationResult(Level.OK, ", "");
         }
 
         /**
@@ -1020,7 +1021,7 @@ public final class RenderiumConfig {
          * @return 验证结果（WARNING 级别）
          */
         public static ValidationResult warning(String message) {
-            return new ValidationResult(Level.WARNING, "", message);
+            return new ValidationResult(Level.WARNING, ", message);
         }
 
         /**

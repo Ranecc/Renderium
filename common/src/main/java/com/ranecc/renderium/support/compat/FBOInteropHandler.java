@@ -4,8 +4,6 @@
 package com.ranecc.renderium.support.compat;
 
 import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
 
 import java.util.logging.Logger;
 

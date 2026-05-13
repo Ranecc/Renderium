@@ -2,6 +2,8 @@
 // 从 Blaze3D 捕获的渲染帧数据，用于后处理管线
 
 package com.ranecc.renderium.domain.model;
+import com.ranecc.renderium.domain.enums.RenderiumMode;
+import com.ranecc.renderium.domain.model.FrameData;
 
 /**
  * 帧数据容器
@@ -37,7 +39,7 @@ package com.ranecc.renderium.domain.model;
  * <h3>线程安全：</h3>
  * <p>此类为不可变对象，线程安全。
  *
- * @see BackendInterceptor#interceptFrameSubmit(FrameData, com.ranecc.renderium.core.RenderiumMode)
+ * @see BackendInterceptor#interceptFrameSubmit(FrameData, com.ranecc.renderium.domain.enums.RenderiumMode)
  */
 public final class FrameData {
 

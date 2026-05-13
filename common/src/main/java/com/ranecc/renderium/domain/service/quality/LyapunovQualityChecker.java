@@ -3,6 +3,7 @@
 // 迁移规则: 优先使用 snapshot 1.1.0 版本，修改 package/import，保持业务逻辑不变
 
 package com.ranecc.renderium.domain.service.quality;
+import com.ranecc.renderium.domain.model.FrameData;
 
 import java.util.logging.Logger;
 

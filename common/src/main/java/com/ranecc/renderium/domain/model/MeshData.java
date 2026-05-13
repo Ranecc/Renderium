@@ -3,6 +3,9 @@
 
 package com.ranecc.renderium.domain.model;
 
+import com.ranecc.renderium.feature.renderopt.mesh.ChunkMeshBuilder;
+import com.ranecc.renderium.feature.renderopt.mesh.CompactVertexFormat;
+
 /**
  * 网格数据容器。
  *

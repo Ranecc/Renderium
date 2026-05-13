@@ -4,9 +4,11 @@
 // v1.1.0 修复: Object → BfsFFIAdapter (类型安全)
 
 package com.ranecc.renderium.domain.service.algorithm.impl;
+import com.ranecc.renderium.feature.pipeline.strategy.AlgorithmStrategy;
+import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
+import com.ranecc.renderium.feature.pipeline.strategy.AlgorithmStrategy;
+import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
 
-import com.ranecc.renderium.domain.service.algorithm.AlgorithmStrategy;
-import com.ranecc.renderium.domain.service.algorithm.BfsInput;
 import com.ranecc.renderium.domain.service.algorithm.BfsFFIAdapter;
 import java.util.logging.Logger;
 
@@ -41,7 +43,7 @@ import java.util.logging.Logger;
  * }</pre>
  *
  * @see BfsFFIAdapter
- * @see com.ranecc.renderium.infrastructure.nativeLib.ffi.BfsOcclusionFFIAdapter
+ * @see com.ranecc.renderium.infrastructure.nativeLib.binding.BfsOcclusionFFIAdapter
  * @since 1.1.0 (v1.1.0: 类型安全重构)
  */
 public final class NativeBfsStrategy implements AlgorithmStrategy<BfsInput> {

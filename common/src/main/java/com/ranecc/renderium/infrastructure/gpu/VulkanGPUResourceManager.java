@@ -10,10 +10,6 @@
 package com.ranecc.renderium.infrastructure.gpu;
 
 import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
-import com.ranecc.renderium.None;
 
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VkImageCreateInfo;
@@ -24,6 +20,7 @@ import java.nio.LongBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 
 /**
  * Vulkan GPU 资源管理器（全局单例）
@@ -226,7 +223,7 @@ public final class VulkanGPUResourceManager {
                 this.useVulkanDeviceHolder = true;
 
                 LOGGER.info(String.format(
-                        "✓ VulkanGPUResourceManager 从 VulkanDeviceHolder 初始化\n" +
+                        "✓ VulkanGPUResourceManager 从 VulkanDeviceHolder 初始化" +
                         "  vkDevice=%d, vma=%d, gfxQ=%d, compQ=%d",
                         vkDevice, vmaAllocator, graphicsQueue, computeQueue));
             }
@@ -241,7 +238,7 @@ public final class VulkanGPUResourceManager {
                     this.useVulkanDeviceHolder = false;
 
                     LOGGER.warning(String.format(
-                            "⚠ VulkanGPUResourceManager 回退到 OfficialVulkanHijacker\n" +
+                            "⚠ VulkanGPUResourceManager 回退到 OfficialVulkanHijacker" +
                             "  vkDevice=%d, 无 VMA 支持（部分功能降级）",
                             vkDevice));
                 } else {
@@ -258,8 +255,7 @@ public final class VulkanGPUResourceManager {
 
             initialized.set(true);
 
-            LOGGER.info("VulkanGPUResourceManager 初始化完成（数据源: %s)"
-                    .formatted(useVulkanDeviceHolder ? "VulkanDeviceHolder" : "OfficialVulkanHijacker"));
+            ".formatted(useVulkanDeviceHolder ? \"VulkanDeviceHolder\" : \"OfficialVulkanHijacker\"));
             return true;
 
         } catch (Exception e) {
@@ -734,31 +730,43 @@ public final class VulkanGPUResourceManager {
     public String formatReport() {
         StringBuilder sb = new StringBuilder();
 
-        sb.append("╔══════════════════════════════════════════╗\n");
-        sb.append("║  VulkanGPUResourceManager 报告              ║\n");
-        sb.append("╚══════════════════════════════════════════╝\n\n");
+        sb.append("╔══════════════════════════════════════════╗
+");
+        sb.append("║  VulkanGPUResourceManager 报告              ║
+");
+        sb.append("╚══════════════════════════════════════════╝
 
-        sb.append(String.format("状态: %s | 已关闭: %s | VMA支持: %s\n",
+");
+
+        sb.append(String.format("状态: %s | 已关闭: %s | VMA支持: %s
+",
                 initialized.get() ? "✓" : "✗",
                 closed.get() ? "是" : "否",
                 hasVmaSupport() ? "✓" : "✗"));
-        sb.append(String.format("数据源: %s\n",
+        sb.append(String.format("数据源: %s
+",
                 useVulkanDeviceHolder ? "VulkanDeviceHolder" : "OfficialVulkanHijacker"));
-        sb.append(String.format("vkDevice=0x%X | vma=0x%X\n", vkDevice, vmaAllocator));
+        sb.append(String.format("vkDevice=0x%X | vma=0x%X
+", vkDevice, vmaAllocator));
 
-        sb.append("\n--- 资源创建统计 ---\n");
-        sb.append(String.format("Images:   %d\n", totalImagesCreated.get()));
-        sb.append(String.format("Buffers:  %d\n", totalBuffersCreated.get()));
-        sb.append(String.format("Views:    %d\n", totalViewsCreated.get()));
+        "");
+sb.append(String.format("Images:   %d
+", totalImagesCreated.get()));
+sb.append(String.format("Buffers:  %d
+", totalBuffersCreated.get()));
+sb.append(String.format("Views:    %d
+", totalViewsCreated.get()));";
 
-        sb.append("\n--- 释放统计 ---\n");
-        sb.append(String.format("延迟释放请求: %d\n", totalReleaseRequests.get()));
+        "");
+sb.append(String.format("延迟释放请求: %d
+", totalReleaseRequests.get()));";
 
         // 延迟销毁详情
         try {
             VmaDeferredDeallocation deferred = getDeferredDeallocationIfAvailable();
             if (deferred != null) {
-                sb.append(String.format("待释放: %d | 峰值: %d\n",
+                sb.append(String.format("待释放: %d | 峰值: %d
+",
                         deferred.getPendingReleaseCount(), deferred.getPeakPendingCount()));
             }
         } catch (Exception ignored) {}
