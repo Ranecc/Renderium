@@ -66,36 +66,54 @@ public class RenderiumPerformanceBenchmark {
     /** 双缓冲队列目标延迟（纳秒）：50μs = 50,000ns */
     private static final long DBQ_TARGET_NS = 50_000L;
 
-    /** FPS 推算目标：≥ 1000 FPS */
+    /** FPS 推算目标：>= 1000 FPS */
     private static final int FPS_TARGET = 1000;
 
     // ==================== GPU 不友好操作检测模式 ====================
 
     /** Math.sqrt() 调用 */
+"Math\\.sqrt\\s*\\("
     private static final Pattern MATH_SQRT = Pattern.compile("Math\\.sqrt\\s*\\(");
 
     /** Math.pow() 调用 */
+"Math\\.pow\\s*\\("
     private static final Pattern MATH_POW = Pattern.compile("Math\\.pow\\s*\\(");
 
     /** 浮点除法：除以浮点字面量（如 / 2.0, / 16.0f） */
+"/\\s*(?:\\d+\\.\\d*[fd]?|\\d+[fd])\\b"
     private static final Pattern FLOAT_DIV = Pattern.compile("/\\s*(?:\\d+\\.\\d*[fd]?|\\d+[fd])\\b");
 
     /** GPU 不友好模式名称 */
+"Math.sqrt()"
+"Math.pow()"
+"浮点除法"
     private static final String[] GPU_PATTERN_NAMES = {"Math.sqrt()", "Math.pow()", "浮点除法"};
 
-    // ==================== 热路径类定义（类名 → 源文件相对路径） ====================
+    // ==================== 热路径类定义（类名 v 源文件相对路径） ====================
 
     private static final String[][] HOT_PATH_CLASSES = {
+"BfsOcclusionEngine"
+"com/renderium/pipeline/BfsOcclusionEngine.java"
             {"BfsOcclusionEngine", "com/renderium/pipeline/BfsOcclusionEngine.java"},
+"LockFreeRingBuffer"
+"com/renderium/pipeline/LockFreeRingBuffer.java"
             {"LockFreeRingBuffer", "com/renderium/pipeline/LockFreeRingBuffer.java"},
+"DoubleBufferQueue"
+"com/renderium/pipeline/DoubleBufferQueue.java"
             {"DoubleBufferQueue", "com/renderium/pipeline/DoubleBufferQueue.java"},
+"LODCalculator"
+"com/renderium/interception/lod/LODCalculator.java"
             {"LODCalculator", "com/renderium/interception/lod/LODCalculator.java"},
+"AsyncRenderPipeline"
+"com/renderium/pipeline/AsyncRenderPipeline.java"
             {"AsyncRenderPipeline", "com/renderium/pipeline/AsyncRenderPipeline.java"},
     };
 
     /** 冷路径类名（用于隔离验证） */
     private static final String[] COLD_PATH_CLASS_NAMES = {
+"DefaultPostInterceptor"
             "DefaultPostInterceptor",
+"AsyncChunkBuildPipeline"
             "AsyncChunkBuildPipeline",
     };
 
@@ -143,9 +161,12 @@ public class RenderiumPerformanceBenchmark {
      * @return 平均单次遍历延迟（纳秒）
      */
     private static long benchmarkBfsOcclusion() {
-        report.append("╔══════════════════════════════════════════════════════════════╗\n");
-        report.append("║  1. 热路径延迟基准                                          ║\n");
-        report.append("╠══════════════════════════════════════════════════════════════╣\n");
+"+--------------------------------------------------------------+ "
+");
+"=  1. 热路径延迟基准                                          = "
+");
+"+--------------------------------------------------------------| "
+");
 
         /* 创建 BFS 引擎 */
         BfsOcclusionEngine engine = new BfsOcclusionEngine();
@@ -209,11 +230,16 @@ public class RenderiumPerformanceBenchmark {
         if (!passed) allPassed = false;
 
         report.append(String.format(
-                "│ BfsOcclusionEngine.findVisibleSections()                     │\n"));
+"| BfsOcclusionEngine.findVisibleSections()                     | "
+"));
         report.append(String.format(
-                "│   区块数: %d  平均延迟: %s  目标: <500μs  [%s]     │\n",
+"|   区块数: %d  平均延迟: %s  目标: <500μs  [%s]     | "
+",
+"通过"
+"失败"
                 BFS_SECTION_COUNT, formatNanos(avgNs), passed ? "通过" : "失败"));
-        report.append("╚══════════════════════════════════════════════════════════════╝\n\n");
+"+--------------------------------------------------------------+  "
+");
 
         return avgNs;
     }
@@ -228,9 +254,12 @@ public class RenderiumPerformanceBenchmark {
      * @return 平均单次 enqueue+dequeue 延迟（纳秒）
      */
     private static long benchmarkLockFreeRingBuffer() {
-        report.append("╔══════════════════════════════════════════════════════════════╗\n");
-        report.append("║  2. 无锁环形缓冲区延迟                                      ║\n");
-        report.append("╠══════════════════════════════════════════════════════════════╣\n");
+"+--------------------------------------------------------------+ "
+");
+"=  2. 无锁环形缓冲区延迟                                      = "
+");
+"+--------------------------------------------------------------| "
+");
 
         LockFreeRingBuffer<Integer> buffer = new LockFreeRingBuffer<>(1024);
 
@@ -254,11 +283,16 @@ public class RenderiumPerformanceBenchmark {
         if (!passed) allPassed = false;
 
         report.append(String.format(
-                "│ LockFreeRingBuffer enqueue+dequeue                           │\n"));
+"| LockFreeRingBuffer enqueue+dequeue                           | "
+"));
         report.append(String.format(
-                "│   平均延迟: %s  目标: <100ns  [%s]                  │\n",
+"|   平均延迟: %s  目标: <100ns  [%s]                  | "
+",
+"通过"
+"失败"
                 formatNanos(avgNs), passed ? "通过" : "失败"));
-        report.append("╚══════════════════════════════════════════════════════════════╝\n\n");
+"+--------------------------------------------------------------+  "
+");
 
         return avgNs;
     }
@@ -273,9 +307,12 @@ public class RenderiumPerformanceBenchmark {
      * @return 平均单次 flip+drain 延迟（纳秒）
      */
     private static long benchmarkDoubleBufferQueue() {
-        report.append("╔══════════════════════════════════════════════════════════════╗\n");
-        report.append("║  3. 双缓冲队列延迟                                          ║\n");
-        report.append("╠══════════════════════════════════════════════════════════════╣\n");
+"+--------------------------------------------------------------+ "
+");
+"=  3. 双缓冲队列延迟                                          = "
+");
+"+--------------------------------------------------------------| "
+");
 
         DoubleBufferQueue<Integer> queue = new DoubleBufferQueue<>(1024);
 
@@ -319,12 +356,17 @@ public class RenderiumPerformanceBenchmark {
         if (!passed) allPassed = false;
 
         report.append(String.format(
-                "│ DoubleBufferQueue flip+drain (%d 元素)                     │\n",
+"| DoubleBufferQueue flip+drain (%d 元素)                     | "
+",
                 DBQ_ELEMENT_COUNT));
         report.append(String.format(
-                "│   平均延迟: %s  目标: <50μs  [%s]                │\n",
+"|   平均延迟: %s  目标: <50μs  [%s]                | "
+",
+"通过"
+"失败"
                 formatNanos(avgNs), passed ? "通过" : "失败"));
-        report.append("╚══════════════════════════════════════════════════════════════╝\n\n");
+"+--------------------------------------------------------------+  "
+");
 
         return avgNs;
     }
@@ -344,14 +386,19 @@ public class RenderiumPerformanceBenchmark {
      * @return true 如果所有热路径类均通过 GPU 友好性检查
      */
     private static boolean verifyGpuFriendliness() {
-        report.append("╔══════════════════════════════════════════════════════════════╗\n");
-        report.append("║  2. GPU 友好性验证                                          ║\n");
-        report.append("╠══════════════════════════════════════════════════════════════╣\n");
+"+--------------------------------------------------------------+ "
+");
+"=  2. GPU 友好性验证                                          = "
+");
+"+--------------------------------------------------------------| "
+");
 
         Path sourceRoot = findSourceRoot();
         if (sourceRoot == null) {
-            report.append("│  ⚠ 无法定位源码根目录，跳过 GPU 友好性验证                  │\n");
-            report.append("╚══════════════════════════════════════════════════════════════╝\n\n");
+"|  [WARN] 无法定位源码根目录，跳过 GPU 友好性验证                  | "
+");
+"+--------------------------------------------------------------+  "
+");
             return true;
         }
 
@@ -364,13 +411,15 @@ public class RenderiumPerformanceBenchmark {
             Path sourceFile = sourceRoot.resolve(relativePath);
 
             if (!Files.exists(sourceFile)) {
-                report.append(String.format("│  ⚠ %s: 源文件未找到 (%s)\n", className, relativePath));
+"|  [WARN] %s: 源文件未找到 (%s) "
+", className, relativePath));
                 continue;
             }
 
             String sourceCode = readSourceFile(sourceFile);
             if (sourceCode == null) {
-                report.append(String.format("│  ⚠ %s: 源文件读取失败\n", className));
+"|  [WARN] %s: 源文件读取失败 "
+", className));
                 continue;
             }
 
@@ -387,254 +436,106 @@ public class RenderiumPerformanceBenchmark {
                     }
                     /* 记录首次出现的行号 */
                     int lineNum = countLines(sourceCode.substring(0, matcher.start())) + 1;
-                    violationLines.add(String.format("    %s → 行 %d: %s",
+"    %s v 行 %d: %s"
+                    violationLines.add(String.format("    %s v 行 %d: %s",
                             GPU_PATTERN_NAMES[p], lineNum, extractLine(sourceCode, matcher.start())));
                 }
             }
 
             if (violations.isEmpty()) {
-                report.append(String.format("│  ✓ %s: 通过 — 无 GPU 不友好操作\n", className));
+"|  ✓ %s: 通过 — 无 GPU 不友好操作 "
+", className));
             } else {
                 allGpuFriendly = false;
                 allPassed = false;
-                report.append(String.format("│  ✗ %s: 失败 — 发现 %s\n",
-                        className, String.join(", ", violations)));
-                for (String line : violationLines) {
-                    report.append(line).append("\n");
-                }
-            }
-        }
+"|  ✗ %s: 失败 — 发现 %s ,                         className, String.join("
+", violations)));                 for (String line : violationLines) {                     report.append(line).append("
+                    report.append(line).append("
+");                 }             }         }          report.append("
+        report.append("+--------------------------------------------------------------+
 
-        report.append("╚══════════════════════════════════════════════════════════════╝\n\n");
-        return allGpuFriendly;
-    }
+");         return allGpuFriendly;     }      // ==================== 验证 3: FPS 推算 ====================      /**      * 基于热路径总延迟推算理论 FPS 上限      * <p>      * 公式：FPS = 1,000,000,000 / 热路径总延迟(ns)      * <br>      * 热路径总延迟 = BFS延迟 + RingBuffer延迟 + DoubleBufferQueue延迟      *      * @param bfsAvgNs  BFS 平均延迟（纳秒）      * @param ringAvgNs RingBuffer 平均延迟（纳秒）      * @param dbqAvgNs  DoubleBufferQueue 平均延迟（纳秒）      * @return true 如果推算 FPS >= 目标值      */     private static boolean estimateFps(long bfsAvgNs, long ringAvgNs, long dbqAvgNs) {         report.append("
+        report.append("+--------------------------------------------------------------+
+");         report.append("
+        report.append("=  3. FPS 推算                                                =
+");         report.append("
+        report.append("+--------------------------------------------------------------|
+");          /* 热路径总延迟 */         long totalHotPathNs = bfsAvgNs + ringAvgNs + dbqAvgNs;          /* 理论 FPS 上限 */         long estimatedFps = totalHotPathNs > 0                 ? 1_000_000_000L / totalHotPathNs                 : Long.MAX_VALUE;          boolean passed = estimatedFps >= FPS_TARGET;         if (!passed) allPassed = false;          report.append(String.format("
+        report.append(String.format("|  热路径总延迟: %s
+", formatNanos(totalHotPathNs)));         report.append(String.format("
+        report.append(String.format("|    BFS:          %s
+", formatNanos(bfsAvgNs)));         report.append(String.format("
+        report.append(String.format("|    RingBuffer:   %s
+", formatNanos(ringAvgNs)));         report.append(String.format("
+        report.append(String.format("|    DBQ:          %s
+", formatNanos(dbqAvgNs)));         report.append(String.format("
+        report.append(String.format("|  理论 FPS 上限: %d  目标: >=%d  [%s]
+",                 estimatedFps, FPS_TARGET, passed ? "
+" : "
+"));         report.append("
+        report.append("+--------------------------------------------------------------+
 
-    // ==================== 验证 3: FPS 推算 ====================
+");          return passed;     }      // ==================== 验证 4: 冷路径隔离 ====================      /**      * 验证冷路径类（DefaultPostInterceptor、AsyncChunkBuildPipeline）      * 不在热路径源码中被引用      * <p>      * 扫描所有热路径类的源码，检查是否存在对冷路径类的 import 或引用。      * 如果热路径类不依赖冷路径类，则说明冷路径已被正确隔离。      *      * @return true 如果冷路径类均未被热路径引用      */     private static boolean verifyColdPathIsolation() {         report.append("
+        report.append("+--------------------------------------------------------------+
+");         report.append("
+        report.append("=  4. 冷路径隔离验证                                          =
+");         report.append("
+        report.append("+--------------------------------------------------------------|
+");          Path sourceRoot = findSourceRoot();         if (sourceRoot == null) {             report.append("
+            report.append("|  [WARN] 无法定位源码根目录，跳过冷路径隔离验证                   |
+");             report.append("
+            report.append("+--------------------------------------------------------------+
 
-    /**
-     * 基于热路径总延迟推算理论 FPS 上限
-     * <p>
-     * 公式：FPS = 1,000,000,000 / 热路径总延迟(ns)
-     * <br>
-     * 热路径总延迟 = BFS延迟 + RingBuffer延迟 + DoubleBufferQueue延迟
-     *
-     * @param bfsAvgNs  BFS 平均延迟（纳秒）
-     * @param ringAvgNs RingBuffer 平均延迟（纳秒）
-     * @param dbqAvgNs  DoubleBufferQueue 平均延迟（纳秒）
-     * @return true 如果推算 FPS ≥ 目标值
-     */
-    private static boolean estimateFps(long bfsAvgNs, long ringAvgNs, long dbqAvgNs) {
-        report.append("╔══════════════════════════════════════════════════════════════╗\n");
-        report.append("║  3. FPS 推算                                                ║\n");
-        report.append("╠══════════════════════════════════════════════════════════════╣\n");
+");             return true;         }          /* 收集所有热路径源码 */         StringBuilder allHotPathSource = new StringBuilder();         for (String[] cls : HOT_PATH_CLASSES) {             Path sourceFile = sourceRoot.resolve(cls[1]);             if (Files.exists(sourceFile)) {                 String content = readSourceFile(sourceFile);                 if (content != null) {                     allHotPathSource.append(content).append("
+                    allHotPathSource.append(content).append("
+");                 }             }         }          boolean allIsolated = true;          for (String coldClassName : COLD_PATH_CLASS_NAMES) {             /* 检查冷路径类名是否出现在热路径源码中 */             Pattern coldRef = Pattern.compile("
+" + coldClassName + "
+");             Matcher matcher = coldRef.matcher(allHotPathSource);              if (matcher.find()) {                 allIsolated = false;                 allPassed = false;                 report.append(String.format("
+                report.append(String.format("|  ✗ %s: 失败 — 在热路径源码中被引用
+", coldClassName));             } else {                 report.append(String.format("
+                report.append(String.format("|  ✓ %s: 通过 — 不在热路径中
+", coldClassName));             }         }          report.append("
+        report.append("+--------------------------------------------------------------+
 
-        /* 热路径总延迟 */
-        long totalHotPathNs = bfsAvgNs + ringAvgNs + dbqAvgNs;
+");         return allIsolated;     }      // ==================== 辅助方法 ====================      /**      * 格式化纳秒为人类可读字符串      *      * @param ns 纳秒值      * @return 格式化字符串（如 "
+" 或 "
+"）      */     private static String formatNanos(long ns) {         if (ns < 1_000) {             return String.format("
+", ns);         } else if (ns < 1_000_000) {             return String.format("
+", ns / 1_000.0);         } else {             return String.format("
+", ns / 1_000_000.0);         }     }      /**      * 定位源码根目录      * <p>      * 从当前工作目录开始，尝试多个候选路径，      * 通过检查 BfsOcclusionEngine.java 是否存在来确认。      *      * @return 源码根目录路径，未找到返回 null      */     private static Path findSourceRoot() {         Path cwd = Paths.get(System.getProperty("
+"));          /* 候选路径：覆盖常见的 Gradle 项目结构 */         List<Path> candidates = new ArrayList<>();         candidates.add(cwd.resolve("
+"));         candidates.add(cwd.resolve("
+"));         candidates.add(cwd.resolve("
+"));          /* 向上查找两级 */         Path parent = cwd.getParent();         if (parent != null) {             candidates.add(parent.resolve("
+"));             candidates.add(parent.resolve("
+"));             Path grandparent = parent.getParent();             if (grandparent != null) {                 candidates.add(grandparent.resolve("
+"));                 candidates.add(grandparent.resolve("
+"));             }         }          /* 通过探测文件确认源码根目录 */         String probeFile = "
+";         for (Path candidate : candidates) {             if (Files.exists(candidate.resolve(probeFile))) {                 return candidate;             }         }          return null;     }      /**      * 读取源文件内容      *      * @param path 文件路径      * @return 文件内容字符串，读取失败返回 null      */     private static String readSourceFile(Path path) {         try {             return Files.readString(path);         } catch (IOException e) {             return null;         }     }      /**      * 计算字符串中换行符数量（用于估算行号）      *      * @param text 输入文本      * @return 换行符数量      */     private static int countLines(String text) {         int count = 0;         for (int i = 0; i < text.length(); i++) {             if (text.charAt(i) == ' ') {                 count++;             }         }         return count;     }      /**      * 提取源码中指定位置所在行的内容      *      * @param source  源码字符串      * @param position 字符偏移量      * @return 当前行内容（去除首尾空白）      */     private static String extractLine(String source, int position) {         int lineStart = source.lastIndexOf(' ', position - 1) + 1;         int lineEnd = source.indexOf(' ', position);         if (lineEnd == -1) lineEnd = source.length();         String line = source.substring(lineStart, lineEnd).trim();         /* 截断过长的行 */         if (line.length() > 80) {             line = line.substring(0, 77) + "
+";         }         return line;     }      /**      * 打印报告头部      */     private static void printHeader() {         report.append("
+        report.append("+--------------------------------------------------------------+
+");         report.append("
+        report.append("=         Renderium 性能基准测试报告                           =
+");         report.append("
+        report.append("=         RenderiumPerformanceBenchmark                        =
+");         report.append("
+        report.append("+--------------------------------------------------------------|
+");         report.append(String.format("
+        report.append(String.format("|  预热迭代: %d    测量迭代: %d                      |
+",                 WARMUP_ITERATIONS, MEASURE_ITERATIONS));         report.append(String.format("
+        report.append(String.format("|  计时方式: System.nanoTime()                                 |
+"));         report.append("
+        report.append("+--------------------------------------------------------------+
 
-        /* 理论 FPS 上限 */
-        long estimatedFps = totalHotPathNs > 0
-                ? 1_000_000_000L / totalHotPathNs
-                : Long.MAX_VALUE;
-
-        boolean passed = estimatedFps >= FPS_TARGET;
-        if (!passed) allPassed = false;
-
-        report.append(String.format("│  热路径总延迟: %s\n", formatNanos(totalHotPathNs)));
-        report.append(String.format("│    BFS:          %s\n", formatNanos(bfsAvgNs)));
-        report.append(String.format("│    RingBuffer:   %s\n", formatNanos(ringAvgNs)));
-        report.append(String.format("│    DBQ:          %s\n", formatNanos(dbqAvgNs)));
-        report.append(String.format("│  理论 FPS 上限: %d  目标: ≥%d  [%s]\n",
-                estimatedFps, FPS_TARGET, passed ? "通过" : "失败"));
-        report.append("╚══════════════════════════════════════════════════════════════╝\n\n");
-
-        return passed;
-    }
-
-    // ==================== 验证 4: 冷路径隔离 ====================
-
-    /**
-     * 验证冷路径类（DefaultPostInterceptor、AsyncChunkBuildPipeline）
-     * 不在热路径源码中被引用
-     * <p>
-     * 扫描所有热路径类的源码，检查是否存在对冷路径类的 import 或引用。
-     * 如果热路径类不依赖冷路径类，则说明冷路径已被正确隔离。
-     *
-     * @return true 如果冷路径类均未被热路径引用
-     */
-    private static boolean verifyColdPathIsolation() {
-        report.append("╔══════════════════════════════════════════════════════════════╗\n");
-        report.append("║  4. 冷路径隔离验证                                          ║\n");
-        report.append("╠══════════════════════════════════════════════════════════════╣\n");
-
-        Path sourceRoot = findSourceRoot();
-        if (sourceRoot == null) {
-            report.append("│  ⚠ 无法定位源码根目录，跳过冷路径隔离验证                   │\n");
-            report.append("╚══════════════════════════════════════════════════════════════╝\n\n");
-            return true;
-        }
-
-        /* 收集所有热路径源码 */
-        StringBuilder allHotPathSource = new StringBuilder();
-        for (String[] cls : HOT_PATH_CLASSES) {
-            Path sourceFile = sourceRoot.resolve(cls[1]);
-            if (Files.exists(sourceFile)) {
-                String content = readSourceFile(sourceFile);
-                if (content != null) {
-                    allHotPathSource.append(content).append("\n");
-                }
-            }
-        }
-
-        boolean allIsolated = true;
-
-        for (String coldClassName : COLD_PATH_CLASS_NAMES) {
-            /* 检查冷路径类名是否出现在热路径源码中 */
-            Pattern coldRef = Pattern.compile("\\b" + coldClassName + "\\b");
-            Matcher matcher = coldRef.matcher(allHotPathSource);
-
-            if (matcher.find()) {
-                allIsolated = false;
-                allPassed = false;
-                report.append(String.format("│  ✗ %s: 失败 — 在热路径源码中被引用\n", coldClassName));
-            } else {
-                report.append(String.format("│  ✓ %s: 通过 — 不在热路径中\n", coldClassName));
-            }
-        }
-
-        report.append("╚══════════════════════════════════════════════════════════════╝\n\n");
-        return allIsolated;
-    }
-
-    // ==================== 辅助方法 ====================
-
-    /**
-     * 格式化纳秒为人类可读字符串
-     *
-     * @param ns 纳秒值
-     * @return 格式化字符串（如 "123.45μs" 或 "67ns"）
-     */
-    private static String formatNanos(long ns) {
-        if (ns < 1_000) {
-            return String.format("%dns", ns);
-        } else if (ns < 1_000_000) {
-            return String.format("%.2fμs", ns / 1_000.0);
-        } else {
-            return String.format("%.2fms", ns / 1_000_000.0);
-        }
-    }
-
-    /**
-     * 定位源码根目录
-     * <p>
-     * 从当前工作目录开始，尝试多个候选路径，
-     * 通过检查 BfsOcclusionEngine.java 是否存在来确认。
-     *
-     * @return 源码根目录路径，未找到返回 null
-     */
-    private static Path findSourceRoot() {
-        Path cwd = Paths.get(System.getProperty("user.dir"));
-
-        /* 候选路径：覆盖常见的 Gradle 项目结构 */
-        List<Path> candidates = new ArrayList<>();
-        candidates.add(cwd.resolve("common/src/main/java"));
-        candidates.add(cwd.resolve("src/main/java"));
-        candidates.add(cwd.resolve("renderium/common/src/main/java"));
-
-        /* 向上查找两级 */
-        Path parent = cwd.getParent();
-        if (parent != null) {
-            candidates.add(parent.resolve("common/src/main/java"));
-            candidates.add(parent.resolve("renderium/common/src/main/java"));
-            Path grandparent = parent.getParent();
-            if (grandparent != null) {
-                candidates.add(grandparent.resolve("renderium/common/src/main/java"));
-                candidates.add(grandparent.resolve("common/src/main/java"));
-            }
-        }
-
-        /* 通过探测文件确认源码根目录 */
-        String probeFile = "com/renderium/pipeline/BfsOcclusionEngine.java";
-        for (Path candidate : candidates) {
-            if (Files.exists(candidate.resolve(probeFile))) {
-                return candidate;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * 读取源文件内容
-     *
-     * @param path 文件路径
-     * @return 文件内容字符串，读取失败返回 null
-     */
-    private static String readSourceFile(Path path) {
-        try {
-            return Files.readString(path);
-        } catch (IOException e) {
-            return null;
-        }
-    }
-
-    /**
-     * 计算字符串中换行符数量（用于估算行号）
-     *
-     * @param text 输入文本
-     * @return 换行符数量
-     */
-    private static int countLines(String text) {
-        int count = 0;
-        for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '\n') {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    /**
-     * 提取源码中指定位置所在行的内容
-     *
-     * @param source  源码字符串
-     * @param position 字符偏移量
-     * @return 当前行内容（去除首尾空白）
-     */
-    private static String extractLine(String source, int position) {
-        int lineStart = source.lastIndexOf('\n', position - 1) + 1;
-        int lineEnd = source.indexOf('\n', position);
-        if (lineEnd == -1) lineEnd = source.length();
-        String line = source.substring(lineStart, lineEnd).trim();
-        /* 截断过长的行 */
-        if (line.length() > 80) {
-            line = line.substring(0, 77) + "...";
-        }
-        return line;
-    }
-
-    /**
-     * 打印报告头部
-     */
-    private static void printHeader() {
-        report.append("╔══════════════════════════════════════════════════════════════╗\n");
-        report.append("║         Renderium 性能基准测试报告                           ║\n");
-        report.append("║         RenderiumPerformanceBenchmark                        ║\n");
-        report.append("╠══════════════════════════════════════════════════════════════╣\n");
-        report.append(String.format("│  预热迭代: %d    测量迭代: %d                      │\n",
-                WARMUP_ITERATIONS, MEASURE_ITERATIONS));
-        report.append(String.format("│  计时方式: System.nanoTime()                                 │\n"));
-        report.append("╚══════════════════════════════════════════════════════════════╝\n\n");
-    }
-
-    /**
-     * 打印汇总结果
-     */
-    private static void printSummary() {
-        report.append("╔══════════════════════════════════════════════════════════════╗\n");
-        report.append("║  汇总结果                                                   ║\n");
-        report.append("╠══════════════════════════════════════════════════════════════╣\n");
-        report.append(String.format("│  总体结论: %s                                        │\n",
-                allPassed ? "✓ 全部通过" : "✗ 存在失败项"));
-        report.append("╚══════════════════════════════════════════════════════════════╝\n");
-    }
-}
+");     }      /**      * 打印汇总结果      */     private static void printSummary() {         report.append("
+        report.append("+--------------------------------------------------------------+
+");         report.append("
+        report.append("=  汇总结果                                                   =
+");         report.append("
+        report.append("+--------------------------------------------------------------|
+");         report.append(String.format("
+        report.append(String.format("|  总体结论: %s                                        |
+",                 allPassed ? "
+" : "
+"));         report.append("
+        report.append("+--------------------------------------------------------------+

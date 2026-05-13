@@ -20,6 +20,11 @@
 
 package com.renderium.core;
 
+import com.renderium.core.quality.NanGuardShader;
+
+import com.renderium.core.math.KahanAccumulator;
+import com.renderium.core.quality.LyapunovQualityChecker;
+
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -30,59 +35,59 @@ import java.util.concurrent.CompletableFuture;
  *
  * <h2>架构图（Mermaid）</h2>
  * <pre>{@code
- * ┌─────────────────────────────────────────────────────────────┐
- * │                    渲染主循环 (Render Loop)                  │
- * │                                                              │
- * │  ┌──────────────┐    ┌──────────────────────┐               │
- * │  │ 帧开始计时     │───→│ updateFrameTime()   │               │
- * │  └──────────────┘    └──────────────────────┘               │
- * │         │                                               │
- * │         ▼                                               │
- * │  ┌─────────────────────────────────────────────┐        │
- * │  │           几何处理 (固定 ~0.30ms)            │        │
- * │  └─────────────────────────────────────────────┘        │
- * │         │                                               │
- * │         ▼                                               │
- * │  ┌─────────────────────────────────────────────┐        │
- * │  │     光栅化 (固定 ~0.25ms)                    │        │
- * │  └─────────────────────────────────────────────┘        │
- * │         │                                               │
- * │         ▼                                               │
- * │  ┌─────────────────────────────────────────────┐        │
- * │  │  超分辨率 Pass                                │        │
- * │  │  precision = decide(HOT_PATH)                │        │
- * │  │  → INT8_FAST / FP16_MEDIUM                   │        │
- * │  │  (~0.20ms, 动态调整)                         │        │
- * │  └─────────────────────────────────────────────┘        │
- * │         │                                               │
- * │         ▼                                               │
- * │  ┌─────────────────────────────────────────────┐        │
- * │  │  SGS 抗振铃 (固定 ~0.05ms)                  │        │
- * │  │  → NanGuardShader 始终启用                   │        │
- * │  └─────────────────────────────────────────────┘        │
- * │         │                                               │
- * │         ▼                                               │
- * │  ┌─────────────────────────────────────────────┐        │
- * │  │  帧生成 Pass                                 │        │
- * │  │  precision = decide(HOT_PATH)                │        │
- * │  │  → INT8_FAST / FP16_MEDIUM                   │        │
- * │  │  (~0.15ms, 动态调整)                         │        │
- * │  └─────────────────────────────────────────────┘        │
- * │         │                                               │
- * │         ▼                                               │
- * │  ┌─────────────────────────────────────────────┐        │
- * │  │  合成/输出 (固定 ~0.05ms)                   │        │
- * │  └─────────────────────────────────────────────┘        │
- * │         │                                               │
- * │         ▼                                               │
- * │  ┌─────────────────────────────────────────────┐        │
- * │  │  帧后处理 (异步)                              │        │
- * │  │  precision = decide(OFFLINE)                 │        │
- * │  │  → KAHAN_PRECISE / FP32_FULL                 │        │
- * │  │  Lyapunov 质量检测                           │        │
- * │  └─────────────────────────────────────────────┘        │
- * │                                                              │
- * └─────────────────────────────────────────────────────────────┘
+ * +-------------------------------------------------------------+
+ * |                    渲染主循环 (Render Loop)                  |
+ * |                                                              |
+ * |  +--------------+    +----------------------+               |
+ * |  | 帧开始计时     |---v| updateFrameTime()   |               |
+ * |  +--------------+    +----------------------+               |
+ * |         |                                               |
+ * |         ▼                                               |
+ * |  +---------------------------------------------+        |
+ * |  |           几何处理 (固定 ~0.30ms)            |        |
+ * |  +---------------------------------------------+        |
+ * |         |                                               |
+ * |         ▼                                               |
+ * |  +---------------------------------------------+        |
+ * |  |     光栅化 (固定 ~0.25ms)                    |        |
+ * |  +---------------------------------------------+        |
+ * |         |                                               |
+ * |         ▼                                               |
+ * |  +---------------------------------------------+        |
+ * |  |  超分辨率 Pass                                |        |
+ * |  |  precision = decide(HOT_PATH)                |        |
+ * |  |  v INT8_FAST / FP16_MEDIUM                   |        |
+ * |  |  (~0.20ms, 动态调整)                         |        |
+ * |  +---------------------------------------------+        |
+ * |         |                                               |
+ * |         ▼                                               |
+ * |  +---------------------------------------------+        |
+ * |  |  SGS 抗振铃 (固定 ~0.05ms)                  |        |
+ * |  |  v NanGuardShader 始终启用                   |        |
+ * |  +---------------------------------------------+        |
+ * |         |                                               |
+ * |         ▼                                               |
+ * |  +---------------------------------------------+        |
+ * |  |  帧生成 Pass                                 |        |
+ * |  |  precision = decide(HOT_PATH)                |        |
+ * |  |  v INT8_FAST / FP16_MEDIUM                   |        |
+ * |  |  (~0.15ms, 动态调整)                         |        |
+ * |  +---------------------------------------------+        |
+ * |         |                                               |
+ * |         ▼                                               |
+ * |  +---------------------------------------------+        |
+ * |  |  合成/输出 (固定 ~0.05ms)                   |        |
+ * |  +---------------------------------------------+        |
+ * |         |                                               |
+ * |         ▼                                               |
+ * |  +---------------------------------------------+        |
+ * |  |  帧后处理 (异步)                              |        |
+ * |  |  precision = decide(OFFLINE)                 |        |
+ * |  |  v KAHAN_PRECISE / FP32_FULL                 |        |
+ * |  |  Lyapunov 质量检测                           |        |
+ * |  +---------------------------------------------+        |
+ * |                                                              |
+ * +-------------------------------------------------------------+
  * }</pre>
  *
  * @author Renderium Team
@@ -200,7 +205,7 @@ public final class DynamicPrecisionIntegrationExample {
      * flowchart LR
      *     A[decidePrecision<br/>FRAME_LEVEL_ACCUMULATION] --> B{precision?}
      *     B -->|KAHAN_PRECISE| C[KahanAccumulator.add<br/>O(ε)误差]
-     *     B -->|其他级别| D[朴素累加<br/>O(n·ε)误差<br/>但82x更快]
+     *     B -->|其他级别| D[朴素累加<br/>O(n.ε)误差<br/>但82x更快]
      * ```
      *
      * @param precision 决策的精度级别
@@ -229,11 +234,12 @@ public final class DynamicPrecisionIntegrationExample {
                 // 优势：极快速度，可接受轻微精度损失
                 naiveSum = 0.0f;
                 for (float weight : frameWeights) {
-                    naiveSum += weight;  // O(n·ε) 级误差，但速度快 82x
+                    naiveSum += weight;  // O(n.ε) 级误差，但速度快 82x
                 }
                 break;
 
             default:
+"未知的精度级别: "
                 throw new IllegalArgumentException("未知的精度级别: " + precision);
         }
     }
@@ -294,6 +300,7 @@ public final class DynamicPrecisionIntegrationExample {
                         // 质量退化检测到，记录警告（可触发自动降级）
                         java.util.logging.Logger.getLogger(
                             DynamicPrecisionIntegrationExample.class.getName()
+"Lyapunov 质量检测失败: "
                         ).warning("Lyapunov 质量检测失败: " + result.getMessage());
                     }
                 } catch (Exception e) {
@@ -301,6 +308,7 @@ public final class DynamicPrecisionIntegrationExample {
                     java.util.logging.Logger.getLogger(
                         DynamicPrecisionIntegrationExample.class.getName()
                     ).log(java.util.logging.Level.WARNING,
+"异步质量检测异常（已忽略）"
                         "异步质量检测异常（已忽略）", e
                     );
                 }
@@ -331,6 +339,7 @@ public final class DynamicPrecisionIntegrationExample {
      * #version 450
      *
      * // 引入 NanGuard 库（编译时常量，零运行时开销）
+"nanguard.glsl"
      * #include "nanguard.glsl"
      *
      * layout(location = 0) out vec4 fragColor;
@@ -368,15 +377,22 @@ public final class DynamicPrecisionIntegrationExample {
      * <h3>预算分配 Mermaid 图</h3>
      * ```mermaid
      * pie title 1000FPS 帧时间预算分配 (总计: 1.00ms)
+"几何处理 (固定)"
      *     "几何处理 (固定)" : 30
+"光栅化 (固定)"
      *     "光栅化 (固定)" : 25
+"超分辨率 (动态)"
      *     "超分辨率 (动态)" : 20
+"SGS抗振铃 (固定)"
      *     "SGS抗振铃 (固定)" : 5
+"帧生成 (动态)"
      *     "帧生成 (动态)" : 15
+"合成/输出 (固定)"
      *     "合成/输出 (固定)" : 5
      * ```
      *
      * <h3>动态调整策略</h3>
+"1"
      * <table border="1">
      *   <tr><th>场景</th><th>超分辨率</th><th>帧生成</th><th>总耗时</th><th>FPS</th></tr>
      *   <tr><td>轻负载</td><td>FP32_FULL</td><td>FP16_MEDIUM</td><td>0.85ms</td><td>1176</td></tr>
@@ -386,23 +402,41 @@ public final class DynamicPrecisionIntegrationExample {
      * </table>
      */
     public static void printBudgetAllocation() {
-        System.out.println("╔════════════════════════════════════════════════════════╗");
-        System.out.println("║       1000FPS 目标下的帧时间预算分配 (总计: 1.00ms)      ║");
-        System.out.println("╠═══════════════════╦══════════╦════════════════════════╣");
-        System.out.println("║       阶段         ║  时间    ║         说明            ║");
-        System.out.println("╠═══════════════════╬══════════╬════════════════════════╣");
-        System.out.println("║  几何处理 (固定)   ║ 0.30 ms  ║ 顶点变换、裁剪          ║");
-        System.out.println("║  光栅化   (固定)   ║ 0.25 ms  ║ 三角形设置、插值        ║");
-        System.out.println("║  超分辨率 (动态*)  ║ 0.20 ms  ║ DLSS/FSR/XeSS          ║");
-        System.out.println("║  SGS抗振铃 (固定)  ║ 0.05 ms  ║ Gibbs 现象抑制          ║");
-        System.out.println("║  帧生成   (动态*)  ║ 0.15 ms  ║ 插帧/光流              ║");
-        System.out.println("║  合成/输出 (固定)  ║ 0.05 ms  ║ 最终合成、Present       ║");
-        System.out.println("╠═══════════════════╬══════════╬════════════════════════╣");
-        System.out.println("║  总计             ║ 1.00 ms  ║ ≈ 1000 FPS 目标 ✓       ║");
-        System.out.println("╚═══════════════════╩══════════╩════════════════════════╝");
+"+--------------------------------------------------------+"
+        System.out.println("+--------------------------------------------------------+");
+"=       1000FPS 目标下的帧时间预算分配 (总计: 1.00ms)      ="
+        System.out.println("=       1000FPS 目标下的帧时间预算分配 (总计: 1.00ms)      =");
+"+-------------------------------------------------------|"
+        System.out.println("+-------------------------------------------------------|");
+"=       阶段         =  时间    =         说明            ="
+        System.out.println("=       阶段         =  时间    =         说明            =");
+"+-------------------------------------------------------|"
+        System.out.println("+-------------------------------------------------------|");
+"=  几何处理 (固定)   = 0.30 ms  = 顶点变换、裁剪          ="
+        System.out.println("=  几何处理 (固定)   = 0.30 ms  = 顶点变换、裁剪          =");
+"=  光栅化   (固定)   = 0.25 ms  = 三角形设置、插值        ="
+        System.out.println("=  光栅化   (固定)   = 0.25 ms  = 三角形设置、插值        =");
+"=  超分辨率 (动态*)  = 0.20 ms  = DLSS/FSR/XeSS          ="
+        System.out.println("=  超分辨率 (动态*)  = 0.20 ms  = DLSS/FSR/XeSS          =");
+"=  SGS抗振铃 (固定)  = 0.05 ms  = Gibbs 现象抑制          ="
+        System.out.println("=  SGS抗振铃 (固定)  = 0.05 ms  = Gibbs 现象抑制          =");
+"=  帧生成   (动态*)  = 0.15 ms  = 插帧/光流              ="
+        System.out.println("=  帧生成   (动态*)  = 0.15 ms  = 插帧/光流              =");
+"=  合成/输出 (固定)  = 0.05 ms  = 最终合成、Present       ="
+        System.out.println("=  合成/输出 (固定)  = 0.05 ms  = 最终合成、Present       =");
+"+-------------------------------------------------------|"
+        System.out.println("+-------------------------------------------------------|");
+"=  总计             = 1.00 ms  = ~ 1000 FPS 目标 ✓       ="
+        System.out.println("=  总计             = 1.00 ms  = ~ 1000 FPS 目标 ✓       =");
+"+-------------------------------------------------------+"
+        System.out.println("+-------------------------------------------------------+");
+""
         System.out.println("");
+"* 标记为 '动态' 的阶段会根据 DynamicPrecisionManager"
         System.out.println("* 标记为 '动态' 的阶段会根据 DynamicPrecisionManager");
+"  的决策在 SKIP/INT8/FP16/FP32 之间自动切换。"
         System.out.println("  的决策在 SKIP/INT8/FP16/FP32 之间自动切换。");
+""
         System.out.println("");
     }
 
@@ -428,6 +462,7 @@ public final class DynamicPrecisionIntegrationExample {
         // - FP16_MEDIUM: 半精度 Tensor Core 加速
         // - FP32_FULL: 全精度标准算法
         // - SKIP: 复用上一帧结果
+"[超分辨率] 使用精度: %s%n"
         System.out.printf("[超分辨率] 使用精度: %s%n", precision.name());
     }
 
@@ -441,6 +476,7 @@ public final class DynamicPrecisionIntegrationExample {
         // - INT8_FAST: 光流量化估计
         // - FP16_MEDIUM: 半精度光流 + 神经网络细化
         // - SKIP: 直接复制最近帧
+"[帧生成] 使用精度: %s%n"
         System.out.printf("[帧生成] 使用精度: %s%n", precision.name());
     }
 
@@ -452,16 +488,21 @@ public final class DynamicPrecisionIntegrationExample {
      * @param args 命令行参数（未使用）
      */
     public static void main(String[] args) {
+"========================================"
         System.out.println("========================================");
+"DynamicPrecisionManager 集成示例"
         System.out.println("DynamicPrecisionManager 集成示例");
-        System.out.println("========================================\n");
+"======================================== "
+        System.out.println("======================================== ");
 
         // 示例1: RenderiumCore 集成
+">>> 示例1: RenderiumCore 集成 <<<"
         System.out.println(">>> 示例1: RenderiumCore 集成 <<<");
         exampleRenderiumCoreIntegration();
         System.out.println();
 
         // 示例5: 性能预算分配
+">>> 示例5: 性能预算分配 <<<"
         System.out.println(">>> 示例5: 性能预算分配 <<<");
         printBudgetAllocation();
     }

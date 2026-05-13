@@ -7,11 +7,11 @@
 //   - SSAO 执行时间 < 0.8ms/帧
 //   - Bloom 执行时间 < 1.2ms/帧
 //   - Tonemap 执行时间 < 0.3ms/帧
-//   - 总管线执行时间 < 3.5ms/帧 → 对应 ~285 FPS (保守估计)
+//   - 总管线执行时间 < 3.5ms/帧 v 对应 ~285 FPS (保守估计)
 //
 // 优化后目标：
-//   - 总管线执行时间 < 1.67ms/帧 → 对应 ~600 FPS
-//   - 总管线执行时间 < 2.50ms/帧 → 对应 ~400 FPS
+//   - 总管线执行时间 < 1.67ms/帧 v 对应 ~600 FPS
+//   - 总管线执行时间 < 2.50ms/帧 v 对应 ~400 FPS
 
 package com.renderium.benchmark;
 
@@ -36,35 +36,36 @@ import java.util.logging.Logger;
  *
  * <h3>测试流程：</h3>
  * <pre>
- * ┌─────────────────────────────────────────────────────┐
- * │ 1. 初始化环境                                       │
- * │    ├── 初始化 MCRenderBridge                        │
- * │    ├── 初始化 BatchTransformEngineV3                 │
- * │    ├── 初始化 CommandBatcher                         │
- * │    └── 注册所有 PipelineNodes                       │
- * ├─────────────────────────────────────────────────────┤
- * │ 2. 模拟 N 帧渲染                                    │
- * │    For each frame:                                  │
- * │    ├── beginFrame()                                 │
- * │    ├── GBufferGeometryNode.execute()                │
- * │    ├── ShadowMapNode.execute() (4 cascades)         │
- * │    ├── SSAO.execute()                               │
- * │    ├── Bloom.execute()                              │
- * │    ├── Tonemap.execute()                            │
- * │    └── endFrame()                                   │
- * ├─────────────────────────────────────────────────────┤
- * │ 3. 输出性能报告                                     │
- * │    ├── 每个节点平均耗时                             │
- * │    ├── P50/P95/P99 分位数                           │
- * │    ├── 总帧时间 & FPS                               │
- * │    └── 是否达到 400-600 FPS 目标                    │
- * └─────────────────────────────────────────────────────┘
+ * +-----------------------------------------------------+
+ * | 1. 初始化环境                                       |
+ * |    +-- 初始化 MCRenderBridge                        |
+ * |    +-- 初始化 BatchTransformEngineV3                 |
+ * |    +-- 初始化 CommandBatcher                         |
+ * |    +-- 注册所有 PipelineNodes                       |
+ * +-----------------------------------------------------+
+ * | 2. 模拟 N 帧渲染                                    |
+ * |    For each frame:                                  |
+ * |    +-- beginFrame()                                 |
+ * |    +-- GBufferGeometryNode.execute()                |
+ * |    +-- ShadowMapNode.execute() (4 cascades)         |
+ * |    +-- SSAO.execute()                               |
+ * |    +-- Bloom.execute()                              |
+ * |    +-- Tonemap.execute()                            |
+ * |    +-- endFrame()                                   |
+ * +-----------------------------------------------------+
+ * | 3. 输出性能报告                                     |
+ * |    +-- 每个节点平均耗时                             |
+ * |    +-- P50/P95/P99 分位数                           |
+ * |    +-- 总帧时间 & FPS                               |
+ * |    +-- 是否达到 400-600 FPS 目标                    |
+ * +-----------------------------------------------------+
  * </pre>
  *
  * @since 3.0.0
  */
 public class ShaderSystemPerformanceTest {
 
+"Renderium|PerfTest"
     private static final Logger LOGGER = Logger.getLogger("Renderium|PerfTest");
 
     // ==================== 测试配置 ====================
@@ -87,7 +88,7 @@ public class ShaderSystemPerformanceTest {
     /**
      * 节点性能预算（微秒/帧）
      * <p>
-     * 总预算 = Σ(各节点预算) ≈ 1667μs (对应 600 FPS)
+     * 总预算 = Σ(各节点预算) ~ 1667μs (对应 600 FPS)
      * 宽松预算 = 2500μs (对应 400 FPS)
      */
     interface PerformanceBudget {
@@ -147,17 +148,26 @@ public class ShaderSystemPerformanceTest {
      * @return true 如果通过 400-600 FPS 性能目标
      */
     public static boolean runFullPipelineTest() {
-        LOGGER.info("╔══════════════════════════════════════════════════╗");
-        LOGGER.info("║   Renderium Shader System Performance Test      ║");
-        LOGGER.info("╠══════════════════════════════════════════════════╣");
-        LOGGER.info(String.format("║ Test Frames: %-36d ║", TEST_FRAME_COUNT));
-        LOGGER.info(String.format("║ Warmup Frames: %-35d ║", WARMUP_FRAMES));
-        LOGGER.info(String.format("║ Simulated Vertices: %-29d ║", SIMULATED_VERTEX_COUNT));
-        LOGGER.info(String.format("║ Resolution: %dx%-34d ║", SCREEN_WIDTH, SCREEN_HEIGHT));
-        LOGGER.info("╚══════════════════════════════════════════════════╝");
+"+--------------------------------------------------+"
+        LOGGER.info("+--------------------------------------------------+");
+"=   Renderium Shader System Performance Test      ="
+        LOGGER.info("=   Renderium Shader System Performance Test      =");
+"+--------------------------------------------------|"
+        LOGGER.info("+--------------------------------------------------|");
+"= Test Frames: %-36d ="
+        LOGGER.info(String.format("= Test Frames: %-36d =", TEST_FRAME_COUNT));
+"= Warmup Frames: %-35d ="
+        LOGGER.info(String.format("= Warmup Frames: %-35d =", WARMUP_FRAMES));
+"= Simulated Vertices: %-29d ="
+        LOGGER.info(String.format("= Simulated Vertices: %-29d =", SIMULATED_VERTEX_COUNT));
+"= Resolution: %dx%-34d ="
+        LOGGER.info(String.format("= Resolution: %dx%-34d =", SCREEN_WIDTH, SCREEN_HEIGHT));
+"+--------------------------------------------------+"
+        LOGGER.info("+--------------------------------------------------+");
 
         // Step 1: 初始化环境
         if (!initializeEnvironment()) {
+"❌ 环境初始化失败，测试终止"
             LOGGER.severe("❌ 环境初始化失败，测试终止");
             return false;
         }
@@ -171,22 +181,32 @@ public class ShaderSystemPerformanceTest {
 
         // Step 3: 分配统计数组
         int measuredFrames = TEST_FRAME_COUNT - WARMUP_FRAMES;
+"GBufferGeometry"
         NodePerformanceStats gbufferStats = new NodePerformanceStats("GBufferGeometry", measuredFrames);
+"ShadowMap(4C)"
         NodePerformanceStats shadowStats = new NodePerformanceStats("ShadowMap(4C)", measuredFrames);
+"SSAO"
         NodePerformanceStats ssaoStats = new NodePerformanceStats("SSAO", measuredFrames);
+"Bloom"
         NodePerformanceStats bloomStats = new NodePerformanceStats("Bloom", measuredFrames);
+"Tonemap"
         NodePerformanceStats tonemapStats = new NodePerformanceStats("Tonemap", measuredFrames);
 
         long[] totalFrameTimesUs = new long[measuredFrames];  // 全管线帧时间
 
         // Step 4: 执行热身
+"🔥 热身阶段 ("
+" 帧)..."
         LOGGER.info("🔥 热身阶段 (" + WARMUP_FRAMES + " 帧)...");
         for (int i = 0; i < WARMUP_FRAMES; i++) {
             runSingleFrame(gbufferNode, shadowNode, ssaoNode, bloomNode, tonemapNode, null);
         }
+"✓ 热身完成"
         LOGGER.info("✓ 热身完成");
 
         // Step 5: 正式测量
+"📊 正式测量阶段 ("
+" 帧)..."
         LOGGER.info("📊 正式测量阶段 (" + measuredFrames + " 帧)...");
 
         for (int frame = 0; frame < measuredFrames; frame++) {
@@ -200,7 +220,7 @@ public class ShaderSystemPerformanceTest {
             );
 
             long frameEndNs = System.nanoTime();
-            totalFrameTimesUs[frame] = (frameEndNs - frameStartNs) / 1000;  // ns → μs
+            totalFrameTimesUs[frame] = (frameEndNs - frameStartNs) / 1000;  // ns v μs
         }
 
         // Step 6: 计算统计数据
@@ -361,8 +381,7 @@ public class ShaderSystemPerformanceTest {
         fd.setWindowSize(SCREEN_WIDTH, SCREEN_HEIGHT);
 
         // 模拟区块可见性
-        fd.getChunkData().visibleSectionCount = 256;  // 模拟 256 个可见 Section
-        fd.getChunkData().totalSectionCount = 1024;
+        fd.setChunkVisibility(256, 1024, 0, 0, false);  // 模拟 256 个可见 Section
     }
 
     // ==================== 环境初始化 ====================
@@ -384,10 +403,13 @@ public class ShaderSystemPerformanceTest {
             var batcher = new com.renderium.bridge.batch.CommandBatcher(1024);
             MCRenderBridge.setCommandBatcher(batcher);
 
+"✓ 环境初始化成功"
             LOGGER.info("✓ 环境初始化成功");
+"  - V3 Engine Unsafe=%b"
             LOGGER.info(String.format("  - V3 Engine Unsafe=%b", v3.isUsingUnsafe()));
             return true;
         } catch (Exception e) {
+"环境初始化异常: "
             LOGGER.severe("环境初始化异常: " + e.getMessage());
             return false;
         }
@@ -406,14 +428,20 @@ public class ShaderSystemPerformanceTest {
                                                    NodePerformanceStats bloom,
                                                    NodePerformanceStats tonemap,
                                                    long[] totalFrameTimes) {
-        LOGGER.info("\n");
-        LOGGER.info("╔══════════════════════════════════════════════════════╗");
-        LOGGER.info("║          🎯 PERFORMANCE REPORT                     ║");
-        LOGGER.info("╠══════════════════════════════════════════════════════╣");
+" "
+");
+"+------------------------------------------------------+"
+        LOGGER.info("+------------------------------------------------------+");
+"=          🎯 PERFORMANCE REPORT                     ="
+        LOGGER.info("=          🎯 PERFORMANCE REPORT                     =");
+"+------------------------------------------------------|"
+        LOGGER.info("+------------------------------------------------------|");
 
         // 表头
-        LOGGER.info("║ Node              │ Avg(us) │ P95(us) │ Budget │ Status ║");
-        LOGGER.info("╟──────────────────┼─────────┼─────────┼────────┼────────╢");
+"= Node              | Avg(us) | P95(us) | Budget | Status ="
+        LOGGER.info("= Node              | Avg(us) | P95(us) | Budget | Status =");
+"+------------------+---------+---------+--------+--------|"
+        LOGGER.info("+------------------+---------+---------+--------+--------|");
 
         // 各节点结果
         logNodeRow(gbuffer, PerformanceBudget.GBUFFER_MAX_US);
@@ -422,7 +450,8 @@ public class ShaderSystemPerformanceTest {
         logNodeRow(bloom, PerformanceBudget.BLOOM_MAX_US);
         logNodeRow(tonemap, PerformanceBudget.TONEMAP_MAX_US);
 
-        LOGGER.info("╠══════════════════════════════════════════════════════╣");
+"+------------------------------------------------------|"
+        LOGGER.info("+------------------------------------------------------|");
 
         // 计算总帧时间统计
         Arrays.sort(totalFrameTimes);
@@ -436,29 +465,40 @@ public class ShaderSystemPerformanceTest {
         double avgFps = 1_000_000.0 / Math.max(1, totalAvg);
         double fps95 = 1_000_000.0 / Math.max(1, totalP95);
 
-        LOGGER.info(String.format("║ TOTAL (avg)       │ %7d │         │ ≤%5d │        ║",
+"= TOTAL (avg)       | %7d |         | <=%5d |        ="
+        LOGGER.info(String.format("= TOTAL (avg)       | %7d |         | <=%5d |        =",
                 totalAvg, PerformanceBudget.TOTAL_TARGET_US));
-        LOGGER.info(String.format("║ TOTAL (p95)       │         │ %7d │ ≤%5d │        ║",
+"= TOTAL (p95)       |         | %7d | <=%5d |        ="
+        LOGGER.info(String.format("= TOTAL (p95)       |         | %7d | <=%5d |        =",
                 totalP95, PerformanceBudget.TOTAL_TARGET_US));
 
-        LOGGER.info("╠══════════════════════════════════════════════════════╣");
+"+------------------------------------------------------|"
+        LOGGER.info("+------------------------------------------------------|");
 
         // FPS 结论
-        LOGGER.info(String.format("║ Average FPS:      %-37.1f ║", avgFps));
-        LOGGER.info(String.format("║ P95 FPS:          %-37.1f ║", fps95));
+"= Average FPS:      %-37.1f ="
+        LOGGER.info(String.format("= Average FPS:      %-37.1f =", avgFps));
+"= P95 FPS:          %-37.1f ="
+        LOGGER.info(String.format("= P95 FPS:          %-37.1f =", fps95));
 
         // 最终判定
         boolean targetPassed = totalAvg <= PerformanceBudget.TOTAL_TARGET_US;
         boolean relaxedPassed = totalAvg <= PerformanceBudget.TOTAL_RELAXED_US;
 
         String status;
-        if (targetPassed) status = "✅ PASS (≥600 FPS)";
-        else if (relaxedPassed) status = "⚠️ ACCEPTABLE (400-600 FPS)";
+"✅ PASS (>=600 FPS)"
+        if (targetPassed) status = "✅ PASS (>=600 FPS)";
+"[WARN]️ ACCEPTABLE (400-600 FPS)"
+        else if (relaxedPassed) status = "[WARN]️ ACCEPTABLE (400-600 FPS)";
+"❌ FAIL (<400 FPS)"
         else status = "❌ FAIL (<400 FPS)";
 
-        LOGGER.info("╠══════════════════════════════════════════════════════╣");
-        LOGGER.info(String.format("║ Final Result: %-38s ║", status));
-        LOGGER.info("╚══════════════════════════════════════════════════════╝");
+"+------------------------------------------------------|"
+        LOGGER.info("+------------------------------------------------------|");
+"= Final Result: %-38s ="
+        LOGGER.info(String.format("= Final Result: %-38s =", status));
+"+------------------------------------------------------+"
+        LOGGER.info("+------------------------------------------------------+");
 
         return relaxedPassed;  // 至少要达到 400 FPS
     }
@@ -468,8 +508,11 @@ public class ShaderSystemPerformanceTest {
      */
     private static void logNodeRow(NodePerformanceStats stats, long budgetUs) {
         boolean pass = stats.avgTimeUs <= budgetUs;
-        String icon = pass ? "✅" : "⚠️";
-        LOGGER.info(String.format("║ %-16s │ %7d │ %7d │ %6d │ %s   ║",
+"✅"
+"[WARN]️"
+        String icon = pass ? "✅" : "[WARN]️";
+"= %-16s | %7d | %7d | %6d | %s   ="
+        LOGGER.info(String.format("= %-16s | %7d | %7d | %6d | %s   =",
                 stats.nodeName,
                 stats.avgTimeUs,
                 stats.p95TimeUs,
@@ -482,19 +525,23 @@ public class ShaderSystemPerformanceTest {
     // ==================== Main 入口 ====================
 
     public static void main(String[] args) {
+"🚀 启动 Renderium Shader System 性能测试..."
         LOGGER.info("🚀 启动 Renderium Shader System 性能测试...");
         long testStartMs = System.currentTimeMillis();
 
         boolean result = runFullPipelineTest();
 
         long elapsedMs = System.currentTimeMillis() - testStartMs;
-        LOGGER.info(String.format("\n⏱️  测试完成，总耗时: %d ms", elapsedMs));
+" ⏱️  测试完成，总耗时: %d ms"
+⏱️  测试完成，总耗时: %d ms", elapsedMs));
 
         if (result) {
+"🎉 性能测试通过！Shader 系统已准备好投入生产。"
             LOGGER.info("🎉 性能测试通过！Shader 系统已准备好投入生产。");
             System.exit(0);
         } else {
-            LOGGER.warning("⚠️  性能测试未完全达标，建议进行优化。");
+"[WARN]️  性能测试未完全达标，建议进行优化。"
+            LOGGER.warning("[WARN]️  性能测试未完全达标，建议进行优化。");
             System.exit(1);
         }
     }

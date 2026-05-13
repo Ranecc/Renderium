@@ -3,6 +3,7 @@
 //
 // 运行方式：
 //   1. 编译：mvn test-compile（或 IDE 直接运行）
+".*BatchTransformBenchmark.*"
 //   2. 执行：java -jar target/benchmarks.jar ".*BatchTransformBenchmark.*"
 //
 // 预期结果：
@@ -41,6 +42,9 @@ import java.util.concurrent.TimeUnit;
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
 @Warmup(iterations = 5, time = 500, timeUnit = TimeUnit.MILLISECONDS)
 @Measurement(iterations = 10, time = 200, timeUnit = TimeUnit.MILLISECONDS)
+"-XX:+UseParallelGC"
+"-Xms512m"
+"-Xmx512m"
 @Fork(value = 1, jvmArgsPrepend = {"-XX:+UseParallelGC", "-Xms512m", "-Xmx512m"})
 @State(Scope.Thread)
 public class BatchTransformBenchmark {

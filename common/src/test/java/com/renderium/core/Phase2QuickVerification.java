@@ -9,43 +9,59 @@
 
 package com.renderium.core;
 
+import com.renderium.core.phase.PhaseTransitionDetector;
+import com.renderium.core.phase.PhaseEvent;
+
 import java.time.Instant;
 
 public class Phase2QuickVerification {
 
     public static void main(String[] args) {
-        System.out.println("╔══════════════════════════════════════╗");
-        System.out.println("║    Renderium Phase 2 Quick Verification     ║");
-        System.out.println("╚══════════════════════════════════════╝\n");
+"+--------------------------------------+"
+        System.out.println("+--------------------------------------+");
+"=    Renderium Phase 2 Quick Verification     ="
+        System.out.println("=    Renderium Phase 2 Quick Verification     =");
+"+--------------------------------------+ "
+        System.out.println("+--------------------------------------+ ");
 
         boolean allPassed = true;
 
         // Test 1: DynamicPrecisionManager
+"▶ [1/3] DynamicPrecisionManager 精度决策"
         System.out.println("▶ [1/3] DynamicPrecisionManager 精度决策");
         try { allPassed &= testDynamicPrecisionManager(); }
+"  ❌ FAIL: "
         catch (Exception e) { System.out.println("  ❌ FAIL: " + e.getMessage()); allPassed = false; }
         System.out.println();
 
         // Test 2: PrecisionConfig 预设配置
+"▶ [2/3] PrecisionConfig 配置验证"
         System.out.println("▶ [2/3] PrecisionConfig 配置验证");
         try { allPassed &= testPrecisionConfig(); }
+"  ❌ FAIL: "
         catch (Exception e) { System.out.println("  ❌ FAIL: " + e.getMessage()); allPassed = false; }
         System.out.println();
 
         // Test 3: PhaseEvent 数据结构
+"▶ [3/3] PhaseEvent 数据结构"
         System.out.println("▶ [3/3] PhaseEvent 数据结构");
         try { allPassed &= testPhaseEvent(); }
+"  ❌ FAIL: "
         catch (Exception e) { System.out.println("  ❌ FAIL: " + e.getMessage()); allPassed = false; }
         System.out.println();
 
         // Summary
-        System.out.println("══════════════════════════════════════");
+"--------------------------------------"
+        System.out.println("--------------------------------------");
         if (allPassed) {
+"✅ ALL TESTS PASSED - Phase 2 Ready!"
             System.out.println("✅ ALL TESTS PASSED - Phase 2 Ready!");
         } else {
-            System.out.println("⚠️  SOME TESTS NEED ATTENTION");
+"[WARN]️  SOME TESTS NEED ATTENTION"
+            System.out.println("[WARN]️  SOME TESTS NEED ATTENTION");
         }
-        System.out.println("══════════════════════════════════════");
+"--------------------------------------"
+        System.out.println("--------------------------------------");
     }
 
     private static boolean testDynamicPrecisionManager() {
@@ -54,25 +70,30 @@ public class Phase2QuickVerification {
 
         // Test 1: 初始状态
         DynamicPrecisionManager.PrecisionLevel initial = mgr.getCurrentLevel();
+"初始精度=FP16_MEDIUM"
         ok &= check("初始精度=FP16_MEDIUM", initial == DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM, initial);
 
         // Test 2: HOT_PATH 应返回快速精度
         DynamicPrecisionManager.PrecisionLevel hot = mgr.decidePrecision(
             DynamicPrecisionManager.OperationCategory.HOT_PATH_PER_PIXEL);
-        ok &= check("热路径→INT8_FAST", hot == DynamicPrecisionManager.PrecisionLevel.INT8_FAST, hot);
+"热路径vINT8_FAST"
+        ok &= check("热路径vINT8_FAST", hot == DynamicPrecisionManager.PrecisionLevel.INT8_FAST, hot);
 
         // Test 3: OFFLINE_ANALYSIS 应返回 KAHAN
         DynamicPrecisionManager.PrecisionLevel offline = mgr.decidePrecision(
             DynamicPrecisionManager.OperationCategory.OFFLINE_ANALYSIS);
-        ok &= check("离线分析→KAHAN", offline == DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE, offline);
+"离线分析vKAHAN"
+        ok &= check("离线分析vKAHAN", offline == DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE, offline);
 
         // Test 4: 强制设置
         mgr.forcePrecision(DynamicPrecisionManager.PrecisionLevel.SKIP);
+"强制SKIP"
         ok &= check("强制SKIP", mgr.getCurrentLevel() == DynamicPrecisionManager.PrecisionLevel.SKIP,
                    mgr.getCurrentLevel());
 
         // Test 5: 重置自适应
         mgr.resetToAdaptive();
+"重置后=FP16"
         ok &= check("重置后=FP16", mgr.getCurrentLevel() == DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM,
                    mgr.getCurrentLevel());
 
@@ -81,7 +102,9 @@ public class Phase2QuickVerification {
             mgr.updateFrameTime(0.5f);  // 模拟 0.5ms 帧时间
         }
         float avgTime = mgr.getAverageFrameTime();
-        ok &= check("平均帧时间≈0.5ms", Math.abs(avgTime - 0.5f) < 0.1f, avgTime + "ms");
+"平均帧时间~0.5ms"
+"ms"
+        ok &= check("平均帧时间~0.5ms", Math.abs(avgTime - 0.5f) < 0.1f, avgTime + "ms");
 
         return ok;
     }
@@ -91,7 +114,9 @@ public class Phase2QuickVerification {
 
         // Test 1: 默认配置
         PrecisionConfig config = PrecisionConfig.DEFAULT_1000FPS;
+"1000FPS目标帧时间"
         ok &= check("1000FPS目标帧时间", config.getTargetFrameTimeMs() == 0.9f,
+"ms"
                    config.getTargetFrameTimeMs() + "ms");
 
         // Test 2: Builder 模式
@@ -100,12 +125,16 @@ public class Phase2QuickVerification {
                 .defaultHotPathPrecision(DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM)
                 .enableAutoAdjustment(true)
                 .build();
+"自定义目标=2.0ms"
         ok &= check("自定义目标=2.0ms", custom.getTargetFrameTimeMs() == 2.0f,
+"ms"
                    custom.getTargetFrameTimeMs() + "ms");
 
         // Test 3: 质量优先配置
         PrecisionConfig quality = PrecisionConfig.QUALITY_PRIORITY;
+"质量优先目标>1ms"
         ok &= check("质量优先目标>1ms", quality.getTargetFrameTimeMs() > 1.0f,
+"ms"
                    quality.getTargetFrameTimeMs() + "ms");
 
         return ok;
@@ -118,26 +147,40 @@ public class Phase2QuickVerification {
         PhaseTransitionDetector.PhaseType type = PhaseTransitionDetector.PhaseType.SCENE_CHANGE;
         PhaseEvent event = new PhaseEvent(type, 0.85f, 123.45f, 567.89f, 42);
 
+"事件类型"
         ok &= check("事件类型", event.getPhaseType() == type, event.getPhaseType());
+"强度=0.85"
         ok &= check("强度=0.85", Math.abs(event.getIntensity() - 0.85f) < 0.01f, event.getIntensity());
+"帧号=42"
         ok &= check("帧号=42", event.getFrameNumber() == 42, event.getFrameNumber());
 
         // Test 2: toString
         String str = event.toString();
+"包含SCENE_CHANGE"
+"SCENE_CHANGE"
+"toString()格式"
         ok &= check("包含SCENE_CHANGE", str.contains("SCENE_CHANGE"), "toString()格式");
 
         // Test 3: 时间戳自动设置
         long before = System.currentTimeMillis();
         PhaseEvent event2 = new PhaseEvent(PhaseTransitionDetector.PhaseType.MOTION_CHANGE, 0.3f, 10f, 20f, 0);
         Instant after = event2.getTimestamp();
+"时间戳合理"
         ok &= check("时间戳合理", after.toEpochMilli() >= before && after.toEpochMilli() <= System.currentTimeMillis(),
+"timestamp="
                    "timestamp=" + after);
 
         return ok;
     }
 
     private static boolean check(String name, boolean condition, Object actual) {
+"✅"
+"❌"
         String icon = condition ? "✅" : "❌";
+"  "
+" "
+" ["
+"]"
         System.out.println("  " + icon + " " + name + " [" + actual + "]");
         return condition;
     }

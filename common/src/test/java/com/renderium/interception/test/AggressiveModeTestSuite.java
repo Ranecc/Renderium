@@ -53,7 +53,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li><b>前拦截层效果</b>：验证剔除系统和 LOD 系统生效</li>
  *   <li><b>Draw Call 减少</b>：验证 Draw Call 总数减少 >30%</li>
  *   <li><b>帧图优化</b>：验证 Pass 重排序/合并/异步 Compute</li>
- *   <li><b>后拦截全流程</b>：验证捕获→超分辨率→帧生成→后处理链路</li>
+ *   <li><b>后拦截全流程</b>：验证捕获v超分辨率v帧生成v后处理链路</li>
  *   <li><b>超分辨率+帧生成协同</b>：验证两种技术无冲突</li>
  *   <li><b>性能提升基线</b>：验证 FPS 提升 >20%</li>
  *   <li><b>压力测试稳定性</b>：验证长时间运行稳定</li>
@@ -62,16 +62,22 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * <h3>测试分类标签：</h3>
  * <ul>
+"unit"
  *   <li>{@code @Tag("unit")} - 单元级快速测试</li>
+"integration"
  *   <li>{@code @Tag("integration")} - 集成测试（需要 Mock 环境）</li>
+"performance"
  *   <li>{@code @Tag("performance")} - 性能基准测试</li>
+"stability"
  *   <li>{@code @Tag("stability")} - 稳定性压力测试</li>
  * </ul>
  *
  * @author Renderium Team
  * @since 5.6.0 (Phase 6)
  */
+"狂暴模式验收测试 (Aggressive Mode)"
 @DisplayName("狂暴模式验收测试 (Aggressive Mode)")
+"aggressive"
 @Tag("aggressive")
 class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
@@ -137,16 +143,22 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
     @BeforeAll
     static void classSetUp() {
-        LOGGER.info("════════════════════════════════════════════");
+"--------------------------------------------"
+        LOGGER.info("--------------------------------------------");
+"  狂暴模式验收测试套件启动 (Phase 6)"
         LOGGER.info("  狂暴模式验收测试套件启动 (Phase 6)");
-        LOGGER.info("════════════════════════════════════════════");
+"--------------------------------------------"
+        LOGGER.info("--------------------------------------------");
     }
 
     @AfterAll
     static void classTearDown() {
-        LOGGER.info("════════════════════════════════════════════");
+"--------------------------------------------"
+        LOGGER.info("--------------------------------------------");
+"  狂暴模式验收测试套件完成"
         LOGGER.info("  狂暴模式验收测试套件完成");
-        LOGGER.info("════════════════════════════════════════════");
+"--------------------------------------------"
+        LOGGER.info("--------------------------------------------");
     }
 
     @Override
@@ -156,21 +168,25 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
         // 初始化 Mock 环境（使用 Vulkan 后端模拟）
         mockSodium = new MockModRenderingEnvironment(
+"0.5.8"
                 "0.5.8",
                 MockModRenderingEnvironment.BackendType.VULKAN,
                 TEST_WIDTH,
                 TEST_HEIGHT
         );
+"Mock Sodium 环境初始化应成功"
         assertTrue(mockSodium.initialize(), "Mock Sodium 环境初始化应成功");
 
         // 创建前拦截器
         preInterceptor = DefaultPreInterceptor.getInstance();
         preInterceptor.shutdown();  // 重置状态
+"前拦截器初始化应成功"
         assertTrue(preInterceptor.initialize(), "前拦截器初始化应成功");
 
         // 创建后拦截器
         postInterceptor = DefaultPostInterceptor.getInstance();
         postInterceptor.shutdown();  // 重置状态
+"后拦截器初始化应成功"
         assertTrue(postInterceptor.initialize(), "后拦截器初始化应成功");
 
         // 初始化优化模块状态
@@ -203,22 +219,34 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
     // ====================================================================
 
     @Test
+"1.1 所有优化模块激活 - 初始化成功"
     @DisplayName("1.1 所有优化模块激活 - 初始化成功")
+"unit"
     @Tag("unit")
     void testAllOptimizationModulesActivation() {
         Instant start = Instant.now();
 
         // 定义预期的优化模块列表及其依赖关系
         String[] expectedModules = {
+"FrustumCuller"
                 "FrustumCuller",          // 1. 视锥体剔除
+"OcclusionCuller"
                 "OcclusionCuller",         // 2. 遮挡剔除（依赖 FrustumCuller）
+"NeighborFaceCuller"
                 "NeighborFaceCuller",      // 3. 相邻面剔除
+"LODCalculator"
                 "LODCalculator",           // 4. LOD 计算
+"GPUDrivenLODSystem"
                 "GPUDrivenLODSystem",      // 5. GPU 驱动 LOD
+"DrawCallBatcher"
                 "DrawCallBatcher",         // 6. Draw Call 批处理
+"FrameGraphOptimizer"
                 "FrameGraphOptimizer",     // 7. 帧图优化
+"CommandBatchProcessor"
                 "CommandBatchProcessor",   // 8. 命令批处理器
+"VertexFormatCompressor"
                 "VertexFormatCompressor",  // 9. 顶点格式压缩
+"AsyncChunkUploader"
                 "AsyncChunkUploader"       // 10. 异步区块上传
         };
 
@@ -239,6 +267,8 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
                 Thread.sleep(1);
             } catch (Exception e) {
                 failedModules.add(module);
+"模块激活失败 ["
+"]: "
                 LOGGER.warning("模块激活失败 [" + module + "]: " + e.getMessage());
             }
         }
@@ -247,47 +277,71 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
         // 验证所有模块都成功激活
         assertTrue(failedModules.isEmpty(),
+"不应有模块激活失败, 失败模块: "
                 "不应有模块激活失败, 失败模块: " + failedModules);
 
         // 验证激活顺序符合依赖关系
+"FrustumCuller"
         int frustumIdx = activationOrder.indexOf("FrustumCuller");
+"OcclusionCuller"
         int occlusionIdx = activationOrder.indexOf("OcclusionCuller");
 
         if (frustumIdx >= 0 && occlusionIdx >= 0) {
             assertTrue(frustumIdx < occlusionIdx,
+"视锥体剔除应在遮挡剔除之前激活"
                     "视锥体剔除应在遮挡剔除之前激活");
         }
 
         // 验证所有预期模块都已激活
         for (String module : expectedModules) {
             assertTrue(isModuleActive(module),
+"模块 '%s' 应处于活跃状态"
                     String.format("模块 '%s' 应处于活跃状态", module));
         }
 
+"优化模块激活完成: %d/%d 成功, 耗时=%dms"
         LOGGER.info(String.format("优化模块激活完成: %d/%d 成功, 耗时=%dms",
                 activationOrder.size(), expectedModules.length, initDuration.toMillis()));
 
+"testAllOptimizationModulesActivation"
         recordTestResult("testAllOptimizationModulesActivation",
                 failedModules.isEmpty(), initDuration,
+"%d 个模块全部激活成功"
                 String.format("%d 个模块全部激活成功", activationOrder.size()),
                 Map.of(
+"totalModules"
                         "totalModules", expectedModules.length,
+"activatedCount"
                         "activatedCount", activationOrder.size(),
+"failedCount"
                         "failedCount", failedModules.size(),
+"initTimeMs"
                         "initTimeMs", initDuration.toMillis(),
+"activationOrder"
+", "
                         "activationOrder", String.join(", ", activationOrder)
                 ));
     }
 
     @Test
+"1.2 优化模块 - 依赖关系验证"
     @DisplayName("1.2 优化模块 - 依赖关系验证")
+"unit"
     @Tag("unit")
     void testModuleDependencyValidation() {
         // 先激活所有依赖涉及的模块（测试独立运行时需要自包含）
         String[] dependencyModules = {
+"FrustumCuller"
+"OcclusionCuller"
                 "FrustumCuller", "OcclusionCuller",
+"LODCalculator"
+"GPUDrivenLODSystem"
                 "LODCalculator", "GPUDrivenLODSystem",
+"DrawCallBatcher"
+"FrameGraphOptimizer"
                 "DrawCallBatcher", "FrameGraphOptimizer",
+"VertexFormatCompressor"
+"AsyncChunkUploader"
                 "VertexFormatCompressor", "AsyncChunkUploader"
         };
         for (String mod : dependencyModules) {
@@ -296,9 +350,17 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
         // 定义模块依赖图: key -> required dependencies
         Map<String, String[]> dependencyGraph = Map.of(
+"OcclusionCuller"
+"FrustumCuller"
                 "OcclusionCuller", new String[]{"FrustumCuller"},
+"GPUDrivenLODSystem"
+"LODCalculator"
                 "GPUDrivenLODSystem", new String[]{"LODCalculator"},
+"FrameGraphOptimizer"
+"DrawCallBatcher"
                 "FrameGraphOptimizer", new String[]{"DrawCallBatcher"},
+"AsyncChunkUploader"
+"VertexFormatCompressor"
                 "AsyncChunkUploader", new String[]{"VertexFormatCompressor"}
         );
 
@@ -311,6 +373,8 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
             for (String dep : dependencies) {
                 if (!isModuleActive(dep)) {
+" 需要 "
+" 但后者未激活"
                     violations.add(module + " 需要 " + dep + " 但后者未激活");
                     allDependenciesMet = false;
                 }
@@ -318,12 +382,19 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
         }
 
         assertTrue(allDependenciesMet,
+"所有模块依赖应被满足, 违规: "
                 "所有模块依赖应被满足, 违规: " + violations);
 
+"testModuleDependencyValidation"
         recordTestResult("testModuleDependencyValidation", allDependenciesMet,
+"依赖关系验证通过"
                 Duration.ZERO, "依赖关系验证通过",
                 Map.of(
+"violations"
+"无"
+"; "
                         "violations", violations.isEmpty() ? "无" : String.join("; ", violations),
+"allMet"
                         "allMet", allDependenciesMet
                 ));
     }
@@ -333,7 +404,9 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
     // ====================================================================
 
     @Test
+"2.1 前拦截层效果 - 剔除系统激活并生效"
     @DisplayName("2.1 前拦截层效果 - 剔除系统激活并生效")
+"integration"
     @Tag("integration")
     void testPreInterceptorEffectiveness_Culling() {
         // 注入完整的剔除配置
@@ -350,37 +423,52 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
         // 验证配置已注入
         DefaultPreInterceptor defaultPreInt = (DefaultPreInterceptor) preInterceptor;
+"剔除上下文不应为 null"
         assertNotNull(defaultPreInt.getCurrentCullingContext(), "剔除上下文不应为 null");
         assertTrue(defaultPreInt.getCurrentCullingContext().isFrustumCullingEnabled(),
+"视锥体剔除应启用"
                 "视锥体剔除应启用");
         assertTrue(defaultPreInt.getCurrentCullingContext().isOcclusionCullingEnabled(),
+"遮挡剔除应启用"
                 "遮挡剔除应启用");
         assertEquals(64, defaultPreInt.getCurrentCullingContext().getMaxDrawDistance(),
+"最大绘制距离应为 64 区块"
                 "最大绘制距离应为 64 区块");
 
         // 执行拦截并验证剔除生效
         RenderContext ctx = createAggressiveRenderContext(0);
         InterceptionResult result = preInterceptor.intercept(ctx);
 
+"剔除应标记为已注入"
         assertTrue(result.isCullingInjected(), "剔除应标记为已注入");
         assertTrue(result.getStatus() == InterceptionResult.Status.SUCCESS
                         || result.getStatus() == InterceptionResult.Status.PARTIAL,
+"结果状态应为 SUCCESS 或 PARTIAL"
                 "结果状态应为 SUCCESS 或 PARTIAL");
 
+"testPreInterceptorEffectiveness_Culling"
         recordTestResult("testPreInterceptorEffectiveness_Culling", result.isCullingInjected(),
                 Duration.ofNanos(result.getElapsedTimeNanos()),
+"剔除系统正常工作"
                 "剔除系统正常工作",
                 Map.of(
+"cullingInjected"
                         "cullingInjected", result.isCullingInjected(),
+"status"
                         "status", result.getStatus().name(),
+"frustum"
                         "frustum", cullingCtx.isFrustumCullingEnabled(),
+"occlusion"
                         "occlusion", cullingCtx.isOcclusionCullingEnabled(),
+"maxDistance"
                         "maxDistance", cullingCtx.getMaxDrawDistance()
                 ));
     }
 
     @Test
+"2.2 前拦截层效果 - LOD 系统激活并生效"
     @DisplayName("2.2 前拦截层效果 - LOD 系统激活并生效")
+"integration"
     @Tag("integration")
     void testPreInterceptorEffectiveness_LOD() {
         // 注入 LOD 配置（狂暴模式使用更大范围）
@@ -396,14 +484,17 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
         // 验证配置已注入
         DefaultPreInterceptor defaultPreInt = (DefaultPreInterceptor) preInterceptor;
+"LOD 上下文不应为 null"
         assertNotNull(defaultPreInt.getCurrentLodContext(), "LOD 上下文不应为 null");
         assertEquals(256, defaultPreInt.getCurrentLodContext().getMaxDistance(),
+"最大 LOD 距离应为 256 区块"
                 "最大 LOD 距离应为 256 区块");
 
         // 执行拦截并验证 LOD 生效
         RenderContext ctx = createAggressiveRenderContext(0);
         InterceptionResult result = preInterceptor.intercept(ctx);
 
+"LOD 应标记为已注入"
         assertTrue(result.isLodInjected(), "LOD 应标记为已注入");
 
         // 验证注入时机正确（应在渲染管线早期阶段）
@@ -415,17 +506,25 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
         if (totalInterceptionTime > 0.001) {  // 仅在总耗时可测量时验证
             double lodRatio = lodInjectionTime / totalInterceptionTime;
             assertTrue(lodRatio <= 1.0,
+"LOD 注入耗时占比应 <= 100%% (实际: %.1f%%)"
                     String.format("LOD 注入耗时占比应 <= 100%% (实际: %.1f%%)", lodRatio * 100));
         }
 
+"testPreInterceptorEffectiveness_LOD"
         recordTestResult("testPreInterceptorEffectiveness_LOD", result.isLodInjected(),
                 Duration.ofNanos(result.getElapsedTimeNanos()),
+"LOD 系统正常工作"
                 "LOD 系统正常工作",
                 Map.of(
+"lodInjected"
                         "lodInjected", result.isLodInjected(),
+"maxDistance"
                         "maxDistance", lodCtx.getMaxDistance(),
+"transitionStart"
                         "transitionStart", lodCtx.getTransitionStart(),
+"transitionEnd"
                         "transitionEnd", lodCtx.getTransitionEnd(),
+"lodInjectionMs"
                         "lodInjectionMs", lodInjectionTime
                 ));
     }
@@ -435,7 +534,9 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
     // ====================================================================
 
     @Test
+"3.1 Draw Call 减少 - 减少率 >30%"
     @DisplayName("3.1 Draw Call 减少 - 减少率 >30%")
+"performance"
     @Tag("performance")
     void testDrawCallReduction() {
         final int TEST_FRAMES = 500;
@@ -473,31 +574,46 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
         // 验证减少率达到目标 (>30%)
         assertTrue(reductionRate > DRAW_CALL_REDUCTION_TARGET,
+"Draw Call 减少率应 > %.0f%% (实际: %.1f%%)"
                 String.format("Draw Call 减少率应 > %.0f%% (实际: %.1f%%)",
                         DRAW_CALL_REDUCTION_TARGET * 100, reductionPercent));
 
         // 验证没有过度剔除（优化后仍有合理的 Draw Call 数量）
         double avgOptimizedPerFrame = (double) totalOptimized / TEST_FRAMES;
         assertTrue(avgOptimizedPerFrame > 10,
+"平均每帧优化后 Draw Call 应 > 10 (避免过度剔除)"
                 "平均每帧优化后 Draw Call 应 > 10 (避免过度剔除)");
 
         // 分析各类剔除的贡献
         Map<String, Double> contributionMap = analyzeCullingContribution();
 
+"Draw Call 统计: 基线=%d, 优化后=%d, 减少=%.1f%%"
         LOGGER.info(String.format("Draw Call 统计: 基线=%d, 优化后=%d, 减少=%.1f%%",
                 totalBaseline, totalOptimized, reductionPercent));
+"剔除贡献分布: "
         LOGGER.info("剔除贡献分布: " + contributionMap);
 
+"testDrawCallReduction"
         recordTestResult("testDrawCallReduction", reductionRate > DRAW_CALL_REDUCTION_TARGET,
                 Duration.ofMillis(100),
+"减少率=%.1f%% (目标>%.0f%%)"
                 String.format("减少率=%.1f%% (目标>%.0f%%)", reductionPercent, DRAW_CALL_REDUCTION_TARGET * 100),
                 Map.of(
+"baselineDrawCalls"
                         "baselineDrawCalls", totalBaseline,
+"optimizedDrawCalls"
                         "optimizedDrawCalls", totalOptimized,
+"reductionPercent"
+"%.1f"
                         "reductionPercent", String.format("%.1f", reductionPercent),
+"targetPercent"
                         "targetPercent", DRAW_CALL_REDUCTION_TARGET * 100,
+"avgOptimizedPerFrame"
+"%.0f"
                         "avgOptimizedPerFrame", String.format("%.0f", avgOptimizedPerFrame),
+"passed"
                         "passed", reductionRate > DRAW_CALL_REDUCTION_TARGET,
+"cullingContributions"
                         "cullingContributions", contributionMap.toString()
                 ));
     }
@@ -507,7 +623,9 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
     // ====================================================================
 
     @Test
+"4.1 帧图优化 - Pass 重排序不破坏依赖关系"
     @DisplayName("4.1 帧图优化 - Pass 重排序不破坏依赖关系")
+"integration"
     @Tag("integration")
     void testFrameGraphOptimizationValidation() {
         // 模拟 Frame Graph 的 Pass 依赖关系
@@ -515,10 +633,19 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
         // Pass D -> Pass E (独立子图)
 
         Map<String, Set<String>> passDependencies = new LinkedHashMap<>();
+"GBufferPass"
         passDependencies.put("GBufferPass", Set.of());
+"ShadowPass"
+"GBufferPass"
         passDependencies.put("ShadowPass", Set.of("GBufferPass"));
+"LightingPass"
+"GBufferPass"
+"ShadowPass"
         passDependencies.put("LightingPass", Set.of("GBufferPass", "ShadowPass"));
+"PostProcessPass"
+"LightingPass"
         passDependencies.put("PostProcessPass", Set.of("LightingPass"));
+"UIPass"
         passDependencies.put("UIPass", Set.of());  // UI 可以并行
 
         // 模拟重排序算法
@@ -539,6 +666,8 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
             for (String dep : entry.getValue()) {
                 if (passIndex.containsKey(pass) && passIndex.containsKey(dep)) {
                     if (passIndex.get(pass) <= passIndex.get(dep)) {
+" 在 "
+" 之前执行"
                         violations.add(pass + " 在 " + dep + " 之前执行");
                         dependenciesPreserved = false;
                     }
@@ -547,48 +676,73 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
         }
 
         assertTrue(dependenciesPreserved,
+"Pass 重排序不应破坏依赖关系"
                 "Pass 重排序不应破坏依赖关系");
         assertTrue(violations.isEmpty(),
+"不应有依赖违规: "
                 "不应有依赖违规: " + violations);
 
         // 验证 Pass 合并结果正确
         List<String> mergedPasses = simulatePassMerging(reorderedOrder);
+"合并后的 Pass 列表不为空"
         assertFalse(mergedPasses.isEmpty(), "合并后的 Pass 列表不为空");
         assertTrue(mergedPasses.size() <= originalOrder.size(),
+"合并后 Pass 数量应 <= 原始数量"
                 "合并后 Pass 数量应 <= 原始数量");
 
+"原始顺序: "
         LOGGER.info("原始顺序: " + originalOrder);
+"重排顺序: "
         LOGGER.info("重排顺序: " + reorderedOrder);
+"合并结果: "
         LOGGER.info("合并结果: " + mergedPasses);
 
+"testFrameGraphOptimizationValidation"
         recordTestResult("testFrameGraphOptimizationValidation", dependenciesPreserved,
                 Duration.ofMillis(5),
+"帧图优化依赖关系保持完整"
                 "帧图优化依赖关系保持完整",
                 Map.of(
+"originalPassCount"
                         "originalPassCount", originalOrder.size(),
+"reorderedPassCount"
                         "reorderedPassCount", reorderedOrder.size(),
+"mergedPassCount"
                         "mergedPassCount", mergedPasses.size(),
+"dependenciesPreserved"
                         "dependenciesPreserved", dependenciesPreserved,
+"violations"
+"无"
+"; "
                         "violations", violations.isEmpty() ? "无" : String.join("; ", violations)
                 ));
     }
 
     @Test
+"4.2 帧图优化 - 异步 Compute 注入无冲突"
     @DisplayName("4.2 帧图优化 - 异步 Compute 注入无冲突")
+"integration"
     @Tag("integration")
     void testAsyncComputeInjection() {
         // 模拟异步 Compute Pass 列表
         List<String> computePasses = Arrays.asList(
+"AsyncCullingCompute"
                 "AsyncCullingCompute",
+"LODUpdateCompute"
                 "LODUpdateCompute",
+"ParticleSimulation"
                 "ParticleSimulation"
         );
 
         // 模拟图形 Pass 列表
         List<String> graphicsPasses = Arrays.asList(
+"GBufferPass"
                 "GBufferPass",
+"ShadowPass"
                 "ShadowPass",
+"LightingPass"
                 "LightingPass",
+"PostProcessPass"
                 "PostProcessPass"
         );
 
@@ -597,18 +751,27 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
         List<String> conflicts = new ArrayList<>();
 
         // 检查资源访问冲突
+"VisibilityBuffer"
+"LODData"
+"ParticleBuffer"
         Set<String> computeResources = Set.of("VisibilityBuffer", "LODData", "ParticleBuffer");
+"GBuffer"
+"ShadowMap"
+"LightAccumulation"
+"SceneColor"
         Set<String> graphicsResources = Set.of("GBuffer", "ShadowMap", "LightAccumulation", "SceneColor");
 
         Set<String> intersection = new HashSet<>(computeResources);
         intersection.retainAll(graphicsResources);
 
         if (!intersection.isEmpty()) {
+"资源冲突: "
             conflicts.add("资源冲突: " + intersection);
             noConflicts = false;
         }
 
         assertTrue(noConflicts,
+"异步 Compute 不应与图形 Pass 存在资源冲突: "
                 "异步 Compute 不应与图形 Pass 存在资源冲突: " + conflicts);
 
         // 验证 Compute Pass 正确插入到管线中
@@ -618,14 +781,23 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
         fullPipeline.addAll(graphicsPasses.subList(1, graphicsPasses.size()));  // 其余图形
 
         assertEquals(computePasses.size() + graphicsPasses.size(), fullPipeline.size(),
+"完整管线应包含所有 Pass"
                 "完整管线应包含所有 Pass");
 
+"testAsyncComputeInjection"
         recordTestResult("testAsyncComputeInjection", noConflicts, Duration.ZERO,
+"异步 Compute 注入无冲突"
                 "异步 Compute 注入无冲突",
                 Map.of(
+"computePassCount"
                         "computePassCount", computePasses.size(),
+"graphicsPassCount"
                         "graphicsPassCount", graphicsPasses.size(),
+"noConflicts"
                         "noConflicts", noConflicts,
+"conflicts"
+"无"
+", "
                         "conflicts", conflicts.isEmpty() ? "无" : String.join(", ", conflicts)
                 ));
     }
@@ -635,7 +807,9 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
     // ====================================================================
 
     @Test
+"5.1 后拦截全流程 - 完整链路通畅"
     @DisplayName("5.1 后拦截全流程 - 完整链路通畅")
+"integration"
     @Tag("integration")
     void testPostInterceptorFullPipeline() {
         FrameData frameData = createTestFrameData(100);
@@ -691,12 +865,14 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
             postInterceptor.applySuperResolution(srCtx);
             postInterceptor.applyFrameGeneration(fgCtx);
             postInterceptor.postProcess(frameData);
+"后处理全链路各阶段调用不应抛出异常"
         }, "后处理全链路各阶段调用不应抛出异常");
 
         // 验证总后处理延迟在预算内（<16ms 以维持 60fps）
         long totalTimeNs = captureTimeNs + srTimeNs + fgTimeNs + effectTimeNs;
         double totalTimeMs = totalTimeNs / 1_000_000.0;
 
+"后处理管道计时: capture=%.2fms, SR=%.2fms, FG=%.2fms, Effect=%.2fms, Total=%.2fms"
         LOGGER.info(String.format("后处理管道计时: capture=%.2fms, SR=%.2fms, FG=%.2fms, Effect=%.2fms, Total=%.2fms",
                 captureTimeNs / 1_000_000.0,
                 srTimeNs / 1_000_000.0,
@@ -704,17 +880,33 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
                 effectTimeNs / 1_000_000.0,
                 totalTimeMs));
 
+"testPostInterceptorFullPipeline"
         recordTestResult("testPostInterceptorFullPipeline", true, totalPipelineTime,
+"后处理全链路通畅"
                 "后处理全链路通畅",
                 Map.of(
+"captureSuccess"
                         "captureSuccess", captureSuccess,
+"srSuccess"
                         "srSuccess", srSuccess,
+"fgSuccess"
                         "fgSuccess", fgSuccess,
+"captureTimeMs"
+"%.2f"
                         "captureTimeMs", String.format("%.2f", captureTimeNs / 1_000_000.0),
+"srTimeMs"
+"%.2f"
                         "srTimeMs", String.format("%.2f", srTimeNs / 1_000_000.0),
+"fgTimeMs"
+"%.2f"
                         "fgTimeMs", String.format("%.2f", fgTimeNs / 1_000_000.0),
+"effectTimeMs"
+"%.2f"
                         "effectTimeMs", String.format("%.2f", effectTimeNs / 1_000_000.0),
+"totalPipelineMs"
+"%.2f"
                         "totalPipelineMs", String.format("%.2f", totalTimeMs),
+"finalResultNotNull"
                         "finalResultNotNull", finalResult != null
                 ));
     }
@@ -724,7 +916,9 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
     // ====================================================================
 
     @Test
+"6.1 超分辨率+帧生成协同 - 无冲突"
     @DisplayName("6.1 超分辨率+帧生成协同 - 无冲突")
+"integration"
     @Tag("integration")
     void testSuperResolutionAndFrameGenSynergy() {
         final int TEST_FRAMES = 200;
@@ -758,6 +952,7 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
             if (srOk || fgOk) {  // 至少一个成功即可（当前存根可能返回 false）
                 validFrames.incrementAndGet();
             } else {
+"有效"
                 // 存根模式下，只要不抛异常就算"有效"
                 validFrames.incrementAndGet();
             }
@@ -777,24 +972,37 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
         // 协同工作验证
         double synergyRate = (double) validFrames.get() / TEST_FRAMES;
         assertTrue(synergyRate > 0.9,
+"超分辨率和帧生成协同成功率应 > 90%% (实际: %.1f%%)"
                 String.format("超分辨率和帧生成协同成功率应 > 90%% (实际: %.1f%%)", synergyRate * 100));
 
         // 有效帧率应显著高于基础帧率
         assertTrue(avgEffectiveFPS > TARGET_FPS * 1.5,
+"有效帧率应 > %.0ffps (实际: %.1ffps)"
                 String.format("有效帧率应 > %.0ffps (实际: %.1ffps)", TARGET_FPS * 1.5, avgEffectiveFPS));
 
+"SR+FG 协同测试: %d/%d 帧有效 (%.1f%%), 平均有效 FPS=%.1f"
         LOGGER.info(String.format("SR+FG 协同测试: %d/%d 帧有效 (%.1f%%), 平均有效 FPS=%.1f",
                 validFrames.get(), TEST_FRAMES, synergyRate * 100, avgEffectiveFPS));
 
+"testSuperResolutionAndFrameGenSynergy"
         recordTestResult("testSuperResolutionAndFrameGenSynergy", synergyRate > 0.9,
                 Duration.ofMillis(50),
+"协同率=%.1f%%, 有效FPS=%.1f"
                 String.format("协同率=%.1f%%, 有效FPS=%.1f", synergyRate * 100, avgEffectiveFPS),
                 Map.of(
+"validFrames"
                         "validFrames", validFrames.get(),
+"totalFrames"
                         "totalFrames", TEST_FRAMES,
+"synergyRate"
+"%.2f"
                         "synergyRate", String.format("%.2f", synergyRate),
+"avgEffectiveFPS"
+"%.1f"
                         "avgEffectiveFPS", String.format("%.1f", avgEffectiveFPS),
+"baseFPS"
                         "baseFPS", TARGET_FPS,
+"passed"
                         "passed", synergyRate > 0.9
                 ));
     }
@@ -804,7 +1012,9 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
     // ====================================================================
 
     @Test
+"7.1 性能提升基线 - FPS 提升 >20%"
     @DisplayName("7.1 性能提升基线 - FPS 提升 >20%")
+"performance"
     @Tag("performance")
     @Timeout(value = 60, unit = java.util.concurrent.TimeUnit.SECONDS)
     void testPerformanceImprovementBaseline() {
@@ -855,19 +1065,26 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
         // 真实环境中 FPS 提升来自 GPU 端的 Draw Call 减少，Mock 中拦截器 CPU 开销可能抵消此收益
         // 放宽为允许最多 90% 退化（Mock 环境 CPU 开销极大，几乎必然出现性能退化）
         assertTrue(fpsImprovement > -0.90,
+"FPS 不应出现严重退化 > 90%% (实际: %.1f%%)，"
                 String.format("FPS 不应出现严重退化 > 90%% (实际: %.1f%%)，" +
+"Mock 环境中拦截器 CPU 开销可能抵消 Draw Call 减少收益"
                         "Mock 环境中拦截器 CPU 开销可能抵消 Draw Call 减少收益",
                         improvementPercent));
 
         // 验证帧时间分布更均匀（优化后的 CV 应更低或相近）
         // Mock 环境中帧时间波动较大，放宽至 2.0 倍
         assertTrue(optimizedResult.fpsVariance() <= baselineResult.fpsVariance() * 2.0,
+"优化后方差系数应 <= 基线方差系数*2.0 (优化: %.4f vs 基线: %.4f)"
                 String.format("优化后方差系数应 <= 基线方差系数*2.0 (优化: %.4f vs 基线: %.4f)",
                         optimizedResult.fpsVariance(), baselineResult.fpsVariance()));
 
-        LOGGER.info(String.format("性能提升报告:\n" +
-                        "  基线: avg=%.1ffps, min=%.1ffps, max=%.1ffps, CV=%.2f%%\n" +
-                        "  优化: avg=%.1ffps, min=%.1ffps, max=%.1ffps, CV=%.2f%%\n" +
+"性能提升报告: "
+" +
+"  基线: avg=%.1ffps, min=%.1ffps, max=%.1ffps, CV=%.2f%% "
+" +
+"  优化: avg=%.1ffps, min=%.1ffps, max=%.1ffps, CV=%.2f%% "
+" +
+"  提升: +%.1f%% (目标>+%.0f%%)"
                         "  提升: +%.1f%% (目标>+%.0f%%)",
                 baselineResult.avgFPS(), baselineResult.minFPS(), baselineResult.maxFPS(),
                 baselineResult.fpsVariance() * 100,
@@ -875,16 +1092,30 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
                 optimizedResult.fpsVariance() * 100,
                 improvementPercent, FPS_IMPROVEMENT_TARGET * 100));
 
+"testPerformanceImprovementBaseline"
         recordTestResult("testPerformanceImprovementBaseline", fpsImprovement > FPS_IMPROVEMENT_TARGET,
                 Duration.ofSeconds(10),
+"FPS提升=+.1f%% (目标>+%.0f%%)"
                 String.format("FPS提升=+.1f%% (目标>+%.0f%%)", improvementPercent, FPS_IMPROVEMENT_TARGET * 100),
                 Map.of(
+"baselineAvgFPS"
+"%.1f"
                         "baselineAvgFPS", String.format("%.1f", baselineResult.avgFPS()),
+"optimizedAvgFPS"
+"%.1f"
                         "optimizedAvgFPS", String.format("%.1f", optimizedResult.avgFPS()),
+"improvementPercent"
+"%.1f"
                         "improvementPercent", String.format("%.1f", improvementPercent),
+"baselineCV"
+"%.4f"
                         "baselineCV", String.format("%.4f", baselineResult.fpsVariance()),
+"optimizedCV"
+"%.4f"
                         "optimizedCV", String.format("%.4f", optimizedResult.fpsVariance()),
+"targetPercent"
                         "targetPercent", FPS_IMPROVEMENT_TARGET * 100,
+"passed"
                         "passed", fpsImprovement > FPS_IMPROVEMENT_TARGET
                 ));
     }
@@ -894,7 +1125,9 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
     // ====================================================================
 
     @Test
+"8.1 压力测试稳定性 - 长时间运行"
     @DisplayName("8.1 压力测试稳定性 - 长时间运行")
+"stability"
     @Tag("stability")
     @Timeout(value = 120, unit = java.util.concurrent.TimeUnit.SECONDS)  // CI 加速版
     void testStressTestStability() {
@@ -937,6 +1170,8 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
             } catch (Throwable t) {
                 crashCount.incrementAndGet();
+"压力测试崩溃 at frame "
+": "
                 LOGGER.severe("压力测试崩溃 at frame " + totalFrames.get() + ": " + t.getMessage());
 
                 // 如果崩溃太多则提前终止
@@ -954,6 +1189,7 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
         // 验证无崩溃
         assertEquals(0, crashCount.get(),
+"崩溃次数应为 0 (实际: %d)"
                 String.format("崩溃次数应为 0 (实际: %d)", crashCount.get()));
 
         // 验证内存使用稳定（最后 25% 样本的平均值与最初 25% 相比增长 < 100%）
@@ -968,6 +1204,7 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
             // Mock 环境中每次迭代创建大量临时对象（InterceptedFrameData、Builder 等）
             // 内存增长在 1000% 以内视为正常（GC 行为不可预测，采样点可能在 GC 前后）
             assertTrue(memoryGrowthRatio < 10.0,
+"内存增长率应 < 1000%% (实际: %.1f%%)，Mock 环境允许极高容忍度"
                     String.format("内存增长率应 < 1000%% (实际: %.1f%%)，Mock 环境允许极高容忍度",
                             memoryGrowthRatio * 100));
         }
@@ -982,23 +1219,34 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
             double degradation = earlyFPS > 0 ? (earlyFPS - lateFPS) / earlyFPS : 0;
             assertTrue(degradation < 0.2,
+"性能衰减应 < 20%% (实际: %.1f%%)"
                     String.format("性能衰减应 < 20%% (实际: %.1f%%)", degradation * 100));
         }
 
+"压力测试完成: %d帧, %s, 崩溃=%d, 内存样本=%d, FPS样本=%d"
         LOGGER.info(String.format("压力测试完成: %d帧, %s, 崩溃=%d, 内存样本=%d, FPS样本=%d",
                 framesCompleted, actualDuration, crashCount.get(),
                 memorySamples.size(), fpsSamples.size()));
 
+"testStressTestStability"
         recordTestResult("testStressTestStability", crashCount.get() == 0,
                 actualDuration,
+"%d帧完成, 崩溃=%d"
                 String.format("%d帧完成, 崩溃=%d", framesCompleted, crashCount.get()),
                 Map.of(
+"framesCompleted"
                         "framesCompleted", framesCompleted,
+"duration"
                         "duration", actualDuration.toString(),
+"crashCount"
                         "crashCount", crashCount.get(),
+"memorySampleCount"
                         "memorySampleCount", memorySamples.size(),
+"fpsSampleCount"
                         "fpsSampleCount", fpsSamples.size(),
+"targetDuration"
                         "targetDuration", testDuration.toString(),
+"passed"
                         "passed", crashCount.get() == 0
                 ));
     }
@@ -1008,10 +1256,13 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
     // ====================================================================
 
     @Test
+"9.1 自动回退机制 - 错误检测与模块禁用"
     @DisplayName("9.1 自动回退机制 - 错误检测与模块禁用")
+"stability"
     @Tag("stability")
     void testAutomaticFallbackMechanism() {
         // 模拟一个会失败的优化模块
+"FaultyOptimizer"
         String problematicModule = "FaultyOptimizer";
 
         // 激活该模块（应该会失败）
@@ -1022,63 +1273,89 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
 
         if (errorDetected) {
             // 触发自动回退
+"模拟的内部错误: buffer overflow detected"
             triggerFallback(problematicModule, "模拟的内部错误: buffer overflow detected");
         }
 
         // 验证回退事件已被记录
+"应有至少一条回退事件"
         assertFalse(fallbackEvents.isEmpty(), "应有至少一条回退事件");
 
         Optional<FallbackEvent> targetEvent = fallbackEvents.stream()
                 .filter(e -> e.moduleName().equals(problematicModule))
                 .findFirst();
 
+"应有针对问题模块的回退事件"
         assertTrue(targetEvent.isPresent(), "应有针对问题模块的回退事件");
 
         FallbackEvent event = targetEvent.get();
+"回退事件应有有效时间戳"
         assertNotNull(event.timestamp(), "回退事件应有有效时间戳");
+"回退原因不应为空"
         assertFalse(event.reason().isBlank(), "回退原因不应为空");
+"回退后系统状态应被记录"
         assertFalse(event.systemState().isBlank(), "回退后系统状态应被记录");
 
         // 验证问题模块已被禁用
         assertFalse(isModuleActive(problematicModule),
+"问题模块 '%s' 应被自动禁用"
                 String.format("问题模块 '%s' 应被自动禁用", problematicModule));
 
         // 验证系统在回退后仍可正常运行
         RenderContext ctx = createAggressiveRenderContext(999);
         InterceptionResult result = preInterceptor.intercept(ctx);
 
+"回退后系统应仍能产生有效的拦截结果"
         assertNotNull(result, "回退后系统应仍能产生有效的拦截结果");
         // 回退后的拦截结果可以是 SUCCESS/PARTIAL（有优化生效）或 SKIPPED（无优化模块活跃）
         // 三种状态均表示系统正常运行，未因回退而崩溃
         assertTrue(
             result.isSuccess() || result.getStatus() == InterceptionResult.Status.PARTIAL
                 || result.getStatus() == InterceptionResult.Status.SKIPPED,
+"回退后拦截应正常返回结果（SUCCESS/PARTIAL/SKIPPED），实际: "
             "回退后拦截应正常返回结果（SUCCESS/PARTIAL/SKIPPED），实际: " + result.getStatus()
         );
 
+"回退事件详情: "
         LOGGER.info("回退事件详情: " + event);
 
+"testAutomaticFallbackMechanism"
         recordTestResult("testAutomaticFallbackMechanism", true, Duration.ofMillis(10),
+"自动回退机制正常工作"
                 "自动回退机制正常工作",
                 Map.of(
+"problematicModule"
                         "problematicModule", problematicModule,
+"errorDetected"
                         "errorDetected", errorDetected,
+"fallbackTriggered"
                         "fallbackTriggered", !fallbackEvents.isEmpty(),
+"moduleDisabledAfterFallback"
                         "moduleDisabledAfterFallback", !isModuleActive(problematicModule),
+"systemOperationalAfterFallback"
                         "systemOperationalAfterFallback", result.isSuccess() || result.getStatus() == InterceptionResult.Status.PARTIAL,
+"fallbackReason"
                         "fallbackReason", event.reason(),
+"fallbackCount"
                         "fallbackCount", fallbackEvents.size()
                 ));
     }
 
     @Test
+"9.2 自动回退机制 - 多模块级联回退"
     @DisplayName("9.2 自动回退机制 - 多模块级联回退")
+"stability"
     @Tag("stability")
     void testCascadeFallback() {
+"ModuleA"
+"ModuleB"
+"ModuleC"
         String[] faultyModules = {"ModuleA", "ModuleB", "ModuleC"};
 
         // 先激活核心模块（测试独立运行时需要自包含）
+"FrustumCuller"
         activateOptimizationModule("FrustumCuller");
+"DrawCallBatcher"
         activateOptimizationModule("DrawCallBatcher");
 
         // 激活所有故障模块
@@ -1089,6 +1366,7 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
         // 模拟多个错误
         for (String mod : faultyModules) {
             if (simulateErrorDetection(mod)) {
+"级联错误 from "
                 triggerFallback(mod, "级联错误 from " + mod);
             }
         }
@@ -1096,13 +1374,18 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
         // 验证所有故障模块都被禁用
         for (String mod : faultyModules) {
             assertFalse(isModuleActive(mod),
+"模块 '%s' 应被禁用"
                     String.format("模块 '%s' 应被禁用", mod));
         }
 
         // 验证核心模块仍然活跃
+"FrustumCuller"
         assertTrue(isModuleActive("FrustumCuller"),
+"核心模块 FrustumCuller 应保持活跃"
                 "核心模块 FrustumCuller 应保持活跃");
+"DrawCallBatcher"
         assertTrue(isModuleActive("DrawCallBatcher"),
+"核心模块 DrawCallBatcher 应保持活跃"
                 "核心模块 DrawCallBatcher 应保持活跃");
 
         // 验证回退日志详细
@@ -1111,14 +1394,24 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
                 .count();
 
         assertEquals(faultyModules.length, specificFallbacks,
+"应有针对所有故障模块的回退事件"
                 "应有针对所有故障模块的回退事件");
 
+"testCascadeFallback"
         recordTestResult("testCascadeFallback", true, Duration.ofMillis(5),
+"多模块级联回退正常"
                 "多模块级联回退正常",
                 Map.of(
+"faultyModules"
+", "
                         "faultyModules", String.join(", ", faultyModules),
+"allDisabled"
                         "allDisabled", Arrays.stream(faultyModules).noneMatch(this::isModuleActive),
+"fallbackEventCount"
                         "fallbackEventCount", specificFallbacks,
+"coreModulesActive"
+"FrustumCuller"
+"DrawCallBatcher"
                         "coreModulesActive", isModuleActive("FrustumCuller") && isModuleActive("DrawCallBatcher")
                 ));
     }
@@ -1132,9 +1425,19 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
      */
     private void initializeOptimizationModules() {
         String[] modules = {
+"FrustumCuller"
+"OcclusionCuller"
+"NeighborFaceCuller"
                 "FrustumCuller", "OcclusionCuller", "NeighborFaceCuller",
+"LODCalculator"
+"GPUDrivenLODSystem"
                 "LODCalculator", "GPUDrivenLODSystem",
+"DrawCallBatcher"
+"FrameGraphOptimizer"
                 "DrawCallBatcher", "FrameGraphOptimizer",
+"CommandBatchProcessor"
+"VertexFormatCompressor"
+"AsyncChunkUploader"
                 "CommandBatchProcessor", "VertexFormatCompressor", "AsyncChunkUploader"
         };
         for (String mod : modules) {
@@ -1208,11 +1511,17 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
      */
     private Map<String, Double> analyzeCullingContribution() {
         Map<String, Double> contributions = new LinkedHashMap<>();
+"FrustumCull"
         contributions.put("FrustumCull", 0.40);    // 40%
+"OcclusionCull"
         contributions.put("OcclusionCull", 0.15); // 15%
+"BackfaceCull"
         contributions.put("BackfaceCull", 0.08);  // 8%
+"NeighborFaceCull"
         contributions.put("NeighborFaceCull", 0.07); // 7%
+"BatchMerge"
         contributions.put("BatchMerge", 0.25);    // 25%
+"Other"
         contributions.put("Other", 0.05);         // 5%
         return contributions;
     }
@@ -1265,10 +1574,12 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
             if (currentMerge.length() == 0) {
                 currentMerge.append(pass);
             } else {
+"+"
                 currentMerge.append("+").append(pass);
             }
 
             // 每 2-3 个 Pass 合并为一个
+"\\+"
             if (currentMerge.toString().split("\\+").length >= 2) {
                 merged.add(currentMerge.toString());
                 currentMerge = new StringBuilder();
@@ -1290,6 +1601,8 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
      */
     private boolean simulateErrorDetection(String moduleName) {
         // 仅对特定模块模拟错误
+"Faulty"
+"Module"
         if (moduleName.contains("Faulty") || moduleName.startsWith("Module")) {
             return true;
         }
@@ -1314,6 +1627,7 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
                 buildSystemStateString()
         ));
 
+"[自动回退] 禁用模块 '%s': %s"
         LOGGER.warning(String.format("[自动回退] 禁用模块 '%s': %s", moduleName, reason));
     }
 
@@ -1324,6 +1638,7 @@ class AggressiveModeTestSuite extends InterceptionLayerTestBase {
      */
     private String buildSystemStateString() {
         long activeCount = optimizationModuleStatus.values().stream().filter(b -> b).count();
+"活跃模块=%d/%d, 帧计数=%d"
         return String.format("活跃模块=%d/%d, 帧计数=%d",
                 activeCount, optimizationModuleStatus.size(),
                 mockSodium.getFrameCount());

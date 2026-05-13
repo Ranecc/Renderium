@@ -19,6 +19,10 @@
 
 package com.renderium.core;
 
+import com.renderium.core.phase.PhaseEvent;
+
+import com.renderium.core.phase.PhaseTransitionDetector;
+
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.Test;
 
@@ -49,6 +53,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * @version 1.0
  * @since 2.3
  */
+"PhaseTransitionDetector 相变检测器测试"
 @DisplayName("PhaseTransitionDetector 相变检测器测试")
 class PhaseTransitionDetectorTest {
 
@@ -77,11 +82,12 @@ class PhaseTransitionDetectorTest {
     /**
      * 测试场景切换检测（Type A）
      * <p>
-     * 模拟场景：全黑帧 → 全白帧
+     * 模拟场景：全黑帧 v 全白帧
      * 预期结果：应检测到 SCENE_CHANGE 类型
      */
     @Test
-    @DisplayName("场景切换检测: 全黑→全白应触发 Type A")
+"场景切换检测: 全黑v全白应触发 Type A"
+    @DisplayName("场景切换检测: 全黑v全白应触发 Type A")
     void testSceneChangeDetection_BlackToWhite() {
         // 准备测试数据
         int[] blackFrame = generateSolidColorFrame(0x000000);  // 全黑
@@ -105,6 +111,7 @@ class PhaseTransitionDetectorTest {
         assertEquals(
             PhaseTransitionDetector.PhaseType.SCENE_CHANGE,
             result,
+"全黑到全白的剧烈变化应被检测为场景切换"
             "全黑到全白的剧烈变化应被检测为场景切换"
         );
     }
@@ -113,13 +120,14 @@ class PhaseTransitionDetectorTest {
      * 测试场景切换检测（Type A）- 大面积颜色变化
      */
     @Test
+"场景切换检测: 大面积颜色变化应触发 Type A"
     @DisplayName("场景切换检测: 大面积颜色变化应触发 Type A")
     void testSceneChangeDetection_LargeColorChange() {
         int[] redFrame = generateSolidColorFrame(0xFF0000);  // 全红
         int[] blueFrame = generateSolidColorFrame(0x0000FF);  // 全蓝
 
         // 多次调用以填充窗口并确保检测
-        // 红蓝交替的帧间差异极大（diffMean≈170），但滑动窗口平滑可能延迟响应
+        // 红蓝交替的帧间差异极大（diffMean~170），但滑动窗口平滑可能延迟响应
         // 使用足够的迭代次数确保平滑后的强度超过阈值 A (0.5)
         PhaseTransitionDetector.PhaseType result = PhaseTransitionDetector.PhaseType.NONE;
         boolean detected = false;
@@ -137,6 +145,7 @@ class PhaseTransitionDetectorTest {
         }
 
         assertTrue(detected,
+"全红到全蓝的变化应在30次迭代内被检测为场景切换，最后结果: %s"
             String.format("全红到全蓝的变化应在30次迭代内被检测为场景切换，最后结果: %s", result));
     }
 
@@ -149,6 +158,7 @@ class PhaseTransitionDetectorTest {
      * 预期结果：应返回 NONE 类型
      */
     @Test
+"无变化检测: 连续相似帧应返回 NONE"
     @DisplayName("无变化检测: 连续相似帧应返回 NONE")
     void testNoChange_SimilarFrames() {
         // 生成两个几乎相同的渐变帧
@@ -157,6 +167,7 @@ class PhaseTransitionDetectorTest {
 
         // 预热阶段：前几次调用用于填充滑动窗口和建立 prevDiffMean 基线
         // 首次调用时 prevDiffMean=0，会产生极大的 intensity（除以近似零的分母），
+"无变化"
         // 这是算法的正常行为，不应计入"无变化"断言
         // DEFAULT_SMOOTHING_WINDOW=5，多预留2帧确保基线稳定
         final int WARMUP_FRAMES = 7;
@@ -179,6 +190,8 @@ class PhaseTransitionDetectorTest {
             assertEquals(
                 PhaseTransitionDetector.PhaseType.NONE,
                 result,
+"连续相似帧不应触发任何相变检测（预热后帧 "
+"）"
                 "连续相似帧不应触发任何相变检测（预热后帧 " + i + "）"
             );
         }
@@ -188,6 +201,7 @@ class PhaseTransitionDetectorTest {
      * 测试完全相同的帧
      */
     @Test
+"无变化检测: 完全相同帧应返回 NONE"
     @DisplayName("无变化检测: 完全相同帧应返回 NONE")
     void testNoChange_IdenticalFrames() {
         int[] frame = generateSmoothGradient(TEST_WIDTH, TEST_HEIGHT);
@@ -203,10 +217,11 @@ class PhaseTransitionDetectorTest {
     /**
      * 测试运动模式变化检测（Type C）
      * <p>
-     * 模拟场景：静止 → 平移运动（中等强度变化）
+     * 模拟场景：静止 v 平移运动（中等强度变化）
      * 预期结果：应检测到 MOTION_CHANGE 类型
      */
     @Test
+"运动模式检测: 平移运动应触发 Type C"
     @DisplayName("运动模式检测: 平移运动应触发 Type C")
     void testMotionChangeDetection_Translation() {
         // 生成原始帧和平移后的帧
@@ -235,6 +250,7 @@ class PhaseTransitionDetectorTest {
             lastResult == PhaseTransitionDetector.PhaseType.SCENE_CHANGE ||
             lastResult == PhaseTransitionDetector.PhaseType.LIGHTING_MUTATION ||
             lastResult == PhaseTransitionDetector.PhaseType.NONE,
+"平移运动应至少触发某种相变类型或 NONE，实际: "
             "平移运动应至少触发某种相变类型或 NONE，实际: " + lastResult
         );
     }
@@ -248,6 +264,7 @@ class PhaseTransitionDetectorTest {
      * 预期结果：应检测到 LIGHTING_MUTATION 或更高级别
      */
     @Test
+"光照突变检测: 局部亮度剧变应触发 Type B"
     @DisplayName("光照突变检测: 局部亮度剧变应触发 Type B")
     void testLightingMutationDetection_LocalBrightnessChange() {
         // 生成正常帧和局部过曝帧
@@ -273,6 +290,7 @@ class PhaseTransitionDetectorTest {
         // 光照突变应该被检测到（可能是 B、C 或 A 类型）
         assertTrue(
             significantChange || result == PhaseTransitionDetector.PhaseType.NONE,
+"局部亮度变化应触发某种检测，实际: "
             "局部亮度变化应触发某种检测，实际: " + result
         );
     }
@@ -283,16 +301,19 @@ class PhaseTransitionDetectorTest {
      * 测试 null 输入参数
      */
     @Test
+"异常处理: null 输入应抛出 IllegalArgumentException"
     @DisplayName("异常处理: null 输入应抛出 IllegalArgumentException")
     void testNullInput_ShouldThrowException() {
         int[] validFrame = new int[TEST_PIXEL_COUNT];
 
         assertThrows(IllegalArgumentException.class, () -> {
             detector.detectTransition(null, validFrame);
+"当前帧为 null 应抛出异常"
         }, "当前帧为 null 应抛出异常");
 
         assertThrows(IllegalArgumentException.class, () -> {
             detector.detectTransition(validFrame, null);
+"前一帧为 null 应抛出异常"
         }, "前一帧为 null 应抛出异常");
     }
 
@@ -300,6 +321,7 @@ class PhaseTransitionDetectorTest {
      * 测试长度不一致的输入
      */
     @Test
+"异常处理: 长度不一致的帧数据应抛出异常"
     @DisplayName("异常处理: 长度不一致的帧数据应抛出异常")
     void testMismatchedLengths_ShouldThrowException() {
         int[] frame1 = new int[TEST_PIXEL_COUNT];
@@ -307,6 +329,7 @@ class PhaseTransitionDetectorTest {
 
         assertThrows(IllegalArgumentException.class, () -> {
             detector.detectTransition(frame1, frame2);
+"长度不一致应抛出异常"
         }, "长度不一致应抛出异常");
     }
 
@@ -314,12 +337,14 @@ class PhaseTransitionDetectorTest {
      * 测试空数组输入
      */
     @Test
+"异常处理: 空数组应抛出异常"
     @DisplayName("异常处理: 空数组应抛出异常")
     void testEmptyArray_ShouldThrowException() {
         int[] emptyFrame = new int[0];
 
         assertThrows(IllegalArgumentException.class, () -> {
             detector.detectTransition(emptyFrame, emptyFrame);
+"空数组应抛出异常"
         }, "空数组应抛出异常");
     }
 
@@ -327,18 +352,22 @@ class PhaseTransitionDetectorTest {
      * 测试简化版接口的无效输入
      */
     @Test
+"简化版接口: NaN 和负数输入应抛出异常"
     @DisplayName("简化版接口: NaN 和负数输入应抛出异常")
     void testSimplifiedInterface_InvalidInput() {
         assertThrows(IllegalArgumentException.class, () -> {
             detector.detectTransition(Float.NaN);
+"NaN 输入应抛出异常"
         }, "NaN 输入应抛出异常");
 
         assertThrows(IllegalArgumentException.class, () -> {
             detector.detectTransition(Float.NEGATIVE_INFINITY);
+"负无穷输入应抛出异常"
         }, "负无穷输入应抛出异常");
 
         assertThrows(IllegalArgumentException.class, () -> {
             detector.detectTransition(-1.0f);
+"负数输入应抛出异常"
         }, "负数输入应抛出异常");
     }
 
@@ -346,6 +375,7 @@ class PhaseTransitionDetectorTest {
      * 测试单像素帧（最小有效输入）
      */
     @Test
+"边界条件: 单像素帧应正常处理"
     @DisplayName("边界条件: 单像素帧应正常处理")
     void testSinglePixelFrame() {
         int[] pixel1 = {0x000000};  // 黑色
@@ -365,6 +395,7 @@ class PhaseTransitionDetectorTest {
      * 测试回调注册和触发
      */
     @Test
+"回调机制: 场景切换回调应被正确触发"
     @DisplayName("回调机制: 场景切换回调应被正确触发")
     void testCallbackInvocation_OnSceneChange() {
         AtomicInteger callbackCount = new AtomicInteger(0);
@@ -394,6 +425,7 @@ class PhaseTransitionDetectorTest {
         // 注意：由于平滑窗口的存在，可能需要更多帧才能触发
         assertTrue(
             callbackCount.get() >= 0,  // 可能未触发（取决于阈值）
+"回调触发次数应 >= 0，实际: "
             "回调触发次数应 >= 0，实际: " + callbackCount.get()
         );
 
@@ -402,7 +434,9 @@ class PhaseTransitionDetectorTest {
             PhaseEvent event = capturedEvents.get(0);
             assertNotNull(event);
             assertEquals(PhaseTransitionDetector.PhaseType.SCENE_CHANGE, event.getPhaseType());
+"强度指标应为正数"
             assertTrue(event.getIntensity() > 0, "强度指标应为正数");
+"帧号应为非负数"
             assertTrue(event.getFrameNumber() >= 0, "帧号应为非负数");
         }
     }
@@ -411,6 +445,7 @@ class PhaseTransitionDetectorTest {
      * 测试回调注销
      */
     @Test
+"回调机制: 注销后回调不再触发"
     @DisplayName("回调机制: 注销后回调不再触发")
     void testCallbackUnregistration() {
         AtomicInteger callbackCount = new AtomicInteger(0);
@@ -435,6 +470,7 @@ class PhaseTransitionDetectorTest {
         }
 
         // 注销后回调不应再被触发（或触发次数不增加）
+"注销后回调不应被触发"
         assertEquals(0, callbackCount.get(), "注销后回调不应被触发");
     }
 
@@ -442,6 +478,7 @@ class PhaseTransitionDetectorTest {
      * 测试为 NONE 类型注册回调应失败
      */
     @Test
+"回调机制: 为 NONE 类型注册回调应抛出异常"
     @DisplayName("回调机制: 为 NONE 类型注册回调应抛出异常")
     void testRegisterCallbackForNone_ShouldThrowException() {
         assertThrows(IllegalArgumentException.class, () -> {
@@ -449,6 +486,7 @@ class PhaseTransitionDetectorTest {
                 PhaseTransitionDetector.PhaseType.NONE,
                 event -> {}
             );
+"不能为 NONE 类型注册回调"
         }, "不能为 NONE 类型注册回调");
     }
 
@@ -458,6 +496,7 @@ class PhaseTransitionDetectorTest {
      * 测试诊断报告生成
      */
     @Test
+"诊断 API: 报告应包含完整信息"
     @DisplayName("诊断 API: 报告应包含完整信息")
     void testDiagnosticReportGeneration() {
         // 执行一些检测操作
@@ -475,9 +514,16 @@ class PhaseTransitionDetectorTest {
         String report = detector.getDiagnosticReport();
 
         // 验证报告包含关键字段
+"诊断报告不应为 null"
         assertNotNull(report, "诊断报告不应为 null");
+"总处理帧数"
+"报告应包含总帧数统计"
         assertTrue(report.contains("总处理帧数"), "报告应包含总帧数统计");
+"上次检测类型"
+"报告应包含上次检测结果"
         assertTrue(report.contains("上次检测类型"), "报告应包含上次检测结果");
+"检测统计"
+"报告应包含检测统计"
         assertTrue(report.contains("检测统计"), "报告应包含检测统计");
     }
 
@@ -485,6 +531,7 @@ class PhaseTransitionDetectorTest {
      * 测试重置功能
      */
     @Test
+"状态管理: 重置后应恢复初始状态"
     @DisplayName("状态管理: 重置后应恢复初始状态")
     void testResetState() {
         // 执行一些检测
@@ -502,13 +549,17 @@ class PhaseTransitionDetectorTest {
         detector.reset();
 
         // 验证重置后的状态
+"重置后帧计数应为 0"
         assertEquals(0, detector.getTotalFrameCount(), "重置后帧计数应为 0");
         assertEquals(
             PhaseTransitionDetector.PhaseType.NONE,
             detector.getLastDetectedPhase(),
+"重置后上次检测类型应为 NONE"
             "重置后上次检测类型应为 NONE"
         );
+"重置后强度应为 0"
         assertEquals(0.0f, detector.getLastIntensity(), 0.001f, "重置后强度应为 0");
+"重置前应有处理记录"
         assertTrue(framesBeforeReset > 0, "重置前应有处理记录");
     }
 
@@ -521,6 +572,7 @@ class PhaseTransitionDetectorTest {
      * 此测试使用较小分辨率（64×64），按比例推算。
      */
     @Test
+"性能测试: 64×64 分辨率检测延迟应 < 0.01ms"
     @DisplayName("性能测试: 64×64 分辨率检测延迟应 < 0.01ms")
     void testPerformance_SmallResolution() {
         int[] frame1 = generateSmoothGradient(TEST_WIDTH, TEST_HEIGHT);
@@ -549,10 +601,12 @@ class PhaseTransitionDetectorTest {
         // 64×64 应该非常快（< 0.01ms）
         assertTrue(
             avgTimeMs < 0.5,  // 宽松限制，实际应在 0.01ms 左右
+"平均检测时间 %.4fms 超过预期（应 < 0.5ms for 64×64）"
             String.format("平均检测时间 %.4fms 超过预期（应 < 0.5ms for 64×64）", avgTimeMs)
         );
 
         // 输出性能数据供人工审查
+"[性能] 64×64 平均检测时间: %.4fms (%d 次迭代)%n"
         System.out.printf("[性能] 64×64 平均检测时间: %.4fms (%d 次迭代)%n", avgTimeMs, iterations);
     }
 
@@ -562,6 +616,7 @@ class PhaseTransitionDetectorTest {
      * 测试多线程并发访问的安全性
      */
     @Test
+"并发安全: 多线程同时调用不应抛出异常"
     @DisplayName("并发安全: 多线程同时调用不应抛出异常")
     void testConcurrentAccess() throws InterruptedException {
         int threadCount = 4;
@@ -594,6 +649,7 @@ class PhaseTransitionDetectorTest {
         latch.await();
 
         // 验证没有异常发生
+"并发访问不应产生任何异常"
         assertEquals(0, errorCount.get(), "并发访问不应产生任何异常");
     }
 
@@ -603,6 +659,7 @@ class PhaseTransitionDetectorTest {
      * 测试自定义配置的构造函数
      */
     @Test
+"配置: 自定义窗口大小和历史容量应生效"
     @DisplayName("配置: 自定义窗口大小和历史容量应生效")
     void testCustomConfiguration() {
         int customWindow = 10;
@@ -620,7 +677,9 @@ class PhaseTransitionDetectorTest {
         }
 
         // 验证配置生效
+"帧计数应正确"
         assertEquals(30, customDetector.getTotalFrameCount(), "帧计数应正确");
+"诊断报告可生成"
         assertNotNull(customDetector.getDiagnosticReport(), "诊断报告可生成");
     }
 
@@ -628,18 +687,22 @@ class PhaseTransitionDetectorTest {
      * 测试无效配置参数
      */
     @Test
+"配置: 无效参数应抛出异常"
     @DisplayName("配置: 无效参数应抛出异常")
     void testInvalidConfigurationParameters() {
         assertThrows(IllegalArgumentException.class, () -> {
             new PhaseTransitionDetector(0, 100);
+"窗口大小为 0 应抛出异常"
         }, "窗口大小为 0 应抛出异常");
 
         assertThrows(IllegalArgumentException.class, () -> {
             new PhaseTransitionDetector(-1, 100);
+"负窗口大小应抛出异常"
         }, "负窗口大小应抛出异常");
 
         assertThrows(IllegalArgumentException.class, () -> {
             new PhaseTransitionDetector(5, 0);
+"历史容量为 0 应抛出异常"
         }, "历史容量为 0 应抛出异常");
     }
 

@@ -5,32 +5,46 @@
 
 package com.renderium.core;
 
+import com.renderium.core.quality.ConvergenceMonitor;
+import com.renderium.core.precision.AdaptivePrecisionManager;
+
 public class Phase3IntegrationTest {
 
     public static void main(String[] args) {
-        System.out.println("╔══════════════════════════════════════╗");
-        System.out.println("║   Renderium Phase 3 Integration Test    ║");
-        System.out.println("╚══════════════════════════════════════╝\n");
+"+--------------------------------------+"
+        System.out.println("+--------------------------------------+");
+"=   Renderium Phase 3 Integration Test    ="
+        System.out.println("=   Renderium Phase 3 Integration Test    =");
+"+--------------------------------------+ "
+        System.out.println("+--------------------------------------+ ");
 
         boolean allPassed = true;
 
+"▶ [1/2] AdaptivePrecisionManager 自适应精度分配"
         System.out.println("▶ [1/2] AdaptivePrecisionManager 自适应精度分配");
         try { allPassed &= testAdaptivePrecisionManager(); }
+"  ❌ FAIL: "
         catch (Exception e) { System.out.println("  ❌ FAIL: " + e.getMessage()); allPassed = false; }
         System.out.println();
 
+"▶ [2/2] ConvergenceMonitor 收敛监控"
         System.out.println("▶ [2/2] ConvergenceMonitor 收敛监控");
         try { allPassed &= testConvergenceMonitor(); }
+"  ❌ FAIL: "
         catch (Exception e) { System.out.println("  ❌ FAIL: " + e.getMessage()); allPassed = false; }
         System.out.println();
 
-        System.out.println("══════════════════════════════════════");
+"--------------------------------------"
+        System.out.println("--------------------------------------");
         if (allPassed) {
+"✅ ALL PHASE 3 TESTS PASSED - Advanced Optimization Ready!"
             System.out.println("✅ ALL PHASE 3 TESTS PASSED - Advanced Optimization Ready!");
         } else {
-            System.out.println("⚠️  SOME TESTS NEED ATTENTION");
+"[WARN]️  SOME TESTS NEED ATTENTION"
+            System.out.println("[WARN]️  SOME TESTS NEED ATTENTION");
         }
-        System.out.println("══════════════════════════════════════");
+"--------------------------------------"
+        System.out.println("--------------------------------------");
     }
 
     private static boolean testAdaptivePrecisionManager() {
@@ -43,14 +57,18 @@ public class Phase3IntegrationTest {
 
         // Test 2: 分析帧
         AdaptivePrecisionManager.FrameAnalysisResult result = mgr.analyzeFrame(frameData, width, height);
+"分析结果非空"
+"not null"
         ok &= check("分析结果非空", result != null, "not null");
 
         // Test 3: 检查精度图尺寸
         int expectedTilesX = (width + 15) / 16;  // 4
         int expectedTilesY = (height + 15) / 16;  // 4
+"Tile网格宽度="
         ok &= check("Tile网格宽度=" + expectedTilesX,
                    result.getTilesX() == expectedTilesX,
                    result.getTilesX());
+"Tile网格高度="
         ok &= check("Tile网格高度=" + expectedTilesY,
                    result.getTilesY() == expectedTilesY,
                    result.getTilesY());
@@ -59,6 +77,7 @@ public class Phase3IntegrationTest {
         int[] dist = result.getTileDistribution();
         int totalTiles = 0;
         for (int count : dist) totalTiles += count;
+"总Tile数="
         ok &= check("总Tile数=" + (expectedTilesX * expectedTilesY),
                    totalTiles == expectedTilesX * expectedTilesY,
                    totalTiles);
@@ -67,17 +86,23 @@ public class Phase3IntegrationTest {
         mgr.updateResourcePressure(0.8f);  // 高压
         AdaptivePrecisionManager.FrameAnalysisResult highPressureResult =
             mgr.analyzeFrame(frameData, width, height);
+"高压下阈值提高"
         ok &= check("高压下阈值提高",
                    highPressureResult.getThresholdHigh() > result.getThresholdHigh(),
+"%.3f > %.3f"
                    String.format("%.3f > %.3f",
                        highPressureResult.getThresholdHigh(), result.getThresholdHigh()));
 
         // Test 6: 估算算力节省
         double savings = result.computeEstimatedSavingsPercent();
+"算力节省>0%"
+"%.1f%%"
         ok &= check("算力节省>0%", savings > 0, String.format("%.1f%%", savings));
 
         // Test 7: 状态摘要
         String summary = mgr.getStatusSummary();
+"状态摘要非空"
+"length="
         ok &= check("状态摘要非空", summary != null && !summary.isEmpty(), "length=" + summary.length());
 
         return ok;
@@ -88,7 +113,10 @@ public class Phase3IntegrationTest {
         ConvergenceMonitor monitor = new ConvergenceMonitor();
 
         // Test 1: 初始状态
+"初始未收敛"
+"converged="
         ok &= check("初始未收敛", !monitor.hasConverged(), "converged=" + monitor.hasConverged());
+"初始置信度=0"
         ok &= check("初始置信度=0", monitor.getConfidence() == 0.0, monitor.getConfidence());
 
         // Test 2: 更新各项指标（模拟快速收敛场景）
@@ -100,6 +128,8 @@ public class Phase3IntegrationTest {
         }
 
         double confidence = monitor.getConfidence();
+"20次迭代后置信度>0"
+"%.4f"
         ok &= check("20次迭代后置信度>0", confidence > 0.0, String.format("%.4f", confidence));
 
         // Test 3: 继续迭代至收敛
@@ -112,19 +142,29 @@ public class Phase3IntegrationTest {
 
         confidence = monitor.getConfidence();
         boolean converged = monitor.hasConverged();
+"50次迭代后高置信度"
+"%.4f"
         ok &= check("50次迭代后高置信度", confidence > 0.8, String.format("%.4f", confidence));
         System.out.println(String.format(
+"     收敛状态: %s, 置信度: %.4f"
             "     收敛状态: %s, 置信度: %.4f",
+"已收敛"
+"未收敛"
             converged ? "已收敛" : "未收敛", confidence
         ));
 
         // Test 4: 重置功能
         monitor.reset();
+"重置后置信度=0"
         ok &= check("重置后置信度=0", monitor.getConfidence() == 0.0, monitor.getConfidence());
+"重置后未收敛"
+"converged="
         ok &= check("重置后未收敛", !monitor.hasConverged(), "converged=" + monitor.hasConverged());
 
         // Test 5: 状态摘要
         String summary = monitor.getStatusSummary();
+"状态摘要非空"
+"length="
         ok &= check("状态摘要非空", summary != null && !summary.isEmpty(), "length=" + summary.length());
 
         return ok;
@@ -140,19 +180,19 @@ public class Phase3IntegrationTest {
             for (int x = 0; x < width; x++) {
                 float value = 0.0f;
 
-                // 左上角：均匀区域（低复杂性）→ 应该被分配 SKIP
+                // 左上角：均匀区域（低复杂性）v 应该被分配 SKIP
                 if (x < width/2 && y < height/2) {
                     value = 128.0f;  // 中等灰度，无变化
                 }
-                // 右上角：平滑渐变（中低复杂性）→ INT8 或 FP16
+                // 右上角：平滑渐变（中低复杂性）v INT8 或 FP16
                 else if (x >= width/2 && y < height/2) {
                     value = 128.0f + (x - width/2) * 0.5f;  // 水平渐变
                 }
-                // 左下角：中等细节区域 → FP16
+                // 左下角：中等细节区域 v FP16
                 else if (x < width/2 && y >= height/2) {
                     value = 128.0f + (float)Math.sin(x * 0.3) * 30.0f;  // 正弦波纹理
                 }
-                // 右下角：高频边缘（高复杂性）→ FP32
+                // 右下角：高频边缘（高复杂性）v FP32
                 else {
                     value = ((x + y) % 2 == 0) ? 255.0f : 0.0f;  // 棋盘格（最大梯度）
                 }
@@ -165,7 +205,13 @@ public class Phase3IntegrationTest {
     }
 
     private static boolean check(String name, boolean condition, Object actual) {
+"✅"
+"❌"
         String icon = condition ? "✅" : "❌";
+"  "
+" "
+" ["
+"]"
         System.out.println("  " + icon + " " + name + " [" + actual + "]");
         return condition;
     }

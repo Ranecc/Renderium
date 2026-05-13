@@ -32,6 +32,7 @@ import java.util.logging.Logger;
  */
 public class StandalonePerfBenchmark {
 
+"Renderium|Bench"
     private static final Logger LOG = Logger.getLogger("Renderium|Bench");
 
     // ==================== 配置 ====================
@@ -66,12 +67,15 @@ public class StandalonePerfBenchmark {
         @Override
         public String toString() {
             return String.format(
-                "│ %-30s │ %8.1f μs │ %8.1f │ %8.1f │ %8.1f │ %s │",
+"| %-30s | %8.1f μs | %8.1f | %8.1f | %8.1f | %s |"
+                "| %-30s | %8.1f μs | %8.1f | %8.1f | %8.1f | %s |",
                 name,
                 avgNs / 1000.0,
                 minNs / 1000.0,
                 p50Ns / 1000.0,
                 p99Ns / 1000.0,
+"✅ PASS"
+"❌ FAIL"
                 passed ? "✅ PASS" : "❌ FAIL"
             );
         }
@@ -80,13 +84,20 @@ public class StandalonePerfBenchmark {
     // ==================== 主入口 ====================
 
     public static void main(String[] args) {
-        LOG.info("╔══════════════════════════════════════════════════════╗");
-        LOG.info("║     Renderium Shader System - Standalone Benchmark    ║");
-        LOG.info("╠══════════════════════════════════════════════════════╣");
-        LOG.info(String.format("║ Warmup: %-46d ║", WARMUP_ITERATIONS));
-        LOG.info(String.format("║ Measure: %-45d ║", MEASURE_ITERATIONS));
-        LOG.info(String.format("║ Vertices: %-44d ║", VERTEX_COUNT));
-        LOG.info("╚══════════════════════════════════════════════════════╝");
+"+------------------------------------------------------+"
+        LOG.info("+------------------------------------------------------+");
+"=     Renderium Shader System - Standalone Benchmark    ="
+        LOG.info("=     Renderium Shader System - Standalone Benchmark    =");
+"+------------------------------------------------------|"
+        LOG.info("+------------------------------------------------------|");
+"= Warmup: %-46d ="
+        LOG.info(String.format("= Warmup: %-46d =", WARMUP_ITERATIONS));
+"= Measure: %-45d ="
+        LOG.info(String.format("= Measure: %-45d =", MEASURE_ITERATIONS));
+"= Vertices: %-44d ="
+        LOG.info(String.format("= Vertices: %-44d =", VERTEX_COUNT));
+"+------------------------------------------------------+"
+        LOG.info("+------------------------------------------------------+");
 
         List<BenchResult> results = new java.util.ArrayList<>();
 
@@ -100,6 +111,7 @@ public class StandalonePerfBenchmark {
     // ==================== 基准 1: 批量顶点变换 ====================
 
     static BenchResult benchmarkBatchTransform() {
+"BatchTransformEngineV3 (10K vtx)"
         BenchResult r = new BenchResult("BatchTransformEngineV3 (10K vtx)");
         BatchTransformEngineV3 engine = new BatchTransformEngineV3(VERTEX_COUNT);
         float[] positions = generatePositions(VERTEX_COUNT);
@@ -130,6 +142,7 @@ public class StandalonePerfBenchmark {
     // ==================== 基准 2: 对象池分配 ====================
 
     static BenchResult benchmarkObjectPool() {
+"ShaderPerfOpt (borrow/return)"
         BenchResult r = new BenchResult("ShaderPerfOpt (borrow/return)");
         ShaderPerformanceOptimizer optimizer = ShaderPerformanceOptimizer.getInstance();
 
@@ -157,12 +170,15 @@ public class StandalonePerfBenchmark {
     // ==================== 基准 3: 参数查找 ====================
 
     static BenchResult benchmarkParameterLookup() {
+"ParameterKnob lookup (16 params)"
         BenchResult r = new BenchResult("ParameterKnob lookup (16 params)");
 
         // 构建模拟参数列表
         List<ParameterKnob<?>> params = new java.util.ArrayList<>();
         for (int i = 0; i < 16; i++) {
+"param_"
             params.add(new FloatKnob.Builder("param_" + i)
+"Param "
                 .displayName("Param " + i)
                 .defaultValue(0.0f)
                 .range(-1.0f, 1.0f)
@@ -221,10 +237,14 @@ public class StandalonePerfBenchmark {
     }
 
     private static void printReport(List<BenchResult> results) {
+""
         LOG.info("");
-        LOG.info("┌────────────────────────┬────────────┬──────────┬──────────┬──────────┬────────┐");
-        LOG.info("│ Benchmark              │ Avg (μs)   │ Min      │ P50      │ P99      │ Status │");
-        LOG.info("├────────────────────────┼────────────┼──────────┼──────────┼──────────┼────────┤");
+"+------------------------+------------+----------+----------+----------+--------+"
+        LOG.info("+------------------------+------------+----------+----------+----------+--------+");
+"| Benchmark              | Avg (μs)   | Min      | P50      | P99      | Status |"
+        LOG.info("| Benchmark              | Avg (μs)   | Min      | P50      | P99      | Status |");
+"+------------------------+------------+----------+----------+----------+--------+"
+        LOG.info("+------------------------+------------+----------+----------+----------+--------+");
 
         boolean allPassed = true;
         for (BenchResult r : results) {
@@ -232,15 +252,20 @@ public class StandalonePerfBenchmark {
             if (!r.passed) allPassed = false;
         }
 
-        LOG.info("└────────────────────────┴────────────┴──────────┴──────────┴──────────┴────────┘");
+"+------------------------+------------+----------+----------+----------+--------+"
+        LOG.info("+------------------------+------------+----------+----------+----------+--------+");
+""
         LOG.info("");
 
         if (allPassed) {
+"🎉 所有性能目标均已达成！"
             LOG.info("🎉 所有性能目标均已达成！");
         } else {
-            LOG.warning("⚠️ 部分性能目标未达标，请查看上方报告。");
+"[WARN]️ 部分性能目标未达标，请查看上方报告。"
+            LOG.warning("[WARN]️ 部分性能目标未达标，请查看上方报告。");
         }
 
+"总测试迭代: %d (热身: %d + 测量: %d)"
         LOG.info(String.format("总测试迭代: %d (热身: %d + 测量: %d)",
             WARMUP_ITERATIONS + MEASURE_ITERATIONS, WARMUP_ITERATIONS, MEASURE_ITERATIONS));
     }

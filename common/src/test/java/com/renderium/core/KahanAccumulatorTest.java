@@ -3,6 +3,8 @@
 
 package com.renderium.core;
 
+import com.renderium.core.math.KahanAccumulator;
+
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -22,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * @author Renderium Team
  * @since 3.0.0
  */
+"KahanAccumulator 高精度累加器测试"
 @DisplayName("KahanAccumulator 高精度累加器测试")
 class KahanAccumulatorTest {
 
@@ -47,6 +50,7 @@ class KahanAccumulatorTest {
     // ==================== 精度核心验证 ====================
 
     @Test
+"N=10000 时 Kahan 累加误差 < 1e-4（消除舍入误差传播）"
     @DisplayName("N=10000 时 Kahan 累加误差 < 1e-4（消除舍入误差传播）")
     void testKahanPrecision_LargeN() {
         // 准备：创建累加器和输入数组
@@ -67,15 +71,18 @@ class KahanAccumulatorTest {
         double kahanResult = accumulator.getSum();
         double kahanError = Math.abs(kahanResult - exactValue);
 
+"[Kahan精度] N=%d, 基值=%.4f, 结果=%.16f, 误差=%.2e%n"
         System.out.printf("[Kahan精度] N=%d, 基值=%.4f, 结果=%.16f, 误差=%.2e%n",
             LARGE_N, ACCUMULATION_BASE, kahanResult, kahanError);
 
         assertTrue(kahanError < KAHAN_MAX_ERROR,
+"Kahan 累加误差 %.2e 应小于 %s (实际: %.2e)"
             String.format("Kahan 累加误差 %.2e 应小于 %s (实际: %.2e)",
                 kahanError, KAHAN_MAX_ERROR, kahanError));
     }
 
     @Test
+"N=10000 时朴素累加误差 > 1e-3（证明 Kahan 必要性）"
     @DisplayName("N=10000 时朴素累加误差 > 1e-3（证明 Kahan 必要性）")
     void testNaiveSumError_LargeN() {
         // 准备：构建相同的输入数组
@@ -91,15 +98,18 @@ class KahanAccumulatorTest {
         final double exactValue = (double) LARGE_N * ACCUMULATION_BASE;
         double naiveError = Math.abs(naiveResult - exactValue);
 
+"[朴素累加] N=%d, 基值=%.4f, 结果=%.16f, 误差=%.2e%n"
         System.out.printf("[朴素累加] N=%d, 基值=%.4f, 结果=%.16f, 误差=%.2e%n",
             LARGE_N, ACCUMULATION_BASE, naiveResult, naiveError);
 
         assertTrue(naiveError > NAIVE_MIN_ERROR,
+"朴素累加误差 %.2e 应大于 %s (实际: %.2e)"
             String.format("朴素累加误差 %.2e 应大于 %s (实际: %.2e)",
                 naiveError, NAIVE_MIN_ERROR, naiveError));
     }
 
     @Test
+"Kahan 与朴素累加精度对比（同输入）"
     @DisplayName("Kahan 与朴素累加精度对比（同输入）")
     void testKahanVsNaive_Comparison() {
         // 使用相同输入对比两种方法
@@ -117,22 +127,31 @@ class KahanAccumulatorTest {
         double naiveError = Math.abs(naiveResult - exactValue);
         double improvementRatio = naiveError / Math.max(kahanError, Double.MIN_VALUE);
 
+"========== Kahan vs 朴素累加对比 =========="
         System.out.println("========== Kahan vs 朴素累加对比 ==========");
+"  精确值:     %.16f%n"
         System.out.printf("  精确值:     %.16f%n", exactValue);
+"  Kahan结果:  %.16f (误差: %.2e)%n"
         System.out.printf("  Kahan结果:  %.16f (误差: %.2e)%n", kahanResult, kahanError);
+"  朴素结果:   %.16f (误差: %.2e)%n"
         System.out.printf("  朴素结果:   %.16f (误差: %.2e)%n", naiveResult, naiveError);
+"  精度提升:   %.1f 倍%n"
         System.out.printf("  精度提升:   %.1f 倍%n", improvementRatio);
+"============================================"
         System.out.println("============================================");
 
         // 断言：Kahan 显著优于朴素累加
+"Kahan 误差应小于朴素累加误差"
         assertTrue(kahanError < naiveError, "Kahan 误差应小于朴素累加误差");
         assertTrue(improvementRatio > 1000,
+"Kahan 应提供至少 1000x 精度提升 (实际: %.1fx)"
             String.format("Kahan 应提供至少 1000x 精度提升 (实际: %.1fx)", improvementRatio));
     }
 
     // ==================== 边界情况测试 ====================
 
     @Test
+"零值累加：add(0) 不影响结果"
     @DisplayName("零值累加：add(0) 不影响结果")
     void testZeroValues() {
         KahanAccumulator accumulator = new KahanAccumulator();
@@ -142,12 +161,15 @@ class KahanAccumulatorTest {
         accumulator.add(-0.0f);      // 负零
 
         assertEquals(42.0f, accumulator.getSum(), 1e-7f,
+"添加零值不应改变累加和"
             "添加零值不应改变累加和");
         assertEquals(3, accumulator.getOperationCount(),
+"操作计数应包含零值添加（共3次add调用）"
             "操作计数应包含零值添加（共3次add调用）");
     }
 
     @Test
+"极大值累加：接近 Float.MAX_VALUE"
     @DisplayName("极大值累加：接近 Float.MAX_VALUE")
     void testLargeValues() {
         KahanAccumulator accumulator = new KahanAccumulator();
@@ -166,14 +188,17 @@ class KahanAccumulatorTest {
         // 对于极大值，相对误差应在合理范围内
         float relativeError = Math.abs(result - expected) / expected;
 
+"[极大值测试] 结果=%.6e, 期望=%.6e, 相对误差=%.2e%n"
         System.out.printf("[极大值测试] 结果=%.6e, 期望=%.6e, 相对误差=%.2e%n",
             result, expected, relativeError);
 
         assertTrue(relativeError < 1e-6,
+"极大值累加相对误差 %.2e 过大"
             String.format("极大值累加相对误差 %.2e 过大", relativeError));
     }
 
     @Test
+"极小值累加：sum >> value 场景（精度保持测试）"
     @DisplayName("极小值累加：sum >> value 场景（精度保持测试）")
     void testTinyValues() {
         // 注意：当 sum(1e7) 与 tinyVal(1e-8) 相差超过 2^15 倍时，
@@ -196,15 +221,18 @@ class KahanAccumulatorTest {
         double expected = 100.0 + (double) count * tinyValue;
         double error = Math.abs(result - expected);
 
+"[极小值测试] 结果=%.10f, 期望=%.10f, 绝对误差=%.2e%n"
         System.out.printf("[极小值测试] 结果=%.10f, 期望=%.10f, 绝对误差=%.2e%n",
             result, expected, error);
 
         // 验证结果在合理范围内（Kahan 至少不应比朴素更差）
         assertTrue(error < 1.0,
+"极小值累加误差 %.2e 应小于 1.0"
             String.format("极小值累加误差 %.2e 应小于 1.0", error));
     }
 
     @Test
+"正负交替累加：抵消场景"
     @DisplayName("正负交替累加：抵消场景")
     void testAlternatingSigns() {
         KahanAccumulator accumulator = new KahanAccumulator();
@@ -217,38 +245,49 @@ class KahanAccumulatorTest {
 
         float result = accumulator.getSum();
 
+"[正负交替测试] 结果=%.16e%n"
         System.out.printf("[正负交替测试] 结果=%.16e%n", result);
 
         // 完全抵消后应非常接近零
         assertTrue(Math.abs(result) < 1e-6,
+"正负抵消后结果 %.2e 应接近零"
             String.format("正负抵消后结果 %.2e 应接近零", result));
     }
 
     @Test
+"单次累加基本正确性"
     @DisplayName("单次累加基本正确性")
     void testSingleAddition() {
         KahanAccumulator accumulator = new KahanAccumulator();
 
         float result = accumulator.add(3.14f);
 
+"单次 add 返回值应等于添加的值"
         assertEquals(3.14f, result, 1e-7f, "单次 add 返回值应等于添加的值");
+"getSum 应返回正确值"
         assertEquals(3.14f, accumulator.getSum(), 1e-7f, "getSum 应返回正确值");
+"操作计数应为 1"
         assertEquals(1, accumulator.getOperationCount(), "操作计数应为 1");
     }
 
     @Test
+"空累加器初始状态"
     @DisplayName("空累加器初始状态")
     void testInitialState() {
         KahanAccumulator accumulator = new KahanAccumulator();
 
+"初始 sum 应为 0"
         assertEquals(0.0f, accumulator.getSum(), "初始 sum 应为 0");
+"初始 compensation 应为 0"
         assertEquals(0.0f, accumulator.getCompensation(), "初始 compensation 应为 0");
+"初始操作计数应为 0"
         assertEquals(0L, accumulator.getOperationCount(), "初始操作计数应为 0");
     }
 
     // ==================== 无穷大与特殊值 ====================
 
     @Test
+"正无穷大传播"
     @DisplayName("正无穷大传播")
     void testPositiveInfinity() {
         KahanAccumulator accumulator = new KahanAccumulator();
@@ -256,11 +295,14 @@ class KahanAccumulatorTest {
         accumulator.add(1.0f);
         accumulator.add(Float.POSITIVE_INFINITY);
 
+"加上正无穷后应为无穷"
         assertTrue(Float.isInfinite(accumulator.getSum()), "加上正无穷后应为无穷");
+"应为正无穷"
         assertTrue(accumulator.getSum() > 0, "应为正无穷");
     }
 
     @Test
+"NaN 输入抛出异常"
     @DisplayName("NaN 输入抛出异常")
     void testNaNInputThrowsException() {
         KahanAccumulator accumulator = new KahanAccumulator();
@@ -268,16 +310,20 @@ class KahanAccumulatorTest {
         IllegalArgumentException exception = assertThrows(
             IllegalArgumentException.class,
             () -> accumulator.add(Float.NaN),
+"添加 NaN 应抛出 IllegalArgumentException"
             "添加 NaN 应抛出 IllegalArgumentException"
         );
 
+"NaN"
         assertTrue(exception.getMessage().contains("NaN"),
+"异常消息应包含 'NaN'"
             "异常消息应包含 'NaN'");
     }
 
     // ==================== Reset 功能测试 ====================
 
     @Test
+"reset() 完全重置所有状态"
     @DisplayName("reset() 完全重置所有状态")
     void testResetClearsAllState() {
         KahanAccumulator accumulator = new KahanAccumulator();
@@ -288,19 +334,25 @@ class KahanAccumulatorTest {
         }
 
         // 验证非空状态
+"Reset 前-sum 应非零"
         assertNotEquals(0.0f, accumulator.getSum(), "Reset 前-sum 应非零");
+"Reset 前操作计数应非零"
         assertNotEquals(0L, accumulator.getOperationCount(), "Reset 前操作计数应非零");
 
         // 执行重置
         accumulator.reset();
 
         // 验证全部归零
+"Reset 后 sum 应为 0"
         assertEquals(0.0f, accumulator.getSum(), "Reset 后 sum 应为 0");
+"Reset 后 compensation 应为 0"
         assertEquals(0.0f, accumulator.getCompensation(), "Reset 后 compensation 应为 0");
+"Reset 后操作计数应为 0"
         assertEquals(0L, accumulator.getOperationCount(), "Reset 后操作计数应为 0");
     }
 
     @Test
+"reset() 后可正常重新使用"
     @DisplayName("reset() 后可正常重新使用")
     void testResetAndReuse() {
         KahanAccumulator accumulator = new KahanAccumulator();
@@ -321,54 +373,66 @@ class KahanAccumulatorTest {
         float secondRound = accumulator.getSum();
 
         // 验证第二轮结果独立于第一轮
+"Reset 后重新累加应得到正确结果"
         assertEquals(90.0f, secondRound, 1e-6f, "Reset 后重新累加应得到正确结果");
+"操作计数应只统计第二轮"
         assertEquals(30L, accumulator.getOperationCount(), "操作计数应只统计第二轮");
     }
 
     // ==================== 静态方法测试 ====================
 
     @Test
+"静态方法 accumulate() 正确工作"
     @DisplayName("静态方法 accumulate() 正确工作")
     void testStaticAccumulate() {
         float[] values = { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f };
         float result = KahanAccumulator.accumulate(values);
 
+"静态 accumulate 应返回正确的和"
         assertEquals(15.0f, result, 1e-7f, "静态 accumulate 应返回正确的和");
     }
 
     @Test
+"静态方法 accumulate() 空数组返回 0"
     @DisplayName("静态方法 accumulate() 空数组返回 0")
     void testStaticAccumulateEmptyArray() {
         float[] values = {};
         float result = KahanAccumulator.accumulate(values);
 
+"空数组 accumulate 应返回 0"
         assertEquals(0.0f, result, "空数组 accumulate 应返回 0");
     }
 
     @Test
+"静态方法 naiveSum() 正确工作"
     @DisplayName("静态方法 naiveSum() 正确工作")
     void testStaticNaiveSum() {
         float[] values = { 10.0f, 20.0f, 30.0f };
         float result = KahanAccumulator.naiveSum(values);
 
+"静态 naiveSum 应返回正确的和"
         assertEquals(60.0f, result, 1e-5f, "静态 naiveSum 应返回正确的和");
     }
 
     @Test
+"静态方法 null 输入抛出 NullPointerException"
     @DisplayName("静态方法 null 输入抛出 NullPointerException")
     void testStaticMethodNullInput() {
         assertThrows(NullPointerException.class,
             () -> KahanAccumulator.accumulate(null),
+"accumulate(null) 应抛出 NullPointerException"
             "accumulate(null) 应抛出 NullPointerException");
 
         assertThrows(NullPointerException.class,
             () -> KahanAccumulator.naiveSum(null),
+"naiveSum(null) 应抛出 NullPointerException"
             "naiveSum(null) 应抛出 NullPointerException");
     }
 
     // ==================== toString 测试 ====================
 
     @Test
+"toString() 包含关键状态信息"
     @DisplayName("toString() 包含关键状态信息")
     void testToStringFormat() {
         KahanAccumulator accumulator = new KahanAccumulator();
@@ -376,18 +440,28 @@ class KahanAccumulatorTest {
 
         String str = accumulator.toString();
 
+"toString 不应返回 null"
         assertNotNull(str, "toString 不应返回 null");
+"KahanAccumulator"
+"应包含类名"
         assertTrue(str.contains("KahanAccumulator"), "应包含类名");
+"1.234560...e+02"
         // 使用科学计数法格式 %.16e，123.456f 会格式化为 "1.234560...e+02" 形式
         // 验证包含数值特征而非精确子串匹配，避免浮点表示差异导致断言失败
+"1.234"
+"123"
         assertTrue(str.contains("1.234") || str.contains("123"),
+"应包含 sum 值信息，实际输出: "
             "应包含 sum 值信息，实际输出: " + str);
+"operations=1"
+"应包含操作计数"
         assertTrue(str.contains("operations=1"), "应包含操作计数");
     }
 
     // ==================== 线程安全测试 ====================
 
     @Test
+"并发 add() 操作线程安全"
     @DisplayName("并发 add() 操作线程安全")
     void testConcurrentAdd() throws InterruptedException {
         final KahanAccumulator accumulator = new KahanAccumulator();
@@ -420,23 +494,28 @@ class KahanAccumulatorTest {
         float actualSum = accumulator.getSum();
         long actualOps = accumulator.getOperationCount();
 
+"[并发测试] 线程=%d, 每线程操作=%d, 总操作=%d%n"
         System.out.printf("[并发测试] 线程=%d, 每线程操作=%d, 总操作=%d%n",
             threadCount, addsPerThread, actualOps);
+"  期望和=%.1f, 实际和=%.1f, 误差=%.2e%n"
         System.out.printf("  期望和=%.1f, 实际和=%.1f, 误差=%.2e%n",
             expectedSum, actualSum, Math.abs(actualSum - expectedSum));
 
         // 所有操作都应被执行（无丢失）
         assertEquals(totalOperations, actualOps,
+"并发操作总数应等于各线程操作之和"
             "并发操作总数应等于各线程操作之和");
 
         // 最终和应接近期望值（允许少量浮点舍入差异）
         assertEquals(expectedSum, actualSum, 1e-4f,
+"并发累加结果应接近期望值"
             "并发累加结果应接近期望值");
     }
 
     // ==================== 典型渲染场景模拟 ====================
 
     @Test
+"多帧融合权重累加场景模拟"
     @DisplayName("多帧融合权重累加场景模拟")
     void testMultiFrameFusionScenario() {
         // 模拟 Renderium 多帧融合中的权重累加场景：
@@ -470,15 +549,20 @@ class KahanAccumulatorTest {
         // 注意: baseWeight = 1.0f/60 在 FP32 中无法精确表示，
         //       60 次累加后会有少量初始表示误差残留
         float totalWeight = weightAccumulator.getSum();
-        System.out.printf("[多帧融合] 总权重=%.10f (期望≈1.0)%n", totalWeight);
+"[多帧融合] 总权重=%.10f (期望~1.0)%n"
+        System.out.printf("[多帧融合] 总权重=%.10f (期望~1.0)%n", totalWeight);
 
         // 权重误差应小于 1%（考虑 FP32 初始表示误差）
         assertTrue(Math.abs(totalWeight - 1.0f) < 0.01,
+"多帧融合总权重误差过大: %.10f"
             String.format("多帧融合总权重误差过大: %.10f", totalWeight));
 
         // 颜色通道应有合理的值
+"R 通道累加和应为正"
         assertTrue(colorRAccumulator.getSum() > 0, "R 通道累加和应为正");
+"G 通道累加和应为正"
         assertTrue(colorGAccumulator.getSum() > 0, "G 通道累加和应为正");
+"B 通道累加和应为正"
         assertTrue(colorBAccumulator.getSum() > 0, "B 通道累加和应为正");
 
         // 各通道操作计数应一致

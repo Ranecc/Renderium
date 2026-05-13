@@ -32,24 +32,24 @@ import java.util.logging.Logger;
  *
  * <h3>架构设计：</h3>
  * <pre>
- * ┌─────────────────────────────────────┐
- * │      MockModRenderingEnvironment    │
- * │  ┌─────────────────────────────┐    │
- * │  │ MockFBOManager              │    │
- * │  │ - bindFBO() / unbindFBO()  │    │
- * │  │ - getActiveFBO()           │    │
- * │  └─────────────────────────────┘    │
- * │  ┌─────────────────────────────┐    │
- * │  │ MockRenderTarget            │    │
- * │  │ - createTarget()            │    │
- * │  │ - switchTarget()            │    │
- * │  └─────────────────────────────┘    │
- * │  ┌─────────────────────────────┐    │
- * │  │ PerformanceSimulator        │    │
- * │  │ - simulateFrameTime()       │    │
- * │  │ - setLatencyModel()         │    │
- * │  └─────────────────────────────┘    │
- * └─────────────────────────────────────┘
+ * +-------------------------------------+
+ * |      MockModRenderingEnvironment    |
+ * |  +-----------------------------+    |
+ * |  | MockFBOManager              |    |
+ * |  | - bindFBO() / unbindFBO()  |    |
+ * |  | - getActiveFBO()           |    |
+ * |  +-----------------------------+    |
+ * |  +-----------------------------+    |
+ * |  | MockRenderTarget            |    |
+ * |  | - createTarget()            |    |
+ * |  | - switchTarget()            |    |
+ * |  +-----------------------------+    |
+ * |  +-----------------------------+    |
+ * |  | PerformanceSimulator        |    |
+ * |  | - simulateFrameTime()       |    |
+ * |  | - setLatencyModel()         |    |
+ * |  +-----------------------------+    |
+ * +-------------------------------------+
  * </pre>
  *
  * @author Renderium Team
@@ -190,12 +190,14 @@ public final class MockModRenderingEnvironment {
      * <p>
      * 使用默认参数：
      * <ul>
+"1.0.0"
      *   <li>模组版本: "1.0.0"</li>
      *   <li>后端类型: OPENGL</li>
      *   <li>分辨率: 1920x1080</li>
      * </ul>
      */
     public MockModRenderingEnvironment() {
+"1.0.0"
         this("1.0.0", BackendType.OPENGL, DEFAULT_WIDTH, DEFAULT_HEIGHT);
     }
 
@@ -211,6 +213,7 @@ public final class MockModRenderingEnvironment {
         this.modVersion = version;
         this.backendType = backend;
         this.performanceSimulator = new PerformanceSimulator(width, height);
+"MockModRenderingEnvironment 创建: version=%s, backend=%s, %dx%d"
         LOGGER.info(String.format("MockModRenderingEnvironment 创建: version=%s, backend=%s, %dx%d",
                 version, backend, width, height));
     }
@@ -227,19 +230,23 @@ public final class MockModRenderingEnvironment {
      */
     public synchronized boolean initialize() {
         if (initialized) {
+"MockModRenderingEnvironment 已经初始化"
             throw new IllegalStateException("MockModRenderingEnvironment 已经初始化");
         }
 
         try {
             // 创建主渲染目标（模拟模组的主 FBO）
             int mainFBO = createFBO(width(), height(), 1);  // 无 MSAA
+"main"
             pushRenderTarget("main", mainFBO, width(), height(), true);
 
             initialized = true;
+"MockModRenderingEnvironment 初始化完成"
             LOGGER.info("MockModRenderingEnvironment 初始化完成");
             return true;
 
         } catch (Exception e) {
+"MockModRenderingEnvironment 初始化失败: "
             LOGGER.severe("MockModRenderingEnvironment 初始化失败: " + e.getMessage());
             return false;
         }
@@ -252,6 +259,7 @@ public final class MockModRenderingEnvironment {
      */
     public synchronized void shutdown() {
         if (!initialized) {
+"MockModRenderingEnvironment 尚未初始化"
             LOGGER.warning("MockModRenderingEnvironment 尚未初始化");
             return;
         }
@@ -266,6 +274,7 @@ public final class MockModRenderingEnvironment {
         frameCounter.set(0);
         initialized = false;
 
+"MockModRenderingEnvironment 已关闭"
         LOGGER.info("MockModRenderingEnvironment 已关闭");
     }
 
@@ -291,6 +300,8 @@ public final class MockModRenderingEnvironment {
      */
     public int createFBO(int width, int height, int samples) {
         if (width <= 0 || height <= 0) {
+"FBO 尺寸必须大于 0: "
+"x"
             throw new IllegalArgumentException("FBO 尺寸必须大于 0: " + width + "x" + height);
         }
 
@@ -299,6 +310,7 @@ public final class MockModRenderingEnvironment {
 
         // 创建颜色纹理
         int colorTex = textureIdCounter.getAndIncrement();
+"RGBA8"
         MockTextureInfo colorInfo = new MockTextureInfo(colorTex, width, height, "RGBA8");
         textureRegistry.put(colorTex, colorInfo);
 
@@ -306,6 +318,7 @@ public final class MockModRenderingEnvironment {
         int depthTex = 0;
         if (samples <= 4) {  // 仅在低采样率时创建深度
             depthTex = textureIdCounter.getAndIncrement();
+"DEPTH24"
             MockTextureInfo depthInfo = new MockTextureInfo(depthTex, width, height, "DEPTH24");
             textureRegistry.put(depthTex, depthInfo);
         }
@@ -314,6 +327,7 @@ public final class MockModRenderingEnvironment {
         MockFBOInfo fboInfo = new MockFBOInfo(fboId, width, height, colorTex, depthTex, samples);
         fboRegistry.put(fboId, fboInfo);
 
+"创建 Mock FBO: id=0x%X, %dx%d, samples=%d"
         LOGGER.fine(String.format("创建 Mock FBO: id=0x%X, %dx%d, samples=%d",
                 fboId, width, height, samples));
 
@@ -327,10 +341,12 @@ public final class MockModRenderingEnvironment {
      */
     public void bindFBO(int fboId) {
         if (fboId != 0 && !fboRegistry.containsKey(fboId)) {
+"尝试绑定不存在的 FBO: 0x"
             LOGGER.warning("尝试绑定不存在的 FBO: 0x" + Integer.toHexString(fboId));
         }
 
         int previousFBO = currentFBO.getAndSet(fboId);
+"绑定 FBO: 0x%X -> 0x%X"
         LOGGER.fine(String.format("绑定 FBO: 0x%X -> 0x%X", previousFBO, fboId));
     }
 
@@ -391,6 +407,7 @@ public final class MockModRenderingEnvironment {
             clearFBO(fboId);
         }
 
+"推送渲染目标: '%s' -> [栈深度=%d]"
         LOGGER.fine(String.format("推送渲染目标: '%s' -> [栈深度=%d]",
                 name, renderTargetStack.size()));
 
@@ -404,6 +421,7 @@ public final class MockModRenderingEnvironment {
      */
     public MockRenderTarget popRenderTarget() {
         if (renderTargetStack.isEmpty()) {
+"渲染目标栈为空，无法弹出"
             LOGGER.warning("渲染目标栈为空，无法弹出");
             return null;
         }
@@ -418,6 +436,7 @@ public final class MockModRenderingEnvironment {
             unbindFBO();
         }
 
+"弹出渲染目标: '%s' -> [栈深度=%d]"
         LOGGER.fine(String.format("弹出渲染目标: '%s' -> [栈深度=%d]",
                 target.name(), renderTargetStack.size()));
 
@@ -452,6 +471,7 @@ public final class MockModRenderingEnvironment {
     public void clearFBO(int fboId) {
         MockFBOInfo info = fboRegistry.get(fboId);
         if (info != null) {
+"清除 FBO: 0x%X (%dx%d)"
             LOGGER.fine(String.format("清除 FBO: 0x%X (%dx%d)", fboId, info.width(), info.height()));
         }
     }
@@ -469,6 +489,7 @@ public final class MockModRenderingEnvironment {
         // 使用性能模拟器生成帧时间
         long frameTimeNs = performanceSimulator.simulateFrameTime(frameIndex);
 
+"模拟帧 #%d 完成: %.2fms"
         LOGGER.finest(String.format("模拟帧 #%d 完成: %.2fms",
                 frameIndex, frameTimeNs / 1_000_000.0));
 
@@ -486,6 +507,7 @@ public final class MockModRenderingEnvironment {
     public ByteBuffer mockReadPixels(int fboId, int width, int height) {
         MockFBOInfo info = fboRegistry.get(fboId);
         if (info == null) {
+"尝试从不存在的 FBO 读取像素: 0x"
             LOGGER.warning("尝试从不存在的 FBO 读取像素: 0x" + Integer.toHexString(fboId));
             return ByteBuffer.allocateDirect(0);
         }
@@ -506,6 +528,7 @@ public final class MockModRenderingEnvironment {
         }
         buffer.flip();
 
+"模拟读取像素: fbo=0x%X, %dx%d, %d bytes"
         LOGGER.fine(String.format("模拟读取像素: fbo=0x%X, %dx%d, %d bytes",
                 fboId, width, height, bufferSize));
 
@@ -529,6 +552,7 @@ public final class MockModRenderingEnvironment {
      * @param version 版本字符串
      */
     public void setModVersion(String version) {
+"版本不能为 null"
         this.modVersion = Objects.requireNonNull(version, "版本不能为 null");
     }
 
@@ -547,6 +571,7 @@ public final class MockModRenderingEnvironment {
      * @param backend 后端类型
      */
     public void setBackendType(BackendType backend) {
+"后端类型不能为 null"
         this.backendType = Objects.requireNonNull(backend, "后端类型不能为 null");
     }
 
