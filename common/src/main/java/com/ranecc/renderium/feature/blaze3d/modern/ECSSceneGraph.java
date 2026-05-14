@@ -293,7 +293,7 @@ public class ECSSceneGraph implements AutoCloseable {
 
         } catch (Exception e) {
             throw new IllegalStateException(
-                    "ECSSceneGraph 内存分配失败: " + e.getMessage(), e"
+                    "ECSSceneGraph 内存分配失败: " + e.getMessage(), e
             );
         }
     }
@@ -472,7 +472,7 @@ public class ECSSceneGraph implements AutoCloseable {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "ECS 场景图构建失败: %s", e.getMessage()"
+                    "ECS 场景图构建失败: %s", e.getMessage()
             ));
             return 0;
         }
@@ -603,7 +603,7 @@ public class ECSSceneGraph implements AutoCloseable {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "可见性查询异常: %s", e.getMessage()"
+                    "可见性查询异常: %s", e.getMessage()
             ));
             return new ArrayList<>(); // 返回空列表而非抛出异常
         }

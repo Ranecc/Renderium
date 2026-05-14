@@ -1232,7 +1232,7 @@ public final class MeshShaderRenderer implements AutoCloseable {
 
         } catch (Exception e) {
             LOGGER.warning(String.format(
-                    "释放 MeshShaderRenderer 资源时发生异常: %s", e.getMessage()"
+                    "释放 MeshShaderRenderer 资源时发生异常: %s", e.getMessage()
             ));
         }
     }

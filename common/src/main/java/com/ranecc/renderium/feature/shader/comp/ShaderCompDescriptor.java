@@ -1268,122 +1268,79 @@ public final class ShaderCompDescriptor {
      */
     public String toJson() {
         StringBuilder sb = new StringBuilder(2048);
-        sb.append("{
-");
+        sb.append("{\n");
 
         // metadata
-        sb.append("  \"metadata\": {
-");
-        sb.append(String.format("    \"id\": \"%s\",
-", escapeJson(metadata.getId())));
-        sb.append(String.format("    \"displayName\": \"%s\",
-", escapeJson(metadata.getDisplayName())));
-        sb.append(String.format("    \"version\": \"%s\",
-", escapeJson(metadata.getVersion())));
-        sb.append(String.format("    \"author\": \"%s\",
-", escapeJson(metadata.getAuthor())));
-        sb.append(String.format("    \"category\": \"%s\",
-", metadata.getCategory().name()));
-        sb.append(String.format("    \"priority\": %d,
-", metadata.getPriority()));
-        sb.append(String.format("    \"apiCompatibility\": \"%s\",
-", escapeJson(metadata.getApiCompatibility())));
-        sb.append(String.format("    \"description\": \"%s\"
-", escapeJson(metadata.getDescription())));
-        sb.append("  },
-");
+        sb.append("  \"metadata\": {\n");
+        sb.append(String.format("    \"id\": \"%s\",\n", escapeJson(metadata.getId())));
+        sb.append(String.format("    \"displayName\": \"%s\",\n", escapeJson(metadata.getDisplayName())));
+        sb.append(String.format("    \"version\": \"%s\",\n", escapeJson(metadata.getVersion())));
+        sb.append(String.format("    \"author\": \"%s\",\n", escapeJson(metadata.getAuthor())));
+        sb.append(String.format("    \"category\": \"%s\",\n", metadata.getCategory().name()));
+        sb.append(String.format("    \"priority\": %d,\n", metadata.getPriority()));
+        sb.append(String.format("    \"apiCompatibility\": \"%s\",\n", escapeJson(metadata.getApiCompatibility())));
+        sb.append(String.format("    \"description\": \"%s\"\n", escapeJson(metadata.getDescription())));
+        sb.append("  },\n");
 
         // spirv
         if (spirv != null) {
-            sb.append("  \"spirv\": {
-");
-            sb.append(String.format("    \"path\": \"%s\",
-", escapeJson(spirv.getPath())));
-            sb.append(String.format("    \"entryPoint\": \"%s\",
-", escapeJson(spirv.getEntryPoint())));
-            sb.append(String.format("    \"stage\": \"%s\",
-", spirv.getStage().name()));
+            sb.append("  \"spirv\": {\n");
+            sb.append(String.format("    \"path\": \"%s\",\n", escapeJson(spirv.getPath())));
+            sb.append(String.format("    \"entryPoint\": \"%s\",\n", escapeJson(spirv.getEntryPoint())));
+            sb.append(String.format("    \"stage\": \"%s\",\n", spirv.getStage().name()));
             if (!spirv.getVariants().isEmpty()) {
-                sb.append("    \"variants\": {
-");
+                sb.append("    \"variants\": {\n");
                 for (Map.Entry<String, String> v : spirv.getVariants().entrySet()) {
-                    sb.append(String.format("      \"%s\": \"%s\",
-", escapeJson(v.getKey()), escapeJson(v.getValue())));
+                    sb.append(String.format("      \"%s\": \"%s\",\n", escapeJson(v.getKey()), escapeJson(v.getValue())));
                 }
-                sb.append("    },
-");
+                sb.append("    },\n");
             }
-            sb.append(String.format("    \"embedded\": %b
-", spirv.isEmbedded()));
-            sb.append("  },
-");
+            sb.append(String.format("    \"embedded\": %b\n", spirv.isEmbedded()));
+            sb.append("  },\n");
         }
 
         // parameters
-        sb.append("  \"parameters\": [
-");
+        sb.append("  \"parameters\": [\n");
         for (int i = 0; i < parameters.size(); i++) {
             ParameterDef p = parameters.get(i);
-            sb.append("    {
-");
-            sb.append(String.format("      \"id\": \"%s\",
-", escapeJson(p.getId())));
-            sb.append(String.format("      \"displayName\": \"%s\",
-", escapeJson(p.getDisplayName())));
-            sb.append(String.format("      \"type\": \"%s\",
-", p.getType().name()));
-            sb.append(String.format("      \"defaultValue\": %s,
-", formatValue(p.getDefaultValue())));
+            sb.append("    {\n");
+            sb.append(String.format("      \"id\": \"%s\",\n", escapeJson(p.getId())));
+            sb.append(String.format("      \"displayName\": \"%s\",\n", escapeJson(p.getDisplayName())));
+            sb.append(String.format("      \"type\": \"%s\",\n", p.getType().name()));
+            sb.append(String.format("      \"defaultValue\": %s,\n", formatValue(p.getDefaultValue())));
             if (p.getRange() != null && p.getRange().length >= 2) {
-                sb.append(String.format("      \"range\": [%s, %s],
-", formatValue(p.getRange()[0]), formatValue(p.getRange()[1])));
+                sb.append(String.format("      \"range\": [%s, %s],\n", formatValue(p.getRange()[0]), formatValue(p.getRange()[1])));
             }
-            sb.append(String.format("      \"uniformName\": \"%s\",
-", escapeJson(p.getUniformName())));
-            sb.append(String.format("      \"category\": \"%s\",
-", p.getCategory().name()));
-            sb.append(String.format("      \"uiHint\": \"%s\",
-", p.getUiHint().name()));
-            sb.append(String.format("      \"isCore\": %b
-", p.isCore()));
+            sb.append(String.format("      \"uniformName\": \"%s\",\n", escapeJson(p.getUniformName())));
+            sb.append(String.format("      \"category\": \"%s\",\n", p.getCategory().name()));
+            sb.append(String.format("      \"uiHint\": \"%s\",\n", p.getUiHint().name()));
+            sb.append(String.format("      \"isCore\": %b\n", p.isCore()));
             "\");
         }
-        sb.append("  ],
-");
+        sb.append("  ],\n");
 
         // inputs
-        sb.append("  \"inputs\": [
-");
+        sb.append("  \"inputs\": [\n");
         for (int i = 0; i < inputs.size(); i++) {
             InputSlotDef in = inputs.get(i);
-            sb.append("    {
-");
-            sb.append(String.format("      \"name\": \"%s\",
-", escapeJson(in.getName())));
-            sb.append(String.format("      \"type\": \"%s\",
-", in.getType().name()));
-            sb.append(String.format("      \"required\": %b
-", in.isRequired()));
+            sb.append("    {\n");
+            sb.append(String.format("      \"name\": \"%s\",\n", escapeJson(in.getName())));
+            sb.append(String.format("      \"type\": \"%s\",\n", in.getType().name()));
+            sb.append(String.format("      \"required\": %b\n", in.isRequired()));
             "\");
         }
-        sb.append("  ],
-");
+        sb.append("  ],\n");
 
         // outputs
-        sb.append("  \"outputs\": [
-");
+        sb.append("  \"outputs\": [\n");
         for (int i = 0; i < outputs.size(); i++) {
             OutputSlotDef out = outputs.get(i);
-            sb.append("    {
-");
-            sb.append(String.format("      \"name\": \"%s\",
-", escapeJson(out.getName())));
-            sb.append(String.format("      \"type\": \"%s\"
-", out.getType().name()));
+            sb.append("    {\n");
+            sb.append(String.format("      \"name\": \"%s\",\n", escapeJson(out.getName())));
+            sb.append(String.format("      \"type\": \"%s\"\n", out.getType().name()));
             "\");
         }
-        sb.append("  ],
-");
+        sb.append("  ],\n");
 
         // dependencies
         sb.append("  \"dependencies\": [");
@@ -1391,23 +1348,16 @@ public final class ShaderCompDescriptor {
             sb.append("\"").append(escapeJson(dependencies.get(i))).append("\"");
             if (i < dependencies.size() - 1) sb.append(", ");
         }
-        sb.append("],
-");
+        sb.append("],\n");
 
         // performanceHints
         if (performanceHints != null) {
-            sb.append("  \"performanceHints\": {
-");
-            sb.append(String.format("    \"budgetMicroseconds\": %d,
-", performanceHints.getBudgetMicroseconds()));
-            sb.append(String.format("    \"memoryBudgetKB\": %d,
-", performanceHints.getMemoryBudgetKB()));
-            sb.append(String.format("    \"gpuComputeHeavy\": %b,
-", performanceHints.isGpuComputeHeavy()));
-            sb.append(String.format("    \"supportsAsyncCompute\": %b
-", performanceHints.isSupportsAsyncCompute()));
-            sb.append("  },
-");
+            sb.append("  \"performanceHints\": {\n");
+            sb.append(String.format("    \"budgetMicroseconds\": %d,\n", performanceHints.getBudgetMicroseconds()));
+            sb.append(String.format("    \"memoryBudgetKB\": %d,\n", performanceHints.getMemoryBudgetKB()));
+            sb.append(String.format("    \"gpuComputeHeavy\": %b,\n", performanceHints.isGpuComputeHeavy()));
+            sb.append(String.format("    \"supportsAsyncCompute\": %b\n", performanceHints.isSupportsAsyncCompute()));
+            sb.append("  },\n");
         }
 
         // tags
@@ -1416,8 +1366,7 @@ public final class ShaderCompDescriptor {
             sb.append("\"").append(escapeJson(tags.get(i))).append("\"");
             if (i < tags.size() - 1) sb.append(", ");
         }
-        sb.append("]
-");
+        sb.append("]\n");
 
         sb.append("}");
         return sb.toString();

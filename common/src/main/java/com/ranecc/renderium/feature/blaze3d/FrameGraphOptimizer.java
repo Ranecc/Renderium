@@ -1255,7 +1255,7 @@ public class FrameGraphOptimizer implements AutoCloseable {
             // 销毁 Pipeline（Vulkan 资源清理）
             destroyPipelineInternal(removed.pipeline);
             LOGGER.fine(String.format(
-                    "Pipeline invalidated: hash=0x%016X", configHash"
+                    "Pipeline invalidated: hash=0x%016X", configHash
             ));
             return true;
         }
@@ -1804,88 +1804,65 @@ public class FrameGraphOptimizer implements AutoCloseable {
 
         // 构建报告
         StringBuilder report = new StringBuilder();
-        report.append("=================================================================
-");
-        report.append("           Frame Graph Optimizer - Full Performance Report         
-");
-        report.append("=================================================================
-");
-        
-        report.append(String.format(
-                "\" +\n\"  Enabled: %s | Initialized: %s | Frame: %d"
+        report.append("=================================================================\n");
+        report.append("           Frame Graph Optimizer - Full Performance Report          \n");
+        report.append("=================================================================\n");
 
-",
+        report.append(String.format(
+                "  Enabled: %s | Initialized: %s | Frame: %d\n",
                 enabled ? "YES" : "NO",
                 initialized ? "YES" : "NO",
                 currentFrame.get()
         ));
 
-        report.append("[Pipeline Cache]
-");
+        report.append("[Pipeline Cache]\n");
         report.append(String.format(
-                "  Size: %d/%d | Hit Rate: %.1f%% | Created: %d"
-",
+                "  Size: %d/%d | Hit Rate: %.1f%% | Created: %d\n",
                 getPipelineCacheSize(), MAX_CACHED_PIPELINES,
                 pipelineHitRate * 100,
                 getTotalCreatedPipelines()
         ));
 
-        "");
-report.append(String.format(
-"  Size: %d/%d | Hit Rate: %.1f%% | Allocated: %d
-",
-getDescriptorSetCacheSize(), MAX_DESCRIPTOR_SETS,
-descSetHitRate * 100,
-getTotalAllocatedDescriptorSets()";
+        report.append("[Descriptor Set Cache]\n");
+        report.append(String.format(
+                "  Size: %d/%d | Hit Rate: %.1f%% | Allocated: %d\n",
+                getDescriptorSetCacheSize(), MAX_DESCRIPTOR_SETS,
+                descSetHitRate * 100,
+                getTotalAllocatedDescriptorSets()
         ));
 
-        "");
-report.append(String.format(
-"  Registered Passes: %d | Tracked Resources: %d
-" +
-"  Topology Dirty: %s | Merge Candidates: %d
-" +
-"  State Switches (frame): %d
-",
-getRegisteredPassCount(),
-getTrackedResourceCount(),
-topologyDirty ? "YES" : "NO (cached)",
-getMergeCandidateCount(),
-getStateSwitchCount()";
+        report.append(String.format(
+                "  Registered Passes: %d | Tracked Resources: %d\n" +
+                "  Topology Dirty: %s | Merge Candidates: %d\n" +
+                "  State Switches (frame): %d\n",
+                getRegisteredPassCount(),
+                getTrackedResourceCount(),
+                topologyDirty ? "YES" : "NO (cached)",
+                getMergeCandidateCount(),
+                getStateSwitchCount()
         ));
 
-        "");
-report.append(String.format(
-"  Total Pipeline Switches: %d
-" +
-"  Total Texture Binds: %d
-" +
-"  Total Uniform Updates: %d
-" +
-"  Redundant Uniform Updates: %d (%.1f%%)
-" +
-"  Avg Pass Execution Time: %.2f us
-" +
-"  Total Pass Executions: %d
-",
-totalPipelineSwitches,
-totalTextureBinds,
-totalUniformUpdates,
-totalRedundantUniforms,
-(totalUniformUpdates > 0) ? (100.0 * totalRedundantUniforms / totalUniformUpdates) : 0.0,
-avgExecTimeUs,
-totalExecCount";
+        report.append(String.format(
+                "  Total Pipeline Switches: %d\n" +
+                "  Total Texture Binds: %d\n" +
+                "  Total Uniform Updates: %d\n" +
+                "  Redundant Uniform Updates: %d (%.1f%%)\n" +
+                "  Avg Pass Execution Time: %.2f us\n" +
+                "  Total Pass Executions: %d\n",
+                totalPipelineSwitches,
+                totalTextureBinds,
+                totalUniformUpdates,
+                totalRedundantUniforms,
+                (totalUniformUpdates > 0) ? (100.0 * totalRedundantUniforms / totalUniformUpdates) : 0.0,
+                avgExecTimeUs,
+                totalExecCount
         ));
 
-        "");
-report.append(String.format(
-"  Estimated Memory Saved: %.2f MB (%d bytes)
-",
-getMemoryAliasSavedBytes() / (1024.0 * 1024.0),
-getMemoryAliasSavedBytes()";
+        report.append(String.format(
+                "  Estimated Memory Saved: %.2f MB (%d bytes)\n",
+                getMemoryAliasSavedBytes() / (1024.0 * 1024.0),
+                getMemoryAliasSavedBytes()
         ));
-
-        "\");
 
         return report.toString();
     }
@@ -2040,7 +2017,7 @@ getMemoryAliasSavedBytes()";
         }
 
         LOGGER.info(String.format(
-                "Evicted all %d cached pipelines", count"
+                "Evicted all %d cached pipelines", count
         ));
     }
 
@@ -2069,7 +2046,7 @@ getMemoryAliasSavedBytes()";
         descriptorSetCache.clear();
 
         LOGGER.info(String.format(
-                "Evicted all %d cached descriptor sets", count"
+                "Evicted all %d cached descriptor sets", count
         ));
     }
 

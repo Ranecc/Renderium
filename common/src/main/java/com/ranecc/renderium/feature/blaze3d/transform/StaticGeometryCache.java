@@ -702,7 +702,7 @@ public class StaticGeometryCache implements AutoCloseable {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "[GT4] ✗ promoteToStatic 失败: %s", e.getMessage()"
+                    "[GT4] ✗ promoteToStatic 失败: %s", e.getMessage()
             ));
             // 保持动态状态，不影响渲染正确性
         }
@@ -746,7 +746,7 @@ public class StaticGeometryCache implements AutoCloseable {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "[GT4] ✗ demoteToDynamic 失败: %s", e.getMessage()"
+                    "[GT4] ✗ demoteToDynamic 失败: %s", e.getMessage()
             ));
         }
     }
@@ -926,7 +926,7 @@ public class StaticGeometryCache implements AutoCloseable {
             }
 
             LOGGER.fine(String.format(
-                    "[GT4] Chunk (%d,%d) 已从缓存移除", x, z"
+                    "[GT4] Chunk (%d,%d) 已从缓存移除", x, z
             ));
 
             return true;

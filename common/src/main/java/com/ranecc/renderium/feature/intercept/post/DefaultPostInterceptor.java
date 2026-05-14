@@ -491,16 +491,11 @@ public final class DefaultPostInterceptor implements PostBlaze3DInterceptor {
         double effectMs = effectPipelineTimeNanos / 1_000_000.0;
 
         LOGGER.info(String.format(
-            "[DefaultPostInterceptor] 帧 #%d 性能统计:
-" +";
-            "  总耗时: %.2f ms
-" +";
-            "  ├─ 帧捕获: %.2f ms (%.1f%%)
-" +";
-            "  ├─ 超分辨率: %.2f ms (%.1f%%)
-" +";
-            "  ├─ 帧生成: %.2f ms (%.1f%%)
-" +";
+            "[DefaultPostInterceptor] 帧 #%d 性能统计:\n" +
+            "  总耗时: %.2f ms\n" +
+            "  ├─ 帧捕获: %.2f ms (%.1f%%)\n" +
+            "  ├─ 超分辨率: %.2f ms (%.1f%%)\n" +
+            "  ├─ 帧生成: %.2f ms (%.1f%%)\n" +
             "  └── 后处理: %.2f ms (%.1f%%)",
             frameData.getFrameIndex(),
             totalMs,

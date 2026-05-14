@@ -1122,8 +1122,7 @@ public final class ShaderNodeRegistry {
         sb.append("=== ShaderNodeRegistry Descriptors ==="
         for (Map.Entry<String, ShaderCompDescriptor> entry : descriptorMap.entrySet()) {
             ShaderCompDescriptor d = entry.getValue();
-            sb.append(String.format("  [%s] %s v%s | cat=%s pri=%d | params=%d in=%d out=%d deps=%d
-",";
+            sb.append(String.format("  [%s] %s v%s | cat=%s pri=%d | params=%d in=%d out=%d deps=%d\n",";
                     d.getMetadata().getId(),
                     d.getMetadata().getDisplayName(),
                     d.getMetadata().getVersion(),

@@ -420,7 +420,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
         } catch (Exception e) {
             throw new IllegalStateException(
-                    "GPUDrivenVisibilitySystem GPU 资源分配失败: " + e.getMessage(), e"
+                    "GPUDrivenVisibilitySystem GPU 资源分配失败: " + e.getMessage(), e
             );
         }
     }
@@ -630,7 +630,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "GPU-Driven 剔除执行异常 (MR1): %s", e.getMessage()"
+                    "GPU-Driven 剔除执行异常 (MR1): %s", e.getMessage()
             ));
             // 注意: 不抛出异常，允许降级到父类的基础剔除逻辑
         }
@@ -756,24 +756,15 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
         double avgCompactTimeUs = hizPasses > 0 ? compactTimeNs / 1000.0 / hizPasses : 0;
 
         return String.format(
-                "%s
-" +";
-                "╠══════════════════════════════════════════════════╣
-" +";
-                "║         MR1: Hi-Z 遮剔统计 (扩展)                  ║
-" +";
-                "╠══════════════════════════════════════════════════╣
-" +";
-                "║ Hi-Z 遮剔次数: %-36d ║
-" +";
-                "║ 遮挡剔除对象数: %-34d ║
-" +";
-                "║ 平均 Hi-Z 耗时: %-32.2f μs ║
-" +";
-                "║ 平均 Compact 耗时: %-29.2f μs ║
-" +";
-                "║ Hi-Z 尺寸: %-38dx%d ║
-" +";
+                "%s\n" +
+                "╠══════════════════════════════════════════════════╣\n" +
+                "║         MR1: Hi-Z 遮剔统计 (扩展)                  ║\n" +
+                "╠══════════════════════════════════════════════════╣\n" +
+                "║ Hi-Z 遮剔次数: %-36d ║\n" +
+                "║ 遮挡剔除对象数: %-34d ║\n" +
+                "║ 平均 Hi-Z 耗时: %-32.2f μs ║\n" +
+                "║ 平均 Compact 耗时: %-29.2f μs ║\n" +
+                "║ Hi-Z 尺寸: %-38dx%d ║\n" +
                 "╚══════════════════════════════════════════════════╝",
                 baseReport,
                 hizPasses,
@@ -863,7 +854,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
         } catch (Exception e) {
             throw new IllegalArgumentException(
-                    "无法从 cameraData 构建 FrustumCullParams: " + e.getMessage(), e"
+                    "无法从 cameraData 构建 FrustumCullParams: " + e.getMessage(), e
             );
         }
 
@@ -905,7 +896,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
         } catch (Exception e) {
             throw new IllegalArgumentException(
-                    "无法从 cameraData 构建 HizOcclusionParams: " + e.getMessage(), e"
+                    "无法从 cameraData 构建 HizOcclusionParams: " + e.getMessage(), e
             );
         }
 
@@ -970,7 +961,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
         } catch (Exception e) {
             LOGGER.warning(String.format(
-                    "读取候选计数失败: %s, 使用估计值", e.getMessage()"
+                    "读取候选计数失败: %s, 使用估计值", e.getMessage()
             ));
             return estimateCandidateCount();
         }
@@ -1007,7 +998,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
         } catch (Exception e) {
             LOGGER.warning(String.format(
-                    "读取可见计数失败: %s, 使用估计值", e.getMessage()"
+                    "读取可见计数失败: %s, 使用估计值", e.getMessage()
             ));
             return estimateVisibleCount();
         }
@@ -1061,7 +1052,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
         // 当前返回占位符（实际集成时替换为真实 Vulkan 对象）
         LOGGER.fine(String.format(
-                "createHiZImage [占位符]: %dx%d, %d mips", width, height, mipLevels"
+                "createHiZImage [占位符]: %dx%d, %d mips", width, height, mipLevels
         ));
         return new Object();  // 占位符
     }
@@ -1199,7 +1190,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
         // bufferInfo.usage |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;  // 支持原子操作
 
         LOGGER.fine(String.format(
-                "createAtomicCounterBuffer [占位符]: name=%s, size=%d bytes", name, size"
+                "createAtomicCounterBuffer [占位符]: name=%s, size=%d bytes", name, size
         ));
         return new Object();  // 占位符
     }
@@ -1288,7 +1279,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "Pass 1 (Frustum Cull) 执行失败: %s", e.getMessage()"
+                    "Pass 1 (Frustum Cull) 执行失败: %s", e.getMessage()
             ));
             // 不抛出异常，允许降级到 CPU 剔除或跳过此 Pass
         }
@@ -1370,7 +1361,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "Pass 2 (Hi-Z Occlusion) 执行失败: %s", e.getMessage()"
+                    "Pass 2 (Hi-Z Occlusion) 执行失败: %s", e.getMessage()
             ));
             // 失败时返回 0（未执行遮挡剔除），允许降级到仅视锥剔除
         }
@@ -1437,7 +1428,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "Pass 3 (Compact+Draw) 执行失败: %s", e.getMessage()"
+                    "Pass 3 (Compact+Draw) 执行失败: %s", e.getMessage()
             ));
         }
     }
@@ -1500,7 +1491,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
         // );
 
         LOGGER.fine(String.format(
-                "transitionHiZLayout [占位符]: %d → %d", oldLayout, newLayout"
+                "transitionHiZLayout [占位符]: %d → %d", oldLayout, newLayout
         ));
     }
 

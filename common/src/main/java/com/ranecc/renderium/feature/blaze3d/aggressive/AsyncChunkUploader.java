@@ -398,7 +398,7 @@ public class AsyncChunkUploader implements AutoCloseable {
 
             if (remaining > 0) {
                 LOGGER.warning(String.format(
-                        "AsyncChunkUploader 关闭时丢弃了 %d 个未处理的上传任务", remaining"
+                        "AsyncChunkUploader 关闭时丢弃了 %d 个未处理的上传任务", remaining
                 ));
             }
 
@@ -686,7 +686,7 @@ public class AsyncChunkUploader implements AutoCloseable {
 
             } catch (Exception e) {
                 LOGGER.severe(String.format(
-                        "上传任务处理异常: %s - %s", task, e.getMessage()"
+                        "上传任务处理异常: %s - %s", task, e.getMessage()
                 ));
             }
 

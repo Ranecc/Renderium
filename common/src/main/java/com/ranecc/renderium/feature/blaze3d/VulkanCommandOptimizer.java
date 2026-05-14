@@ -480,7 +480,7 @@ public class VulkanCommandOptimizer implements AutoCloseable {
         if (!enabled || !initialized) return;
 
         LOGGER.fine(String.format(
-                "RenderPass ended (VulkanCmd): pass=0x%X", passId"
+                "RenderPass ended (VulkanCmd): pass=0x%X", passId
         ));
 
         // TODO: 提交此 Pass 累积的命令缓冲区到 GPU 队列
@@ -725,7 +725,7 @@ public class VulkanCommandOptimizer implements AutoCloseable {
         }
 
         LOGGER.info(String.format(
-                "Evicted all %d cached command buffers", count"
+                "Evicted all %d cached command buffers", count
         ));
     }
 }

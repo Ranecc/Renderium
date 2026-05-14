@@ -136,17 +136,15 @@ public final class GlslPreprocessor {
         // 深度保护
         if (depth > MAX_INCLUDE_DEPTH) {
             throw new ShaderPreprocessException(
-                    "Include 深度超过 " + MAX_INCLUDE_DEPTH +"
-                            "，可能存在循环引用或过深的 include 链。" +
-                            "当前栈: \" + formatStack());
+                    "Include 深度超过 " + MAX_INCLUDE_DEPTH +
+                    "，可能存在循环引用或过深的 include 链。" +
+                    "当前栈: " + formatStack());
         }
 
         // 循环引用检测
         if (includeStack.contains(currentFile)) {
             throw new ShaderPreprocessException(
-                    "循环 include 检测:"
-  " + currentFile +"
-                            "已在栈中: \" + formatStack());
+                    "循环 include 检测: " + currentFile + "已在栈中: " + formatStack());
         }
 
         // 读取文件
@@ -175,7 +173,7 @@ public final class GlslPreprocessor {
             throws ShaderPreprocessException {
 
         StringBuilder output = new StringBuilder();
-        "\");
+        output.append("\n");
 
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
@@ -184,25 +182,25 @@ public final class GlslPreprocessor {
             // 插入行号标记 (用于编译错误定位)
             output.append("#line ").append(i + 1).append(" \"")
                   .append(currentFile.toAbsolutePath().toString().replace("\\", "/"))
-                  .append("\"
-");
+                  .append("\"\n");
 
             if (trimmed.startsWith("#include")) {
                 // 处理 #include 指令 → 递归展开
                 Path included = resolveInclude(trimmed, currentFile);
                 String includedContent = processRecursive(included,
                         new HashMap<>(defines), depth + 1);
-                "\");
+                output.append(includedContent);
+                output.append("\n");
             } else if (trimmed.startsWith("#define")) {
                 // 记录宏定义
                 processDefine(trimmed, defines);
-                "\");
+                output.append("\n");
             } else if (trimmed.startsWith("#undef")) {
                 processUndef(trimmed, defines);
-                "\");
+                output.append("\n");
             } else {
                 // 普通行原样输出
-                "\");
+                output.append("\n");
             }
         }
 
@@ -223,7 +221,7 @@ public final class GlslPreprocessor {
         String includePath = extractIncludePath(directive);
         if (includePath == null) {
             throw new ShaderPreprocessException(
-                    "无效的 #include 语法: " + directive +"
+                    "无效的 #include 语法: " + directive +
                             " (文件: " + currentFile + ")");
         }
 
@@ -244,8 +242,8 @@ public final class GlslPreprocessor {
 
         // 找不到
         throw new ShaderPreprocessException(
-                "无法找到 include 文件: " + includePath +"
-                        "\"搜索路径: \\" + searchPaths);\""
+                "无法找到 include 文件: " + includePath +
+                        "搜索路径: " + searchPaths);
     }
 
     /**
@@ -293,7 +291,7 @@ public final class GlslPreprocessor {
     private String formatStack() {
         StringBuilder sb = new StringBuilder();
         for (Path p : includeStack) {
-            "\").append(p.getFileName());
+            sb.append("\n").append(p.getFileName());
         }
         return sb.toString();
     }

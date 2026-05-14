@@ -260,7 +260,7 @@ public final class VirtualGeometrySystem implements AutoCloseable {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "VirtualGeometrySystem: 初始化失败! 错误: %s", e.getMessage()"
+                    "VirtualGeometrySystem: 初始化失败! 错误: %s", e.getMessage()
             ));
             return false;
         }
@@ -310,7 +310,7 @@ public final class VirtualGeometrySystem implements AutoCloseable {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "VirtualGeometrySystem: 释放资源时发生错误: %s", e.getMessage()"
+                    "VirtualGeometrySystem: 释放资源时发生错误: %s", e.getMessage()
             ));
         }
     }
@@ -604,7 +604,7 @@ public final class VirtualGeometrySystem implements AutoCloseable {
         long elapsedMs = (System.nanoTime() - startTime) / 1_000_000L;
 
         LOGGER.finest(String.format(
-                "VirtualGeometrySystem: 渲染完成 (耗时 %.2f ms)", elapsedMs / 1.0"
+                "VirtualGeometrySystem: 渲染完成 (耗时 %.2f ms)", elapsedMs / 1.0
         ));
 
         // TODO: 返回实际的可见 Cluster 数量

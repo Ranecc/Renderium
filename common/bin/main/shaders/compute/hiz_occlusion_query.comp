@@ -1,0 +1,578 @@
+#version 450 core
+// ============================================================================
+// Renderium - Hi-Z Occlusion Query Compute Shader (Hi-Z 遮挡查询计算着色器)
+// ============================================================================
+//
+// 用途: 独立的 Hi-Z (Hierarchical Z-Buffer) 遮挡查询模块
+//
+// 功能描述:
+//   本 shader 专注于**遮挡查询**功能，而非完整的剔除管线。
+//   通过层次化深度缓冲 (Hi-Z Mipmap Pyramid) 对物体进行 GPU 并行遮挡测试，
+//   判断每个物体是否被前景几何体完全遮挡。
+//
+// 与 hiz_occlusion_culling.comp 的区别:
+//   - 本文件: 纯遮挡查询 (Occlusion Query Only)，输出位掩码
+//   - culling文件: 完整剔除管线 (Frustum + Hi-Z + 可见性统计)
+//
+// 算法原理:
+//   Hi-Z Buffer 是一个 Mipmap 链式的深度金字塔:
+//     Level 0: 原始深度缓冲 (全分辨率)
+//     Level N: 存储对应区域的最小/最大深度值 (1/2^N 分辨率)
+//
+//   查询流程 (从粗到细的层次遍历):
+//     ┌──────────────────────────────────────────────┐
+//     │  1. 投影 AABB → 屏幕空间矩形 + 深度范围      │
+//     │  2. 快速剔除: 完全在视锥外 → 标记不可见      │
+//     │  3. 计算起始 LOD = log2(投影区域大小)        │
+//     │  4. 从起始 LOD 向 Level 0 遍历:              │
+//     │     ├─ 采样该层级 Hi-Z 深度值                │
+//     │     ├─ 比较: objectMinZ > hiZDepth ?          │
+//     │     │   ├─ 是 → 可能被遮挡，继续下一层级验证    │
+//     │     │   └─ 否 → 立即确认可见，提前退出         │
+//     │     └─ 到达 Level 0 仍判定遮挡 → 确认被遮挡    │
+//     │  5. 原子操作写入可见性位掩码                   │
+//     └──────────────────────────────────────────────┘
+//
+// 性能优势:
+//   - 单次纹理查找即可剔除大块被遮挡区域
+//   - 层次化结构允许 O(log N) 复杂度的查询
+//   - 提前退出机制避免不必要的细粒度采样
+//   - 利用 GPU 纹理硬件的高速缓存 (Texture Cache)
+//
+// 输入/输出:
+//   输入: ObjectAABB SSBO, HiZ Mipmap 纹理数组, Camera UBO
+//   输出: VisibilityMask R32UI 位掩码 (每物体 1 bit)
+//
+// 准确率目标: 与 Python hiz_occlusion.py 验证一致 (99.90%+)
+//
+// 作者: Renderium Shader Team
+// 日期: 2026-04-21
+// ============================================================================
+
+// ==================== 可配置常量 ====================
+
+/** 工作组大小: 每个线程处理一个物体的遮挡查询 */
+#define WORKGROUP_SIZE 64
+
+/** 最大支持的物体数量 (防止越界访问) */
+#define MAX_OBJECTS (64 * 1024)
+
+/** Hi-Z 金字塔最大层数 (对应纹理数组大小) */
+#define HIZ_MAX_MIP_LEVELS 10
+
+/** 深度比较容差 (浮点精度 epsilon) */
+#define DEPTH_EPSILON 0.0005
+
+/** 最小屏幕空间尺寸阈值 (像素)，低于此值跳过 Hi-Z 测试 */
+#define MIN_SCREEN_SIZE_PIXELS 1.0
+
+/** 保守模式: true=宁可多渲染不可误删, false=更激进剔除 */
+#define CONSERVATIVE_MODE true
+
+/** Hi-Z 采样网格大小 (2x2 或 3x3) */
+#define SAMPLE_GRID_SIZE 2
+
+// ==================== 数据结构定义 ====================
+
+/**
+ * 物体轴对齐包围盒 (AABB) 结构体
+ *
+ * 内存布局 (std430):
+ *   minBounds: xyz = 世界空间最小坐标, w = minDepth (物体到相机的最近距离)
+ *   maxBounds: xyz = 世界空间最大坐标, w = maxDepth (物体到相机的最远距离)
+ *
+ * Java/C++ 端填充说明:
+ *   minBounds.w 应预计算为 AABB 所有顶点中距相机最近点的深度值 [0,1]
+ *   maxBounds.w 应预计算为 AABB 所有顶点中距相机最远点的深度值 [0,1]
+ *   这避免了在 shader 内重复计算 8 个顶点的深度
+ */
+struct ObjectAABB {
+    vec4 minBounds;   // xyz=最小世界坐标, w=minDepth(最近深度 [0,1])
+    vec4 maxBounds;   // xyz=最大世界坐标, w=maxDepth(最远深度 [0,1])
+};
+
+// ==================== 资源绑定 (Resource Bindings) ====================
+
+/**
+ * Binding 0: 物体包围盒输入 SSBO (只读)
+ *
+ * 数组大小: objectCount (由 UBO 指定)
+ * 总内存: objectCount * sizeof(ObjectAABB) = objectCount * 32 字节
+ */
+layout(std430, binding = 0) readonly buffer ObjectData {
+    ObjectAABB objects[];
+};
+
+/**
+ * Binding 1: Hi-Z Mipmap 纹理数组 (只读)
+ *
+ * 纹理格式要求:
+ *   - 内部格式: R32F 或 R16F (存储归一化深度值 [0, 1])
+ *   - 每个像素存储对应区域的最大深度值 (用于 Z> 测试)
+ *   - 寻址模式: ClampToEdge (避免边界伪影)
+ *   - 过滤模式: Nearest (Mipmap 手动选择，不依赖硬件 LOD)
+ *
+ * 数组索引含义:
+ *   hizMipmaps[0] = Level 0 (全分辨率，原始深度缓冲)
+ *   hizMipmaps[1] = Level 1 (1/2 分辨率)
+ *   ...
+ *   hizMipmaps[N] = Level N (1/2^N 分分辨率)
+ *
+ * 生成方式 (来自 hiz_build.comp 的输出):
+ *   每个 Level N+1 存储 Level N 中 2x2 区域的最大深度值
+ */
+layout(binding = 1) uniform sampler2D hizMipmaps[HIZ_MAX_MIP_LEVELS];
+
+/**
+ * Binding 2: 遮挡查询配置 UBO (只读)
+ *
+ * 每帧更新一次，包含相机参数和查询控制标志
+ */
+layout(std140, binding = 2) uniform OcclusionConfig {
+    uint objectCount;       // 实际物体数量 (<= MAX_OBJECTS)
+    uint hizMipLevels;      // 实际可用的 Hi-Z mipmap 层数 (<= HIZ_MAX_MIP_LEVELS)
+    uvec2 screenSize;       // 屏幕分辨率 [width, height] (像素)
+    mat4 viewProjMatrix;    // 视图-投影组合矩阵 (用于屏幕空间投影)
+    vec3 cameraPos;         // 相机世界空间位置 (用于深度参考)
+};
+
+/**
+ * Binding 3: 可见性掩码输出 SSBO (读写)
+ *
+ * 格式: R32UI 位域数组
+ *   每个 uint32 包含 32 个物体的可见性信息
+ *   bit[i] = 1 表示第 i 个物体可见 (未被遮挡)
+ *   bit[i] = 0 表示第 i 个物体被遮挡 (不可见)
+ *
+ * 数组大小: ceil(objectCount / 32)
+ * 初始状态: Dispatch 前 CPU 应将其清零 (全 0 = 全部不可见)
+ *
+ * 写入方式: 使用 atomicOr / atomicAnd 保证线程安全
+ */
+layout(std430, binding = 3) buffer VisibilityOutput {
+    uint visibilityMask[];  // 位掩码数组，每元素 32 bits
+};
+
+// ==================== Shared Memory: 工作组内部缓存 ====================
+/** 缓存本工作组物体的最近深度值 (减少全局内存重复读取) */
+shared float sharedObjectMinZ[WORKGROUP_SIZE];
+
+/** 缓存本工作组物体的屏幕空间边界 (minUV.x, minUV.y, maxUV.x, maxUV.y) */
+shared vec4 sharedScreenBounds[WORKGROUP_SIZE];
+
+/** 缓存本工作组物体的有效投影标志 */
+shared uint sharedValidProjection[WORKGROUP_SIZE];
+
+// ==================== 核心算法函数 ====================
+
+/**
+ * 将单个 3D 点从世界空间投影到屏幕空间
+ *
+ * 变换管线: World Space → Clip Space → NDC → Screen Space (Pixel)
+ *
+ * @param worldPos  世界坐标系中的 3D 点位置
+ * @param outScreenX  输出: 屏幕空间 X 坐标 (像素, [0, screenWidth])
+ * @param outScreenY  输出: 屏幕空间 Y 坐标 (像素, [0, screenHeight])
+ * @param outDepth    输出: 归一化深度值 ([0, 1], 0=近平面, 1=远平面)
+ * @return true 如果点成功投影到有效屏幕区域内 (w > 0 且在 NDC 范围内)
+ */
+bool projectPointToScreen(vec3 worldPos, out float outScreenX, out float outScreenY, out float outDepth) {
+    // Step 1: 变换到裁剪空间 (Clip Space)
+    vec4 clipPos = viewProjMatrix * vec4(worldPos, 1.0);
+
+    // Step 2: 透视除法检查
+    // w <= 0 表示点在相机后方或处于退化状态 (无穷远等)
+    if (clipPos.w <= 1e-6) {
+        return false;
+    }
+
+    // Step 3: 透视除法 → NDC (Normalized Device Coordinates)
+    // NDC 范围: Vulkan 中 x,y ∈ [-1, 1], z ∈ [0, 1]
+    vec3 ndc = clipPos.xyz / clipPos.w;
+
+    // Step 4: NDC → 屏幕空间 (像素坐标)
+    // 映射公式: screen = (ndc * 0.5 + 0.5) * screenSize
+    outScreenX = (ndc.x * 0.5 + 0.5) * float(screenSize.x);
+    outScreenY = (ndc.y * 0.5 + 0.5) * float(screenSize.y);
+    outDepth = ndc.z;  // Vulkan NDC z 已经在 [0, 1] 范围内
+
+    return true;
+}
+
+/**
+ * 将物体 AABB 投影到屏幕空间，计算其 2D 包围矩形和深度范围
+ *
+ * 算法: 测试 AABB 的 8 个角点，收集所有有效投影的屏幕空间边界
+ *       取并集形成最终的屏幕空间 AABB
+ *
+ * @param obj           输入: 物体包围盒数据
+ * @param outScreenMin  输出: 屏幕空间最小角 (像素), xy=位置, zw=(unused, minDepth)
+ * @param outScreenMax  输出: 屏幕空间最大角 (像素), xy=位置, zw=(unused, maxDepth)
+ * @return true 如果 AABB 至少有一个角点投影到屏幕内 (部分或全部可见)
+ */
+void projectAABB(ObjectAABB obj, out vec4 outScreenMin, out vec4 outScreenMax) {
+    // 初始化为极端值 (用于 min/max 收集)
+    vec2 pixelMin = vec2(float(screenSize.x), float(screenSize.y));
+    vec2 pixelMax = vec2(0.0, 0.0);
+    float depthMin = 1.0;
+    float depthMax = 0.0;
+    bool anyValid = false;
+
+    // 提取 AABB 的 8 个角点 (世界坐标)
+    vec3 corners[8];
+    corners[0] = obj.minBounds.xyz;                                              // --- (min,min,min)
+    corners[1] = vec3(obj.maxBounds.x, obj.minBounds.y, obj.minBounds.z);        // +-- (max,min,min)
+    corners[2] = vec3(obj.minBounds.x, obj.maxBounds.y, obj.minBounds.z);        // -+- (min,max,min)
+    corners[3] = vec3(obj.maxBounds.x, obj.maxBounds.y, obj.minBounds.z);        // ++- (max,max,min)
+    corners[4] = vec3(obj.minBounds.x, obj.minBounds.y, obj.maxBounds.z);        // --+ (min,min,max)
+    corners[5] = vec3(obj.maxBounds.x, obj.minBounds.y, obj.maxBounds.z);        // +-+ (max,min,max)
+    corners[6] = vec3(obj.minBounds.x, obj.maxBounds.y, obj.maxBounds.z);        // -++ (min,max,max)
+    corners[7] = obj.maxBounds.xyz;                                               // +++ (max,max,max)
+
+    // 逐个投影角点并收集屏幕空间边界
+    for (int i = 0; i < 8; i++) {
+        float sx, sy, depth;
+        if (projectPointToScreen(corners[i], sx, sy, depth)) {
+            anyValid = true;
+            pixelMin.x = min(pixelMin.x, sx);
+            pixelMin.y = min(pixelMin.y, sy);
+            pixelMax.x = max(pixelMax.x, sx);
+            pixelMax.y = max(pixelMax.y, sy);
+            depthMin = min(depthMin, depth);
+            depthMax = max(depthMax, depth);
+        }
+    }
+
+    // 组装输出结果
+    if (anyValid) {
+        outScreenMin = vec4(pixelMin, 0.0, depthMin);
+        outScreenMax = vec4(pixelMax, 0.0, depthMax);
+    } else {
+        // 全部角点都在视锥外 (如物体完全在相机后方)
+        // 设置无效标记: min > max
+        outScreenMin = vec4(1e10);
+        outScreenMax = vec4(-1e10);
+    }
+}
+
+/**
+ * 执行 Hi-Z 层级遍历遮挡测试
+ *
+ * 核心算法 (从粗到细的层次化深度比较):
+ *
+ *   ┌────────────────────────────────────────────────────┐
+ *   │  输入: 屏幕空间 AABB + 物体最近深度 (objectMinZ)    │
+ *   │                                                    │
+ *   │  1. 计算起始 LOD 层级                               │
+ *   │     lodStart = floor(log2(max(coverWidth, coverHeight)))│
+ *   │     限制范围: [0, hizMipLevels - 1]                 │
+ *   │                                                    │
+ *   │  2. 从 lodStart 向下遍历到 Level 0:                │
+ *   │     for lod = lodStart .. 0:                       │
+ *   │       a. 在当前 lod 层级采样 Hi-Z 深度              │
+ *   │          (使用 2x2 网格采样取最大值以提高鲁棒性)      │
+ *   │       b. 比较: objectMinZ > sampledHiZMax ?        │
+ *   │          ├─ 是 (且非最细层级) → 继续下一层级验证     │
+ *   │          ├─ 是 (到达 Level 0)  → 确认被遮挡 → return true│
+ *   │          └─ 否 → 确认可见 → 提前退出 return false    │
+ *   │                                                    │
+ *   │  3. 遍历结束未发现遮挡 → 可见                       │
+ *   └────────────────────────────────────────────────────┘
+ *
+ * 为什么取 Hi-Z 的最大深度?
+ *   Hi-Z 每个 texel 存储的是该区域的最大深度值 (最远离相机的已知深度)。
+ *   如果物体的最近点 (objectMinZ) 比这个值还大 (更远离相机)，
+ *   说明整个物体都在已知遮挡物的后面 → 被遮挡。
+ *
+ * @param screenMinUV   屏幕空间最小 UV 坐标 [0, 1]
+ * @param screenMaxUV   屏幕空间最大 UV 坐标 [0, 1]
+ * @param objectMinZ    物体到相机的最近深度 [0, 1]
+ * @return true 如果物体被确认遮挡 (应标记为不可见), false 表示可能可见
+ */
+bool testHiZOcclusion(vec2 screenMinUV, vec2 screenMaxUV, float objectMinZ) {
+    // ---- 前置条件检查 ----
+    // 物体最近深度 >= 1.0 表示在远平面之外或无效
+    if (objectMinZ >= 1.0) {
+#if CONSERVATIVE_MODE
+        return false;  // 保守: 无法判断，视为可见
+#else
+        return true;   // 激进: 远平面外视为不可见
+#endif
+    }
+
+    // ---- Step 1: 计算起始 LOD 层级 ----
+    //
+    // 策略: 选择使物体投影大约覆盖 2-4 个 texel 的层级
+    // 这样可以在精度和性能之间取得最优平衡
+    //
+    // 公式: lodStart = log2(coverageInTexels / targetCoverage)
+    // 其中 coverageInTexels = screenSizePixels * uvRange
+    //
+    vec2 uvExtent = screenMaxUV - screenMinUV;
+    float maxUvExtent = max(uvExtent.x, uvExtent.y);
+
+    // 防止零大小导致的 log2(0) 未定义
+    if (maxUvExtent < 1.0 / 65536.0) {
+        // 投影面积极小，无法可靠执行 Hi-Z 测试
+#if CONSERVATIVE_MODE
+        return false;  // 保守: 太小视为可见
+#else
+        return true;   // 激进: 太小视为不可见
+#endif
+    }
+
+    // 计算起始 LOD: 使覆盖约 2-4 个 texel
+    // 注意: 这里基于 Level 0 的屏幕尺寸来估算 texel 覆盖数
+    float targetCoverage = 4.0;
+    float lodFloat = log2(maxUvExtent * float(max(screenSize.x, screenSize.y)) / targetCoverage);
+    int lodStart = int(floor(lodFloat));
+
+    // 限制在有效范围内
+    lodStart = clamp(lodStart, 0, int(hizMipLevels) - 1);
+
+    // ---- Step 2: 从粗到细遍历 Hi-Z 层级 ----
+    for (int lod = lodStart; lod >= 0; lod--) {
+        // 计算当前层级的采样中心点和步长
+        vec2 centerUV = (screenMinUV + screenMaxUV) * 0.5;
+        vec2 halfExtentUV = (screenMaxUV - screenMinUV) * 0.5;
+
+        // 2x2 网格采样策略: 在 AABB 中心区域的四个象限各采一个点
+        // 比单点采样更鲁棒，能捕捉 AABB 边缘的深度变化
+        //
+        // 采样点分布:
+        //   ┌─────┬─────┐
+        //   │  0  │  1  │
+        //   ├─────┼─────┤
+        //   │  2  │  3  │
+        //   └─────┴─────┘
+        //
+        vec2 stepUV = halfExtentUV * 0.5;
+        vec2 sampleUVs[4];
+        sampleUVs[0] = centerUV + vec2(-stepUV.x, -stepUV.y);  // 左上
+        sampleUVs[1] = centerUV + vec2( stepUV.x, -stepUV.y);  // 右上
+        sampleUVs[2] = centerUV + vec2(-stepUV.x,  stepUV.y);  // 左下
+        sampleUVs[3] = centerUV + vec2( stepUV.x,  stepUV.y);  // 右下
+
+        // 在当前 LOD 层级采样并获取最大深度值
+        float maxHiZDepthAtLOD = 0.0;
+
+        for (int s = 0; s < 4; s++) {
+            // Clamp UV 到 [0, 1] 防止越界采样 (处理跨越屏幕边缘的情况)
+            vec2 clampedUV = clamp(sampleUVs[s], 0.0, 1.0);
+
+            // 使用显式 LOD 采样指定的 mipmap 层级
+            // textureLod(): 强制使用指定 LOD，忽略 GPU 自动 mipmap 选择
+            float sampledDepth = textureLod(hizMipmaps[lod], clampedUV, 0.0).r;
+            maxHiZDepthAtLOD = max(maxHiZDepthAtLOD, sampledDepth);
+        }
+
+        // ---- Step 3: 深度比较判定 ----
+        //
+        // 比较逻辑 (深度范围 [0, 1], 0=近/近平面, 1=远/远平面):
+        //   objectMinZ:   物体上距离相机**最近**的点深度
+        //   maxHiZDepth:  Hi-Z 该区域记录的**最大**深度 (该区域最远的已知深度)
+        //
+        // 判定条件分析:
+        //   如果 objectMinZ > maxHiZDepth + epsilon
+        //   → 物体的最近点比 Hi-Z 记录的最远点还远
+        //   → 整个物体都在已知遮挡物之后
+        //   → **可能被遮挡**
+        //
+        //   如果 objectMinZ <= maxHiZDepth
+        //   → 物体至少有一部分在遮挡物前面 (或与遮挡物交叉)
+        //   → **确认可见** (提前退出!)
+        //
+
+        // 构建容差: 层级越粗 (lod 越大)，容差越大 (因为粗层级精度较低)
+        // 这可以减少因 mipmap 降采样导致的误判
+        float lodEpsilon = DEPTH_EPSILON * (1.0 + float(lod) * 2.0);
+
+#if CONSERVATIVE_MODE
+        // 保守模式: 只在非常确定的情况下才判定为遮挡
+        // 要求物体明显在 Hi-Z 深度之后才认为被遮挡
+        bool possiblyOccluded = (objectMinZ > maxHiZDepthAtLOD + lodEpsilon * 5.0);
+#else
+        // 激进模式: 更积极地判定遮挡 (可能有少量错误剔除)
+        bool possiblyOccluded = (objectMinZ > maxHiZDepthAtLOD - lodEpsilon);
+#endif
+
+        if (!possiblyOccluded) {
+            // 发现物体在某个层级未被遮挡 → 确认可见，提前退出
+            // 这是关键的性能优化: 不需要继续检查更细的层级
+            return false;
+        }
+
+        // 当前层级显示可能被遮挡 → 继续检查更细的层级以确认
+        // (循环继续到下一个 lod--)
+    }
+
+    // ---- 所有层级遍历完毕，均显示被遮挡 ----
+    // 到达此处说明从 lodStart 到 Level 0 都判定为遮挡
+    // → 确认物体被遮挡
+    return true;
+}
+
+/**
+ * 执行快速视锥外剔除 (基于屏幕空间边界)
+ *
+ * 检查物体是否完全在可视区域之外:
+ *   - 完全在屏幕左/右/上/下边缘之外
+ *   - 完全在近平面之前 (z <= 0) 或远平面之后 (z >= 1)
+ *
+ * @param screenMin  屏幕空间最小边界 (像素)
+ * @param screenMax  屏幕空间最大边界 (像素)
+ * @param minDepth   物体最近深度
+ * @param maxDepth   物体最远深度
+ * @return true 如果物体完全在视锥外 (应标记为不可见)
+ */
+bool isFullyOutsideFrustum(vec4 screenMin, vec4 screenMax, float minDepth, float maxDepth) {
+    // 检查屏幕空间 X 轴: 完全在左边界或右边界之外
+    if (screenMax.x < 0.0 || screenMin.x > float(screenSize.x)) {
+        return true;
+    }
+
+    // 检查屏幕空间 Y 轴: 完全在上边界或下边界之外
+    if (screenMax.y < 0.0 || screenMin.y > float(screenSize.y)) {
+        return true;
+    }
+
+    // 检查深度范围: 完全在近平面之前或远平面之后
+    // 注意: Vulkan 深度范围 [0, 1], 0=近, 1=远
+    if (maxDepth <= 0.0 || minDepth >= 1.0) {
+        return true;
+    }
+
+    // 检查无效投影 (projectAABB 设置的哨兵值)
+    if (screenMin.x > screenMax.x || screenMin.y > screenMax.y) {
+        return true;
+    }
+
+    return false;
+}
+
+// ==================== 主函数 (Main Entry Point) ====================
+
+/**
+ * Compute Shader 主入口 - 每个 invocation 处理一个物体的遮挡查询
+ *
+ * <h3>完整处理流程:</h3>
+ * <pre>
+ * ┌──────────────────────────────────────────────────────────┐
+ * │  1. 获取物体 ID (gl_GlobalInvocationID.x)               │
+ * │  2. 边界检查 (objectId >= objectCount → return)          │
+ * │  3. 读取物体 AABB 数据                                   │
+ * │  4. 投影到屏幕空间 (projectAABB)                         │
+ * │  5. 快速视锥外剔除                                       │
+ * │     ├─ 完全在外 → atomicAnd 清零 bit → return            │
+ * │     └─ 部分在内 → 继续                                   │
+ * │  6. Hi-Z 层级遍历遮挡测试 (testHiZOcclusion)             │
+ * │  7. 原子操作写入可见性掩码                                │
+ * │     ├─ 可见 → atomicOr 设置 bit                          │
+ * │     └─ 遮挡 → atomicAnd 清零 bit                         │
+ * └──────────────────────────────────────────────────────────┘
+ * </pre>
+ *
+ * <h3>线程安全保证:</h3>
+ * 使用 atomicOr / atomicAnd 操作写入共享的 visibilityMask[],
+ * 确保多个线程同时写入同一 uint32 字时不会产生数据竞争。
+ *
+ * <h3>Dispatch 参数:</h3>
+ * vkCmdDispatch(commandBuffer,
+ *               (objectCount + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE,
+ *               1, 1);
+ */
+void main() {
+    // ========== Step 1: 获取工作项索引 ==========
+    uint objectId = gl_GlobalInvocationID.x;
+    uint localId = gl_LocalInvocationID.x;
+
+    // ========== Step 2: 边界检查 ==========
+    if (objectId >= objectCount || objectId >= MAX_OBJECTS) {
+        return;
+    }
+
+    // ========== Step 3: 读取物体数据 ==========
+    ObjectAABB obj = objects[objectId];
+
+    // 缓存到 shared memory (减少后续重复的全局内存访问)
+    sharedObjectMinZ[localId] = obj.minBounds.w;
+
+    barrier();
+
+    // ========== Step 4: 投影 AABB 到屏幕空间 ==========
+    vec4 screenMin, screenMax;
+    projectAABB(obj, screenMin, screenMax);
+
+    // 缓存屏幕空间边界到 shared memory
+    sharedScreenBounds[localId] = vec4(screenMin.xy, screenMax.xy);
+    sharedValidProjection[localId] = (screenMin.x <= screenMax.x) ? 1u : 0u;
+
+    barrier();
+
+    // ========== Step 5: 快速视锥外剔除 ==========
+    //
+    // 完全在视锥外的物体无需进行 Hi-Z 测试，
+    // 直接标记为不可见 (bit = 0)
+    //
+    float objMinDepth = obj.minBounds.w;
+    float objMaxDepth = obj.maxBounds.w;
+
+    if (isFullyOutsideFrustum(screenMin, screenMax, objMinDepth, objMaxDepth)) {
+        // 完全在视锥外 → 清零对应的可见性 bit
+        uint wordIndex = objectId / 32u;
+        uint bitOffset = objectId % 32u;
+        atomicAnd(visibilityMask[wordIndex], ~(1u << bitOffset));
+        return;
+    }
+
+    // ========== Step 6: 裁剪屏幕空间边界到有效范围 ==========
+    //
+    // 物体可能部分跨越屏幕边缘，需要将 UV 钳制到 [0, 1]
+    // 以保证纹理采样不会越界
+    //
+    vec2 clampedScreenMin = max(screenMin.xy, vec2(0.0));
+    vec2 clampedScreenMax = min(screenMax.xy, vec2(screenSize.x, screenSize.y));
+
+    // 转换到 UV 空间 [0, 1] (用于纹理采样)
+    vec2 screenMinUV = clampedScreenMin / vec2(screenSize);
+    vec2 screenMaxUV = clampedScreenMax / vec2(screenSize);
+
+    // 二次钳制确保 UV 严格在 [0, 1] 范围内 (防御性编程)
+    screenMinUV = clamp(screenMinUV, 0.0, 1.0);
+    screenMaxUV = clamp(screenMaxUV, 0.0, 1.0);
+
+    // ========== Step 7: Hi-Z 遮挡查询 ==========
+    bool occluded = testHiZOcclusion(screenMinUV, screenMaxUV, objMinDepth);
+
+    // ========== Step 8: 原子操作写入可见性掩码 ==========
+    //
+    // 位掩码布局:
+    //   visibilityMask[wordIndex] 的第 bitOffset 位
+    //   1 = 可见 (通过遮挡查询)
+    //   0 = 被遮挡 (不可见)
+    //
+    // 使用原子操作保证线程安全:
+    //   多个线程可能同时写入同一个 word (当它们的 objectId / 32 相同)
+    //
+    uint wordIndex = objectId / 32u;
+    uint bitOffset = objectId % 32u;
+    uint bitMask = (1u << bitOffset);
+
+    if (!occluded) {
+        // 物体可见 → 设置对应 bit 为 1
+        atomicOr(visibilityMask[wordIndex], bitMask);
+    } else {
+        // 物体被遮挡 → 清零对应 bit 为 0
+        atomicAnd(visibilityMask[wordIndex], ~bitMask);
+    }
+
+    // ========== 完成 ==========
+    //
+    // 此线程的处理结果:
+    //   visibilityMask[objectId / 32] 的第 (objectId % 32) 位
+    //   已被正确设置为 1 (可见) 或 0 (被遮挡)
+    //
+    // 下游消费者可通过以下方式读取结果:
+    //   visible = (visibilityMask[objId / 32] >> (objId % 32)) & 1
+    //
+}

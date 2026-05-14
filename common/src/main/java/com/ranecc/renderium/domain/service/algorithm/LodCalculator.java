@@ -300,7 +300,7 @@ public final class LodCalculator {
             }
             if (i > 0 && thresholds[i] <= thresholds[i - 1]) {
                 throw new IllegalArgumentException(
-                    "距离阈值必须严格递升: thresholds[" + (i - 1) + "]=" + thresholds[i - 1]"
+                    "距离阈值必须严格递升: thresholds[" + (i - 1) + "]=" + thresholds[i - 1]
                     + " >= thresholds[" + i + "]=" + thresholds[i]);
             }
         }

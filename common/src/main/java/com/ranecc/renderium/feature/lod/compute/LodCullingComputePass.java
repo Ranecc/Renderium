@@ -1309,7 +1309,7 @@ public final class LodCullingComputePass {
             hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                                 // flags = 0
             hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) VK_SHADER_STAGE_COMPUTE_BIT); // stage = COMPUTE
             hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, hizBuildShaderModule);                // module = HiZ Build SM
-            "hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, 0L);                                 // pSpecializationInfo = null"
+            hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, 0L);                                 // pSpecializationInfo = null
 
             // --- Occlusion Query Shader Stage ---
             MemorySegment occStageInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
@@ -1318,7 +1318,7 @@ public final class LodCullingComputePass {
             occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                                 // flags = 0
             occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) VK_SHADER_STAGE_COMPUTE_BIT); // stage = COMPUTE
             occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, hizOcclusionShaderModule);            // module = Occlusion SM
-            "occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, 0L);                                 // pSpecializationInfo = null"
+            occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, 0L);                                 // pSpecializationInfo = null
 
             // ==================== 构建 VkComputePipelineCreateInfo 数组 ====================
             // 每个 Compute Pipeline CreateInfo 占用 6 个 JAVA_LONG 字段:
@@ -1528,7 +1528,7 @@ public final class LodCullingComputePass {
             lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                                 // flags = 0
             lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) VK_SHADER_STAGE_COMPUTE_BIT); // stage = COMPUTE
             lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, lodShaderModule);                     // module = LOD SM
-            "lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, 0L);                                 // pSpecializationInfo = null"
+            lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, 0L);                                 // pSpecializationInfo = null
 
             // VkComputePipelineCreateInfo (LOD)
             int ciFieldCount = 7;
@@ -2494,44 +2494,25 @@ public final class LodCullingComputePass {
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append("╔══════════════════════════════════════════════════╗
-");
-        sb.append("║     LOD Culling Compute Pass 性能报告            ║
-");
-        sb.append("╠══════════════════════════════════════════════════╣
-");
-        sb.append(String.format("║ 初始化状态: %-34s ║
-", initialized ? "✓ 已就绪" : "✗ 未初始化"));
-        sb.append(String.format("║ FFM 就绪:   %-34s ║
-", ffmLoaded ? "✓ 已加载" : "✗ 未加载"));
-        sb.append(String.format("║ 执行次数:   %-34d ║
-", count));
-        sb.append(String.format("║ 平均耗时:   %-27.3f ms ║
-", getAverageExecutionTimeMs()));
-        sb.append(String.format("║ 最大耗时:   %-27.3f ms ║
-", getMaxExecutionTimeMs()));
-        sb.append(String.format("║ 最小耗时:   %-27.3f ms ║
-", getMinExecutionTimeMs()));
-        sb.append("╠══════════════════════════════════════════════════╣
-");
-        sb.append("║ Vulkan 句柄:                                    ║
-");
-        sb.append(String.format("║   Device:       0x%-28s ║
-", Long.toHexString(vkDevice)));
-        sb.append(String.format("║   ComputeQueue: 0x%-28s ║
-", Long.toHexString(computeQueue)));
-        sb.append(String.format("║   HiZ Pipeline: 0x%-28s ║
-", Long.toHexString(hizBuildPipeline)));
-        sb.append(String.format("║   Occ Pipeline: 0x%-28s ║
-", Long.toHexString(hizOcclusionPipeline)));
-        sb.append(String.format("║   LOD Pipeline:  0x%-28s ║
-", Long.toHexString(lodComputePipeline)));
-        sb.append(String.format("║   LOD Chunks:    %-28d ║
-", lodDataManager.getCurrentChunkCount()));
-        sb.append(String.format("║   LOD Visible:   %-28d ║
-", lodDataManager.getVisibleChunkCount()));
-        sb.append("╚══════════════════════════════════════════════════╝
-");
+        sb.append("╔══════════════════════════════════════════════════╗\n");
+        sb.append("║     LOD Culling Compute Pass 性能报告            ║\n");
+        sb.append("╠══════════════════════════════════════════════════╣\n");
+        sb.append(String.format("║ 初始化状态: %-34s ║\n", initialized ? "✓ 已就绪" : "✗ 未初始化"));
+        sb.append(String.format("║ FFM 就绪:   %-34s ║\n", ffmLoaded ? "✓ 已加载" : "✗ 未加载"));
+        sb.append(String.format("║ 执行次数:   %-34d ║\n", count));
+        sb.append(String.format("║ 平均耗时:   %-27.3f ms ║\n", getAverageExecutionTimeMs()));
+        sb.append(String.format("║ 最大耗时:   %-27.3f ms ║\n", getMaxExecutionTimeMs()));
+        sb.append(String.format("║ 最小耗时:   %-27.3f ms ║\n", getMinExecutionTimeMs()));
+        sb.append("╠══════════════════════════════════════════════════╣\n");
+        sb.append("║ Vulkan 句柄:                                    ║\n");
+        sb.append(String.format("║   Device:       0x%-28s ║\n", Long.toHexString(vkDevice)));
+        sb.append(String.format("║   ComputeQueue: 0x%-28s ║\n", Long.toHexString(computeQueue)));
+        sb.append(String.format("║   HiZ Pipeline: 0x%-28s ║\n", Long.toHexString(hizBuildPipeline)));
+        sb.append(String.format("║   Occ Pipeline: 0x%-28s ║\n", Long.toHexString(hizOcclusionPipeline)));
+        sb.append(String.format("║   LOD Pipeline:  0x%-28s ║\n", Long.toHexString(lodComputePipeline)));
+        sb.append(String.format("║   LOD Chunks:    %-28d ║\n", lodDataManager.getCurrentChunkCount()));
+        sb.append(String.format("║   LOD Visible:   %-28d ║\n", lodDataManager.getVisibleChunkCount()));
+        sb.append("╚══════════════════════════════════════════════════╝\n");
 
         return sb.toString();
     }

@@ -496,22 +496,16 @@ public class MemoryOptimizer implements AutoCloseable {
 
         // 添加 VMA 渐进式管理状态
         if (gradualMemoryManager != null && gradualCleanupEnabled) {
-            sb.append("
-
---- VMA Gradual Cleanup ---
-");
-            sb.append(String.format("  Status: %s
-", gradualMemoryManager.isEnabled() ? "Enabled" : "Disabled"));
-            sb.append(String.format("  Pressure Level: %s
-",
+            sb.append("\n--- VMA Gradual Cleanup ---\n");
+            sb.append(String.format("  Status: %s\n", gradualMemoryManager.isEnabled() ? "Enabled" : "Disabled"));
+            sb.append(String.format("  Pressure Level: %s\n",
                     gradualMemoryManager.getCurrentLevel().name()));
-            sb.append(String.format("  Needs Attention: %s
-",
+            sb.append(String.format("  Needs Attention: %s\n",
                     gradualMemoryManager.needsAttention() ? "Yes" : "No"));
 
             // 当处于非正常状态时显示详细报告
             if (!gradualMemoryManager.isNormal()) {
-                "\").append(gradualMemoryManager.getStatusReport());
+                sb.append("\n").append(gradualMemoryManager.getStatusReport());
             }
         }
 

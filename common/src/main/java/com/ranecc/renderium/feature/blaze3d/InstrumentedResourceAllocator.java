@@ -550,21 +550,18 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
      */
     public String formatReport() {
         return String.format(
-                "╔══════════════════════════════════════════╗" +
-                "║  InstrumentedResourceAllocator 报告      ║" +
-                "╚══════════════════════════════════════════╝"
-
-" +
-                "Delegate: %s" +
-                "自定义池化: %s | Mojang原生池化检测: %s"
-
-" +
-                "调用统计:" +
-                "  Acquire:  %d 次" +
-                "  Release:  %d 次" +
-                "\" +\n\"  命中:     %d 次 (%.1f%%)\n\" +\n\"  未命中:   %d 次\n\" +\n\"%s\\",\""
-
-                delegate.getClass().getName(),
+                "╔══════════════════════════════════════════╗\n" +
+                "║  InstrumentedResourceAllocator 报告      ║\n" +
+                "╚══════════════════════════════════════════╝\n" +
+                "  Delegate: %s\n" +
+                "  自定义池化: %s | Mojang原生池化检测: %s\n" +
+                "\n" +
+                "  调用统计:\n" +
+                "    Acquire:  %d 次\n" +
+                "    Release:  %d 次\n" +
+                "    命中:     %d 次 (%.1f%%)\n" +
+                "    未命中:   %d 次\n" +
+                "%s\n",                delegate.getClass().getName(),
                 customPoolingEnabled.get() ? "✓ 启用" : "✗ 禁用",
                 mojangNativePoolingDetected ? "⚠️ 检测到" : "○ 未检测",
 

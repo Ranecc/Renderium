@@ -496,24 +496,17 @@ public final class RenderiumProfiler {
     public static String formatReport() {
         StringBuilder report = new StringBuilder();
 
-        report.append("╔══════════════════════════════════════════╗
-");
-        report.append("║       Renderium Performance Report       ║
-");
-        report.append("╚══════════════════════════════════════════╝
+        report.append("╔══════════════════════════════════════════╗\n");
+        report.append("║       Renderium Performance Report       ║\n");
+        report.append("╚══════════════════════════════════════════╝\n");
 
-");
-
-        report.append(String.format("Status: %s | Frame: %d | Recorded Passes: %d
-
-",
+        report.append(String.format("Status: %s | Frame: %d | Recorded Passes: %d\n",
                 enabled.get() ? "ENABLED" : "DISABLED",
                 currentFrameNumber,
                 globalStatistics.size()));
 
         if (globalStatistics.isEmpty()) {
-            report.append("(No data recorded yet)
-");
+            report.append("(No data recorded yet)\n");
             return report.toString();
         }
 
@@ -526,20 +519,16 @@ public final class RenderiumProfiler {
                 .limit(MAX_REPORT_ENTRIES)
                 .toList();
 
-        report.append("┌──────────────────────────────────────────────────────────────────────┐
-");
-        report.append("│ Pass Name                     Calls    Total(ms)  Avg(ms)   Min/Max  │
-");
-        report.append("├──────────────────────────────────────────────────────────────────────┤
-");
+        report.append("┌──────────────────────────────────────────────────────────────────────┐\n");
+        report.append("│ Pass Name                     Calls    Total(ms)  Avg(ms)   Min/Max  │\n");
+        report.append("├──────────────────────────────────────────────────────────────────────┤\n");
 
         for (var entry : sortedEntries) {
             PassStatistics stats = entry.getValue();
             double[] minMax = getMinMaxTimeMs(entry.getKey());
 
             report.append(String.format(
-                    "│ %-28s %8d  %9.3f  %8.3f  %6.2f/%-6.2f │"
-",
+                    "│ %-28s %8d  %9.3f  %8.3f  %6.2f/%-6.2f │\n",
                     truncateString(entry.getKey(), 28),
                     stats.callCount.get(),
                     nanosToMillis(stats.totalTimeNanos.get()),
@@ -549,8 +538,7 @@ public final class RenderiumProfiler {
             ));
         }
 
-        report.append("└──────────────────────────────────────────────────────────────────────┘
-");
+        report.append("└──────────────────────────────────────────────────────────────────────┘\n");
 
         return report.toString();
     }

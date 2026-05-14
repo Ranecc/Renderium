@@ -588,7 +588,7 @@ public final class PrecisionConfig {
             // 参数一致性校验
             if (autoAdjustmentEnabled && adjustmentIntervalFrames < 1) {
                 throw new IllegalStateException(
-                    "自动调整已启用但调整间隔无效: " + adjustmentIntervalFrames"
+                    "自动调整已启用但调整间隔无效: " + adjustmentIntervalFrames
                 );
             }
 

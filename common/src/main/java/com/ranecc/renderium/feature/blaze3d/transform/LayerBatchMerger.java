@@ -702,28 +702,19 @@ public class LayerBatchMerger implements AutoCloseable {
                 : 0.0;
 
         StringBuilder sb = new StringBuilder();
-        sb.append("╔══════════════════════════════════════════════════╗
-");
-        sb.append("║      LayerBatchMerger 性能统计 (GT2)             ║
-");
-        sb.append("╠══════════════════════════════════════════════════╣
-");
-        sb.append(String.format("║ 总处理帧数: %-37d ║
-", totalFramesProcessed));
-        sb.append(String.format("║ 平均构建时间: %-30.3f ms ║
-", avgBuildTimeMs));
-        sb.append(String.format("║ 总渲染层数: %-37d ║
-", totalLayersRendered));
-        sb.append("╠══════════════════════════════════════════════════╣
-");
-        sb.append("║ 各层详情:                                        ║
-");
+        sb.append("╔══════════════════════════════════════════════════╗\n");
+        sb.append("║      LayerBatchMerger 性能统计 (GT2)             ║\n");
+        sb.append("╠══════════════════════════════════════════════════╣\n");
+        sb.append(String.format("║ 总处理帧数: %-37d ║\n", totalFramesProcessed));
+        sb.append(String.format("║ 平均构建时间: %-30.3f ms ║\n", avgBuildTimeMs));
+        sb.append(String.format("║ 总渲染层数: %-37d ║\n", totalLayersRendered));
+        sb.append("╠══════════════════════════════════════════════════╣\n");
+        sb.append("║ 各层详情:                                        ║\n");
 
         for (RenderLayer layer : RenderLayer.values()) {
             LayerBatch batch = layerBatches.get(layer);
             if (batch != null) {
-                sb.append(String.format("║   %-25s: %4d chunks, %7d verts ║
-",
+                sb.append(String.format("║   %-25s: %4d chunks, %7d verts ║\n",
                         layer.name(), batch.getDrawCount(), batch.getTotalVertexCount()));
             }
         }

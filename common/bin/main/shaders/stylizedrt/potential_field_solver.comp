@@ -1,0 +1,296 @@
+#version 450
+
+// ================================================================
+// Renderium Stylized RT - 势能场 Multigrid 求解器 Compute Shader
+// ================================================================
+// 求解: ∇²U = -ρ_s (Poisson方程)
+// 方法: Multigrid V-Cycle (Jacobi平滑 + 限制 + 延拓)
+//
+// ⚠️ 关键工程约束:
+// 1. 64³网格 = 262144 cells, 每次Jacobi迭代需要访问6个邻居
+//    → 6次纹理读取/cell/迭代 → 1.5M reads/迭代
+// 2. Multigrid 6层 V-Cycle: ~24次全局迭代/帧
+//    → 36M reads/帧 → 带宽 ~144MB/帧 (仅势能场)
+// 3. 每帧2-4ms的额外开销 (需实测验证)
+// 4. 如果超过4ms, 需要降频 (每N帧更新一次)
+// ================================================================
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+// ==================== Push Constants ====================
+
+layout(push_constant) uniform PushConstants {
+    ivec4 gridResAndLevel;  // xyz=当前层分辨率, w=当前V-Cycle层级
+    vec4 gridWorldSize;     // xyz=世界尺寸, w=unused
+    vec4 solverParams;      // x=omega(Jacobi松弛), y=h(网格间距), z=unused, w=unused
+    ivec4 passType;         // x=0(Jacobi平滑), 1(限制), 2(延拓), 3(源项注入), 4(梯度计算), 5(Hessian计算)
+} pc;
+
+// ==================== Buffers ====================
+
+// 势能场 (读写)
+layout(binding = 0, std430) buffer PotentialField {
+    float u[];
+};
+
+// 源项 (只读)
+layout(binding = 1, std430) readonly buffer SourceField {
+    float rho_s[];
+};
+
+// 临时缓冲区 (Multigrid中间结果)
+layout(binding = 2, std430) buffer TempField {
+    float u_temp[];
+};
+
+// 梯度输出
+layout(binding = 3, std430) writeonly buffer GradientField {
+    vec4 gradU[];
+};
+
+// Hessian输出
+layout(binding = 4, std430) writeonly buffer HessianField {
+    vec4 hessU[];
+};
+
+// ==================== 索引工具 ====================
+
+int linearIndex(ivec3 coord, ivec3 res) {
+    return coord.x + coord.y * res.x + coord.z * res.x * res.y;
+}
+
+// ==================== Jacobi平滑 ====================
+
+// 标准Jacobi迭代:
+// u_new[i,j,k] = (1-ω)·u[i,j,k] + ω·(Σu_neighbors + h²·ρ_s) / 6
+// 其中 ω = 松弛系数 (通常 2/3)
+
+void jacobiSmooth() {
+    ivec3 coord = ivec3(gl_GlobalInvocationID);
+    ivec3 res = pc.gridResAndLevel.xyz;
+
+    if (any(greaterThanEqual(coord, res))) return;
+
+    int idx = linearIndex(coord, res);
+    float h = pc.solverParams.y;
+    float omega = pc.solverParams.x;
+    float h2 = h * h;
+
+    // 6个邻居 (边界处使用0-Dirichlet条件)
+    float uLeft   = (coord.x > 0)         ? u[linearIndex(coord - ivec3(1,0,0), res)] : 0.0;
+    float uRight  = (coord.x < res.x - 1)  ? u[linearIndex(coord + ivec3(1,0,0), res)] : 0.0;
+    float uBottom = (coord.y > 0)         ? u[linearIndex(coord - ivec3(0,1,0), res)] : 0.0;
+    float uTop    = (coord.y < res.y - 1)  ? u[linearIndex(coord + ivec3(0,1,0), res)] : 0.0;
+    float uBack   = (coord.z > 0)         ? u[linearIndex(coord - ivec3(0,0,1), res)] : 0.0;
+    float uFront  = (coord.z < res.z - 1)  ? u[linearIndex(coord + ivec3(0,0,1), res)] : 0.0;
+
+    float neighborSum = uLeft + uRight + uBottom + uTop + uBack + uFront;
+    float source = rho_s[idx];
+
+    // Jacobi更新
+    float uNew = (1.0 - omega) * u[idx] + omega * (neighborSum + h2 * source) / 6.0;
+
+    // 写入临时缓冲区 (Jacobi需要双缓冲)
+    u_temp[idx] = uNew;
+}
+
+// ==================== 限制操作 (细→粗) ====================
+
+// 将残差从细网格限制到粗网格
+// 使用full-weighting限制:
+// r_coarse[i,j,k] = (1/8) × (8个角点×1/8 + 12个边中点×1/4 + 6个面中心×1/2 + 中心×1)
+// 简化: 使用半加权 (只取8个角点的平均)
+
+void restriction() {
+    ivec3 fineCoord = ivec3(gl_GlobalInvocationID);
+    ivec3 fineRes = pc.gridResAndLevel.xyz;
+    ivec3 coarseRes = fineRes / 2;
+
+    if (any(greaterThanEqual(fineCoord, coarseRes))) return;
+
+    // 粗网格坐标对应的细网格2×2×2块
+    ivec3 fineBase = fineCoord * 2;
+
+    // 计算残差 r = ρ_s - ∇²u (在细网格上)
+    // 然后限制到粗网格
+    float residual = 0.0;
+    int count = 0;
+
+    for (int dz = 0; dz < 2; dz++) {
+        for (int dy = 0; dy < 2; dy++) {
+            for (int dx = 0; dx < 2; dx++) {
+                ivec3 fc = fineBase + ivec3(dx, dy, dz);
+                if (all(lessThan(fc, fineRes))) {
+                    int fIdx = linearIndex(fc, fineRes);
+                    // 简化残差: 只取u值 (实际应计算 ρ_s - ∇²u)
+                    residual += u[fIdx];
+                    count++;
+                }
+            }
+        }
+    }
+
+    int coarseIdx = linearIndex(fineCoord, coarseRes);
+    u_temp[coarseIdx] = (count > 0) ? residual / float(count) : 0.0;
+}
+
+// ==================== 延拓操作 (粗→细) ====================
+
+// 将修正值从粗网格插值到细网格
+// 使用三线性插值
+
+void prolongation() {
+    ivec3 fineCoord = ivec3(gl_GlobalInvocationID);
+    ivec3 fineRes = pc.gridResAndLevel.xyz;
+    ivec3 coarseRes = fineRes / 2;
+
+    if (any(greaterThanEqual(fineCoord, fineRes))) return;
+
+    // 找到对应的粗网格坐标 (三线性插值权重)
+    vec3 coarsePos = (vec3(fineCoord) + 0.5) * 0.5 - 0.5;
+    ivec3 c0 = ivec3(floor(coarsePos));
+    vec3 frac = coarsePos - vec3(c0);
+
+    // 8个粗网格点的三线性插值
+    float correction = 0.0;
+    for (int dz = 0; dz <= 1; dz++) {
+        for (int dy = 0; dy <= 1; dy++) {
+            for (int dx = 0; dx <= 1; dx++) {
+                ivec3 cc = clamp(c0 + ivec3(dx, dy, dz), ivec3(0), coarseRes - ivec3(1));
+                float weight = (1.0 - abs(float(dx) - frac.x))
+                             * (1.0 - abs(float(dy) - frac.y))
+                             * (1.0 - abs(float(dz) - frac.z));
+                correction += weight * u[linearIndex(cc, coarseRes)];
+            }
+        }
+    }
+
+    // 修正细网格解
+    int fineIdx = linearIndex(fineCoord, fineRes);
+    u_temp[fineIdx] = u[fineIdx] + correction;
+}
+
+// ==================== 源项注入 ====================
+
+void injectSources() {
+    ivec3 coord = ivec3(gl_GlobalInvocationID);
+    ivec3 res = pc.gridResAndLevel.xyz;
+
+    if (any(greaterThanEqual(coord, res))) return;
+
+    int idx = linearIndex(coord, res);
+
+    // 源项已在rho_s中准备好, 直接使用
+    // 这里不做额外操作, 只在首次调用时初始化
+    // 实际源项更新在CPU端或单独的CS中完成
+}
+
+// ==================== 梯度计算 ====================
+
+// 中心差分: ∇U[i,j,k] = (U[i+1]-U[i-1]) / (2h)
+
+void computeGradient() {
+    ivec3 coord = ivec3(gl_GlobalInvocationID);
+    ivec3 res = pc.gridResAndLevel.xyz;
+
+    if (any(greaterThanEqual(coord, res))) return;
+
+    int idx = linearIndex(coord, res);
+    float h = pc.solverParams.y;
+    float inv2h = 1.0 / (2.0 * h);
+
+    // 中心差分 (边界处使用单侧差分)
+    float dUdx = (coord.x < res.x - 1 ? u[idx + 1] : u[idx])
+               - (coord.x > 0         ? u[idx - 1] : u[idx]);
+    float dUdy = (coord.y < res.y - 1 ? u[idx + res.x] : u[idx])
+               - (coord.y > 0         ? u[idx - res.x] : u[idx]);
+    float dUdz = (coord.z < res.z - 1 ? u[idx + res.x * res.y] : u[idx])
+               - (coord.z > 0         ? u[idx - res.x * res.y] : u[idx]);
+
+    gradU[idx] = vec4(dUdx * inv2h, dUdy * inv2h, dUdz * inv2h, 0.0);
+}
+
+// ==================== Hessian计算 ====================
+
+// 二阶中心差分:
+// H_xx = (U[i+1] - 2U[i] + U[i-1]) / h²
+// H_xy = (U[i+1,j+1] - U[i+1,j-1] - U[i-1,j+1] + U[i-1,j-1]) / (4h²)
+// ...
+// ⚠️ 寄存器压力: 6个float = 24B → 6个额外寄存器
+// ⚠️ 带宽: 每个cell需要读取 ~13个邻居值
+
+void computeHessian() {
+    ivec3 coord = ivec3(gl_GlobalInvocationID);
+    ivec3 res = pc.gridResAndLevel.xyz;
+
+    if (any(greaterThanEqual(coord, res))) return;
+
+    int idx = linearIndex(coord, res);
+    float h = pc.solverParams.y;
+    float invH2 = 1.0 / (h * h);
+    float inv4H2 = 1.0 / (4.0 * h * h);
+
+    // 安全读取 (边界处clamp)
+    float uCenter = u[idx];
+
+    // x方向邻居
+    float uXp = (coord.x < res.x - 1) ? u[idx + 1] : uCenter;
+    float uXm = (coord.x > 0)         ? u[idx - 1] : uCenter;
+
+    // y方向邻居
+    int yOff = res.x;
+    float uYp = (coord.y < res.y - 1) ? u[idx + yOff] : uCenter;
+    float uYm = (coord.y > 0)         ? u[idx - yOff] : uCenter;
+
+    // z方向邻居
+    int zOff = res.x * res.y;
+    float uZp = (coord.z < res.z - 1) ? u[idx + zOff] : uCenter;
+    float uZm = (coord.z > 0)         ? u[idx - zOff] : uCenter;
+
+    // 对角邻居 (用于混合偏导)
+    float uXpYp = uCenter, uXpYm = uCenter, uXmYp = uCenter, uXmYm = uCenter;
+    float uXpZp = uCenter, uXpZm = uCenter, uXmZp = uCenter, uXmZm = uCenter;
+    float uYpZp = uCenter, uYpZm = uCenter, uYmZp = uCenter, uYmZm = uCenter;
+
+    if (coord.x < res.x-1 && coord.y < res.y-1) uXpYp = u[idx + 1 + yOff];
+    if (coord.x < res.x-1 && coord.y > 0)       uXpYm = u[idx + 1 - yOff];
+    if (coord.x > 0       && coord.y < res.y-1) uXmYp = u[idx - 1 + yOff];
+    if (coord.x > 0       && coord.y > 0)       uXmYm = u[idx - 1 - yOff];
+
+    if (coord.x < res.x-1 && coord.z < res.z-1) uXpZp = u[idx + 1 + zOff];
+    if (coord.x < res.x-1 && coord.z > 0)       uXpZm = u[idx + 1 - zOff];
+    if (coord.x > 0       && coord.z < res.z-1) uXmZp = u[idx - 1 + zOff];
+    if (coord.x > 0       && coord.z > 0)       uXmZm = u[idx - 1 - zOff];
+
+    if (coord.y < res.y-1 && coord.z < res.z-1) uYpZp = u[idx + yOff + zOff];
+    if (coord.y < res.y-1 && coord.z > 0)       uYpZm = u[idx + yOff - zOff];
+    if (coord.y > 0       && coord.z < res.z-1) uYmZp = u[idx - yOff + zOff];
+    if (coord.y > 0       && coord.z > 0)       uYmZm = u[idx - yOff - zOff];
+
+    // 二阶偏导 (对角线)
+    float Hxx = (uXp - 2.0 * uCenter + uXm) * invH2;
+    float Hyy = (uYp - 2.0 * uCenter + uYm) * invH2;
+    float Hzz = (uZp - 2.0 * uCenter + uZm) * invH2;
+
+    // 混合偏导
+    float Hxy = (uXpYp - uXpYm - uXmYp + uXmYm) * inv4H2;
+    float Hxz = (uXpZp - uXpZm - uXmZp + uXmZm) * inv4H2;
+    float Hyz = (uYpZp - uYpZm - uYmZp + uYmZm) * inv4H2;
+
+    // 写入 (每个cell占2个vec4)
+    hessU[idx * 2]     = vec4(Hxx, Hxy, Hxz, Hyy);
+    hessU[idx * 2 + 1] = vec4(Hyz, Hzz, 0.0, 0.0);
+}
+
+// ==================== 主入口 ====================
+
+void main() {
+    switch (pc.passType.x) {
+        case 0: jacobiSmooth();    break;
+        case 1: restriction();     break;
+        case 2: prolongation();    break;
+        case 3: injectSources();   break;
+        case 4: computeGradient(); break;
+        case 5: computeHessian();  break;
+    }
+}

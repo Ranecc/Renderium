@@ -51,7 +51,7 @@ public class PerformanceModAdapter extends ModAdapter {
 
     /** 性能优化模组的主类全限定名（SodiumClientMod） */
     private static final String TARGET_MAIN_CLASS =
-        "me.jellysquid.mods.sodium.client.SodiumClientMod";"
+        "me.jellysquid.mods.sodium.client.SodiumClientMod";
 
     /** 模组加载状态缓存（避免重复反射检测） */
     private volatile boolean modLoadedCached = false;

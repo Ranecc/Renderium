@@ -87,38 +87,35 @@ public final class DefaultModDetectionEngine implements ModDetectionEngine {
         /** 获取诊断消息 */
         public String getDiagnosticMessage() {
             StringBuilder sb = new StringBuilder();
-            sb.append("═══ Renderium 兼容性检查结果 ═══
-");
+            sb.append("═══ Renderium 兼容性检查结果 ═══\n");
 
             if (!blockingMods.isEmpty()) {
-                "\");
+                sb.append("\n");
                 for (String mod : blockingMods) {
                     ModInfo info = modInfoLookup.apply(mod);
-                    sb.append(String.format("   • %s - %s
-", mod,"
+                    sb.append(String.format("   • %s - %s\n", mod,
                             info != null ? info.description() : "未知"));
                 }
             }
 
             if (!warningMods.isEmpty()) {
-                "\");
+                sb.append("\n");
                 for (String mod : warningMods) {
                     ModInfo info = modInfoLookup.apply(mod);
-                    sb.append(String.format("   • %s - %s
-", mod,"
+                    sb.append(String.format("   • %s - %s\n", mod,
                             info != null ? info.description() : "未知"));
                 }
             }
 
             if (!safeMods.isEmpty()) {
-                "\", safeMods.size()));
+                sb.append(String.format("安全模组: %d\n", safeMods.size()));
                 for (String mod : safeMods) {
-                    sb.append(String.format("   • %s
-", mod));
+                    sb.append(String.format("   • %s\n", mod));
                 }
             }
 
-            "\").append(isShaderSystemAllowed()\n\": \\"🔴 结论: 光影系统将禁用，使用兼容模式\\");\""
+            sb.append("\n").append(isShaderSystemAllowed() ? "✅" : "🔴 结论: 光影系统将禁用，使用兼容模式");
+            sb.append("\n");
 
             return sb.toString();
         }

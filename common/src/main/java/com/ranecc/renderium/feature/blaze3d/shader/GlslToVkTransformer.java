@@ -176,8 +176,7 @@ public final class GlslToVkTransformer {
             }
         }
         if (!hasVersion) {
-            output.append("#version 450
-");
+            output.append("#version 450\n");
         }
 
         // 2. 逐 Token 处理
@@ -210,8 +209,7 @@ public final class GlslToVkTransformer {
         // 3. 如果使用了 gl_FragColor 但还没声明 outputColor，追加声明
         if (outputColorDeclared && !hasOutputDeclaration(output.toString())) {
             output.insert(findInsertPositionForOutput(output.toString()),
-                    "layout(location = 0) out vec4 outputColor;"
-");
+                    "layout(location = 0) out vec4 outputColor;\n");
         }
 
         return new TransformationResult(
@@ -310,7 +308,7 @@ public final class GlslToVkTransformer {
         if (directive.startsWith("#version")) {
             // 将旧版版本号升级到 450
             String upgraded = directive.replaceAll("#version\\s+\\d+\\s*(core|es)?", "#version 450");
-            "\");
+            output.append(upgraded + "\n");
             return;
         }
 
@@ -318,12 +316,11 @@ public final class GlslToVkTransformer {
             warnings.add(new TransformWarning(token.line(),
                     "#include 未被预处理器展开 (应在预处理阶段处理)",
                     TransformWarning.Level.WARN));
-            "\");
             return;
         }
 
         // #define / #undef / #if / #ifdef / #ifndef / #endif / #else / #elif: 原样保留
-        "\");
+        output.append(directive + "\n");
     }
 
     // ==================== 转换规则实现 ====================
@@ -336,7 +333,7 @@ public final class GlslToVkTransformer {
             case "texture2D", "texture2DLod", "texture2DProj",
                  "textureCube", "textureCubeLod",
                  "texture3D", "texture3DLod",
-                 "texture1D", "texture1DLod" -> "texture";"
+                 "texture1D", "texture1DLod" -> "texture";
             case "ftransform" -> {
                 warnings.add(new TransformWarning(0,
                         "ftransform() 在 Vulkan 中不支持，需手动实现 MVP 变换",
@@ -371,7 +368,7 @@ public final class GlslToVkTransformer {
             case "gl_PointSize" -> "gl_PointSize";           // Vulkan 可用
             default -> {
                 warnings.add(new TransformWarning(0,
-                        "未知内置变量: " + builtin +"
+                        "未知内置变量: " + builtin +
                                 " (可能不被 Vulkan GLSL 支持)",
                         TransformWarning.Level.WARN));
                 yield builtin;
@@ -391,8 +388,7 @@ public final class GlslToVkTransformer {
     private int findInsertPositionForOutput(String code) {
         int mainPos = code.indexOf("void main()");
         if (mainPos > 0) {
-            int nlPos = code.lastIndexOf('
-', mainPos);
+            int nlPos = code.lastIndexOf('\n', mainPos);
             return nlPos > 0 ? nlPos + 1 : 0;
         }
         return code.length();

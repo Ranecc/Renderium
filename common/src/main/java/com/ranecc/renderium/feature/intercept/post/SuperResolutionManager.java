@@ -410,7 +410,7 @@ public final class SuperResolutionManager {
 
             // ======== 失败：尝试降级到下一个技术 ========
             LOGGER.warning(String.format(
-                "%s 处理失败，开始降级...", currentTech.getDisplayName()"
+                "%s 处理失败，开始降级...", currentTech.getDisplayName()
             ));
 
             SROutput fallbackResult = tryFallbackTechnologies(context, currentTech);

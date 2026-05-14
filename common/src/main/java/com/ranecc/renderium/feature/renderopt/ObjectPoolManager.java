@@ -607,8 +607,7 @@ public class ObjectPoolManager implements AutoCloseable {
      */
     public String formatDetailedStats() {
         StringBuilder sb = new StringBuilder();
-        sb.append("=== Global Pools ===
-");
+        sb.append("=== Global Pools ===\n");
         for (ObjectPool<?> pool : globalPools.values()) {
             "\");
         }

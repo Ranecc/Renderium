@@ -404,7 +404,7 @@ public class VertexFormatCompressor {
         } catch (Exception e) {
             // 压缩失败时返回原始数据（优雅降级）
             LOGGER.warning(String.format(
-                    "顶点压缩异常，返回原始数据: %s", e.getMessage()"
+                    "顶点压缩异常，返回原始数据: %s", e.getMessage()
             ));
             standardVertices.position(originalPosition); // 恢复位置
             return standardVertices;

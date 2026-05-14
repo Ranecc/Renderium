@@ -1,0 +1,218 @@
+#version 450
+// Renderium - AsyncComputeCuller GLSL Compute Shader
+// GPU 加速视锥体剔除 (Frustum Culling)
+// 基于 VisibilityEncoding 的区段可见性计算
+
+// ==================== 工作组配置 ====================
+// LOCAL_SIZE_X = 256: 每个工作组处理 256 个区段
+layout(local_size_x = 256) in;
+
+// ==================== 输入 SSBO ====================
+// Binding 0: 区段可见性编码数据（来自 VisibilityEncoding）
+layout(std430, binding = 0) readonly buffer VisibilityData {
+    // 每个区段的可见性编码（48-bit 压缩到 uint）
+    uint visibilityCodes[];
+};
+
+// Binding 1: 区段位置数据（世界坐标）
+layout(std430, binding = 1) readonly buffer SectionPositions {
+    // 每个区段的位置 (x, y, z, padding)
+    ivec4 sectionPositions[];
+};
+
+// ==================== 输出 SSBO ====================
+// Binding 2: 可见性输出掩码（bitfield）
+layout(std430, binding = 2) writeonly buffer OutputVisibility {
+    // 输出位域：每个 bit 代表一个区段是否可见
+    // 0 = 不可见（被剔除），1 = 可见（需要渲染）
+    uint visibleMask[];
+};
+
+// ==================== UBO 参数 ====================
+// Binding 3: 相机参数
+layout(std140, binding = 3) uniform CameraParams {
+    vec3 cameraPos;        // 相机位置（世界坐标）
+    float maxDistance;      // 最大渲染距离（方块单位）
+    uint sectionCount;     // 总区段数量
+    float padding0;         // 对齐填充
+    
+    // 视锥体平面参数（6 个平面：左、右、上、下、近、远）
+    // 每个平面用 (normal.xyz, distance) 表示
+    vec4 frustumPlanes[6];   // 视锥体 6 个平面
+    mat4 viewProjectionMatrix; // 视图投影矩阵（可选，用于精确裁剪）
+    
+    // 性能调优参数
+    float cullDistance;       // 距离剔除阈值（超过此距离直接剔除）
+    uint useDistanceCull;     // 是否启用距离剔除 (0/1)
+    uint useFrustumCull;      // 是否启用视锥体剔除 (0/1)
+    uint padding1;
+};
+
+// ==================== 常量定义 ====================
+// 区段大小（方块数）
+const int SECTION_SIZE = 16;
+
+// 距离剔除的平方阈值（避免 sqrt 计算）
+const float MAX_RENDER_DISTANCE_SQ = 65536.0f; // 256^2
+
+// ==================== 工具函数 ====================
+
+/**
+ * 计算点到平面的有符号距离
+ *
+ * @param point   三维点坐标
+ * @param plane   平面参数 (normal.xyz, distance)
+ * @return 有符号距离（正值 = 平面前方，负值 = 平面后方）
+ */
+float signedDistanceToPlane(vec3 point, vec4 plane) {
+    return dot(point, plane.xyz) + plane.w;
+}
+
+/**
+ * 点是否在视锥体内（粗略检测）
+ *
+ * 使用 6 个平面测试，如果点在所有平面的正面则可见
+ *
+ * @param position 世界坐标位置
+ * @return true 如果在视锥体内或边界上
+ */
+bool isInsideFrustumRough(vec3 position) {
+    // 测试 6 个视锥体平面
+    for (int i = 0; i < 6; i++) {
+        if (signedDistanceToPlane(position, frustumPlanes[i]) < 0.0f) {
+            return false;  // 在某个平面后方，不可见
+        }
+    }
+    return true;  // 在所有平面的前方，可见
+}
+
+/**
+ * 精确的视锥体测试（使用 AABB 与视锥体相交测试）
+ *
+ * 对于 16x16x16 的区段，测试其 AABB 是否与视锥体相交
+ *
+ * @param sectionPos 区段坐标（区块坐标，乘以 16 得到方块坐标）
+ * @return true 如果区段可能与视锥体相交
+ */
+bool isAABBInsideFrustum(ivec3 sectionPos) {
+    // 将区段坐标转换为世界坐标中心点
+    vec3 center = vec3(sectionPos) * float(SECTION_SIZE) + vec3(SECTION_SIZE / 2);
+    float halfSize = float(SECTION_SIZE) / 2.0f;
+    
+    // 简化版本：只测试中心点（快速但不够精确）
+    // 完整版本需要测试 AABB 的 8 个顶点或使用分离轴定理(SAT)
+    return isInsideFrustumRough(center);
+}
+
+/**
+ * 距离剔除测试
+ *
+ * @param sectionPos 区段坐标
+ * @return true 如果距离在可接受范围内
+ */
+bool isWithinRenderDistance(ivec3 sectionPos) {
+    vec3 sectionCenter = vec3(sectionPos) * float(SECTION_SIZE);
+    vec3 diff = sectionCenter - cameraPos;
+    float distSq = dot(diff, diff);
+    
+    // 使用平方距离避免 sqrt 开销
+    return distSq < (maxDistance * maxDistance);
+}
+
+/**
+ * 快速距离剔除（基于预设阈值）
+ *
+ * @param sectionPos 区段坐标
+ * @return true 如果距离小于 cullDistance
+ */
+bool quickDistanceCull(ivec3 sectionPos) {
+    vec3 sectionCenter = vec3(sectionPos) * float(SECTION_SIZE);
+    vec3 diff = sectionCenter - cameraPos;
+    float distSq = dot(diff, diff);
+    float thresholdSq = cullDistance * cullDistance;
+    
+    return distSq > thresholdSq;
+}
+
+/**
+ * 解码 VisibilityEncoding 的可见性信息
+ *
+ * VisibilityEncoding 使用 48-bit 编码存储每个区段的可见性状态。
+ * 这里我们简化处理：非零值表示可能可见。
+ *
+ * @param encodedCode 编码后的可见性值
+ * @return true 如果编码表明该区段可能可见
+ */
+bool decodeVisibilityCode(uint encodedCode) {
+    // 简化实现：非零编码表示可能可见
+    // 完整实现应该解码具体的可见性位域
+    return encodedCode != 0u;
+}
+
+// ==================== 主函数 ====================
+
+void main() {
+    // 获取当前工作项的全局索引（对应区段 ID）
+    uint globalIdx = gl_GlobalInvocationID.x;
+    
+    // 边界检查：防止越界访问
+    if (globalIdx >= sectionCount) {
+        return;
+    }
+    
+    // 初始状态：不可见（被剔除）
+    bool isVisible = false;
+    
+    // ===== 步骤 1: 读取区段位置 =====
+    ivec3 secPos = sectionPositions[globalIdx].xyz;
+    
+    // ===== 步骤 2: 距离剔除（快速拒绝）=====
+    if (useDistanceCull != 0u) {
+        // 快速距离剔除
+        if (quickDistanceCull(secPos)) {
+            // 超过剔除距离，直接标记为不可见
+            isVisible = false;
+            goto WRITE_RESULT;
+        }
+        
+        // 精确距离检查
+        if (!isWithinRenderDistance(secPos)) {
+            isVisible = false;
+            goto WRITE_RESULT;
+        }
+    }
+    
+    // ===== 步骤 3: 视锥体剔除 =====
+    if (useFrustumCull != 0u) {
+        // AABB-视锥体相交测试
+        if (!isAABBInsideFrustum(secPos)) {
+            isVisible = false;
+            goto WRITE_RESULT;
+        }
+    }
+    
+    // ===== 步骤 4: VisibilityEncoding 检查 =====
+    // 从预计算的可见性编码中获取信息
+    uint visCode = visibilityCodes[globalIdx];
+    if (!decodeVisibilityCode(visCode)) {
+        // VisibilityEncoding 表明该区段不可见（被遮挡等）
+        isVisible = false;
+        goto WRITE_RESULT;
+    }
+    
+    // ===== 所有测试通过，区段可见 =====
+    isVisible = true;
+    
+WRITE_RESULT:
+    // ===== 写入结果到输出 SSBO =====
+    // 计算输出的 word 和 bit 位置
+    uint wordIdx = globalIdx / 32u;
+    uint bitIdx = globalIdx % 32u;
+    
+    // 原子操作设置对应的 bit
+    if (isVisible) {
+        atomicOr(visibleMask[wordIdx], (1u << bitIdx));
+    } else {
+        atomicAnd(visibleMask[wordIdx], ~(1u << bitIdx));
+    }
+}

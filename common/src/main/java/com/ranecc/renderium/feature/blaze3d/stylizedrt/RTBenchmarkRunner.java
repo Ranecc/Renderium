@@ -471,119 +471,69 @@ public class RTBenchmarkRunner {
      */
     public String generateEngineeringConstraintReport() {
         StringBuilder sb = new StringBuilder();
-        sb.append("╔══════════════════════════════════════════════════════════╗
-");
-        sb.append("║     风格化光追 - 工程约束分析报告 (实话实说版)           ║
-");
-        sb.append("╠══════════════════════════════════════════════════════════╣
-");
-        sb.append("║                                                          ║
-");
-        sb.append("║ ⚠ 之前回避的关键问题，现在正面面对:                      ║
-");
-        sb.append("║                                                          ║
-");
+        sb.append("╔══════════════════════════════════════════════════════════╗\n");
+        sb.append("║     风格化光追 - 工程约束分析报告 (实话实说版)           ║\n");
+        sb.append("╠══════════════════════════════════════════════════════════╣\n");
+        sb.append("║                                                          ║\n");
+        sb.append("║ ⚠ 之前回避的关键问题，现在正面面对:                      ║\n");
+        sb.append("║                                                          ║\n");
 
         // 1. 显存带宽
-        sb.append("║ 1. 显存带宽风暴                                          ║
-");
-        sb.append("║    每步每像素读取: U(4B)+∇U(12B)+H(24B)+A(32B)=72B     ║
-");
-        sb.append("║    1080p×128步×72B = 12.4 GB/帧                         ║
-");
-        sb.append("║    RTX 5060带宽 ~480 GB/s → 带宽限制 ~38fps             ║
-");
-        sb.append("║    → FP16可降至52B/步 → ~8.9 GB/帧 → ~53fps            ║
-");
-        sb.append("║    → 但FP16 Hessian精度损失需实测验证                    ║
-");
-        sb.append("║                                                          ║
-");
+        sb.append("║ 1. 显存带宽风暴                                          ║\n");
+        sb.append("║    每步每像素读取: U(4B)+∇U(12B)+H(24B)+A(32B)=72B     ║\n");
+        sb.append("║    1080p×128步×72B = 12.4 GB/帧                         ║\n");
+        sb.append("║    RTX 5060带宽 ~480 GB/s → 带宽限制 ~38fps             ║\n");
+        sb.append("║    → FP16可降至52B/步 → ~8.9 GB/帧 → ~53fps            ║\n");
+        sb.append("║    → 但FP16 Hessian精度损失需实测验证                    ║\n");
+        sb.append("║                                                          ║\n");
 
         // 2. Warp Divergence
-        sb.append("║ 2. Warp Divergence (线程束分化)                          ║
-");
-        sb.append("║    自适应步长 = 同一warp内线程走不同步数                 ║
-");
-        sb.append("║    最坏情况: 效率降至50% (一半线程空等)                  ║
-");
-        sb.append("║    保守估计: 60-75%效率                                  ║
-");
-        sb.append("║    → 固定步长+注解跳过 可能比自适应步长更快              ║
-");
-        sb.append("║    → 需要实测对比，不能想当然                            ║
-");
-        sb.append("║                                                          ║
-");
+        sb.append("║ 2. Warp Divergence (线程束分化)                          ║\n");
+        sb.append("║    自适应步长 = 同一warp内线程走不同步数                 ║\n");
+        sb.append("║    最坏情况: 效率降至50% (一半线程空等)                  ║\n");
+        sb.append("║    保守估计: 60-75%效率                                  ║\n");
+        sb.append("║    → 固定步长+注解跳过 可能比自适应步长更快              ║\n");
+        sb.append("║    → 需要实测对比，不能想当然                            ║\n");
+        sb.append("║                                                          ║\n");
 
         // 3. 寄存器压力
-        sb.append("║ 3. Hessian寄存器压力                                     ║
-");
-        sb.append("║    6×float32 Hessian = 6寄存器                           ║
-");
-        sb.append("║    + 梯度3 + 光线状态10 + 其他5 = 24寄存器/线程          ║
-");
-        sb.append("║    RTX 5060: 65536 reg/SM → occupancy ≈ 75%             ║
-");
-        sb.append("║    如果超过32 reg → occupancy降至50% (严重!)            ║
-");
-        sb.append("║    → 可能需要将Hessian存shared memory而非寄存器          ║
-");
-        sb.append("║                                                          ║
-");
+        sb.append("║ 3. Hessian寄存器压力                                     ║\n");
+        sb.append("║    6×float32 Hessian = 6寄存器                           ║\n");
+        sb.append("║    + 梯度3 + 光线状态10 + 其他5 = 24寄存器/线程          ║\n");
+        sb.append("║    RTX 5060: 65536 reg/SM → occupancy ≈ 75%             ║\n");
+        sb.append("║    如果超过32 reg → occupancy降至50% (严重!)            ║\n");
+        sb.append("║    → 可能需要将Hessian存shared memory而非寄存器          ║\n");
+        sb.append("║                                                          ║\n");
 
         // 4. AMR光线泄漏
-        sb.append("║ 4. AMR跨层级光线泄漏                                     ║
-");
-        sb.append("║    粗cell步长可能跳过细cell中的薄墙/地板                 ║
-");
-        sb.append("║    解决方案:                                             ║
-");
-        sb.append("║    a) 保守步长钳位: step ≤ cellSize (抵消自适应优势)     ║
-");
-        sb.append("║    b) 细化边界处强制小步 (增加分支复杂度)                ║
-");
-        sb.append("║    c) BVH后备: AMR粗筛 + BVH精确检测 (增加内存)         ║
-");
-        sb.append("║    → 方案c)最可行，但需要额外BVH构建开销                 ║
-");
-        sb.append("║                                                          ║
-");
+        sb.append("║ 4. AMR跨层级光线泄漏                                     ║\n");
+        sb.append("║    粗cell步长可能跳过细cell中的薄墙/地板                 ║\n");
+        sb.append("║    解决方案:                                             ║\n");
+        sb.append("║    a) 保守步长钳位: step ≤ cellSize (抵消自适应优势)     ║\n");
+        sb.append("║    b) 细化边界处强制小步 (增加分支复杂度)                ║\n");
+        sb.append("║    c) BVH后备: AMR粗筛 + BVH精确检测 (增加内存)         ║\n");
+        sb.append("║    → 方案c)最可行，但需要额外BVH构建开销                 ║\n");
+        sb.append("║                                                          ║\n");
 
         // 5. Poisson求解开销
-        sb.append("║ 5. Poisson方程实时求解开销                               ║
-");
-        sb.append("║    64³网格 Multigrid V-Cycle:                            ║
-");
-        sb.append("║    6层 × (2次pre-smooth + 2次post-smooth) = 24次迭代     ║
-");
-        sb.append("║    每次迭代: 64³=262144个cell的Jacobi松弛                ║
-");
-        sb.append("║    估计GPU耗时: 2-4ms/帧 (需实测)                       ║
-");
-        sb.append("║    → 如果超过4ms, 势能场更新频率需降至每N帧一次          ║
-");
-        sb.append("║    → 降频后时间相干性复用变得关键                        ║
-");
-        sb.append("║                                                          ║
-");
+        sb.append("║ 5. Poisson方程实时求解开销                               ║\n");
+        sb.append("║    64³网格 Multigrid V-Cycle:                            ║\n");
+        sb.append("║    6层 × (2次pre-smooth + 2次post-smooth) = 24次迭代     ║\n");
+        sb.append("║    每次迭代: 64³=262144个cell的Jacobi松弛                ║\n");
+        sb.append("║    估计GPU耗时: 2-4ms/帧 (需实测)                       ║\n");
+        sb.append("║    → 如果超过4ms, 势能场更新频率需降至每N帧一次          ║\n");
+        sb.append("║    → 降频后时间相干性复用变得关键                        ║\n");
+        sb.append("║                                                          ║\n");
 
         // 6. 风格化 vs 精确性的矛盾
-        sb.append("║ 6. 风格化Φ vs Rayleigh精确性的逻辑矛盾                   ║
-");
-        sb.append("║    Rayleigh商: 引导光线走最短路径 (Fermat原理)           ║
-");
-        sb.append("║    风格化Φ: 让光线故意走歪路 (非真实感渲染)              ║
-");
-        sb.append("║    → 两者是互斥的权重拉扯，不是同时解决的卖点            ║
-");
-        sb.append("║    → 实现上需要显式的模式切换，不能混为一谈              ║
-");
-        sb.append("║                                                          ║
-");
+        sb.append("║ 6. 风格化Φ vs Rayleigh精确性的逻辑矛盾                   ║\n");
+        sb.append("║    Rayleigh商: 引导光线走最短路径 (Fermat原理)           ║\n");
+        sb.append("║    风格化Φ: 让光线故意走歪路 (非真实感渲染)              ║\n");
+        sb.append("║    → 两者是互斥的权重拉扯，不是同时解决的卖点            ║\n");
+        sb.append("║    → 实现上需要显式的模式切换，不能混为一谈              ║\n");
+        sb.append("║                                                          ║\n");
 
-        sb.append("╚══════════════════════════════════════════════════════════╝
-");
+        sb.append("╚══════════════════════════════════════════════════════════╝\n");
 
         return sb.toString();
     }

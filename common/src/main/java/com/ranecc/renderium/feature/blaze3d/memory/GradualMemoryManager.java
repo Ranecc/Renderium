@@ -218,28 +218,20 @@ public final class GradualMemoryManager {
      */
     public String getStatusReport() {
         StringBuilder sb = new StringBuilder();
-        sb.append("=== Gradual Memory Manager Status ===
-");
-        sb.append(String.format("Enabled: %s
-", enabled));
-        sb.append(String.format("Initialized: %s
-", initialized));
-        sb.append(String.format("Current Level: %s (%s)
-",
+        sb.append("=== Gradual Memory Manager Status ===\n");
+        sb.append(String.format("Enabled: %s\n", enabled));
+        sb.append(String.format("Initialized: %s\n", initialized));
+        sb.append(String.format("Current Level: %s (%s)\n",
                 currentLevel.name(), currentLevel.description()));
-        sb.append(String.format("Active Strategy: %s
-",
+        sb.append(String.format("Active Strategy: %s\n",
                 cleanupStrategy != null ? cleanupStrategy.getName() : "None"));
-        sb.append(String.format("Usage Ratio: %.1f%%
-", getCurrentUsageRatio() * 100));
+        sb.append(String.format("Usage Ratio: %.1f%%\n", getCurrentUsageRatio() * 100));
 
-        "");
-sb.append(resourceTracker.getStatusReport());";
+        sb.append(resourceTracker.getStatusReport());
 
         // AsyncResourceLoader 统计
         AsyncResourceLoader loader = AsyncResourceLoader.getInstance();
-        sb.append(String.format("--- Async Loader: cache=%d, paused=%s ---
-",
+        sb.append(String.format("--- Async Loader: cache=%d, paused=%s ---\n",
                 loader.getCacheSize(), loader.isPaused()));
 
         return sb.toString();

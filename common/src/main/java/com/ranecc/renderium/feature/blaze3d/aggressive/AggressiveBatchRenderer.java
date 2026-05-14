@@ -595,7 +595,7 @@ public class AggressiveBatchRenderer {
         } catch (Exception e) {
             // 渲染失败时记录错误但不崩溃（优雅降级）
             LOGGER.severe(String.format(
-                    "批次渲染异常: %s", e.getMessage()"
+                    "批次渲染异常: %s", e.getMessage()
             ));
         }
     }

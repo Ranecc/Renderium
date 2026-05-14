@@ -181,7 +181,7 @@ public final class GlslLexer {
             tokens.add(scanOperator());
         }
 
-        tokens.add(new GlslToken(TokenType.EOF, ", currentLine, currentColumn));
+        tokens.add(new GlslToken(TokenType.EOF, "", currentLine, currentColumn));
         return tokens;
     }
 
@@ -195,8 +195,7 @@ public final class GlslLexer {
         consume(); // '/'
         StringBuilder sb = new StringBuilder("//");
 
-        while (position < length && peek() != '
-') {
+        while (position < length && peek() != '\n') {
             sb.append(consume());
         }
         return new GlslToken(TokenType.COMMENT_LINE, sb.toString(), startLine, startCol);
@@ -230,8 +229,7 @@ public final class GlslLexer {
 
         do {
             sb.append(consume());
-        } while (position < length && peek() != '
-' && peek() != '\r');
+        } while (position < length && peek() != '\n' && peek() != '\r');
 
         return new GlslToken(TokenType.PREPROCESSOR, sb.toString(), startLine, startCol);
     }
@@ -344,7 +342,7 @@ public final class GlslLexer {
 
             if (Set.of("++", "--", "<<", ">>", "<=", ">=", "==", "!=",
                             "&&", "||", "+=", "-=", "*=", "/=", "%=",
-                            "&=", "|=", "^=", "^^", "::<").contains(twoChar)) {"
+                            "&=", "|=", "^=", "^^", "::<").contains(twoChar)) {
                 consume(); // 消耗第二个字符
                 return new GlslToken(TokenType.OPERATOR, twoChar, startLine, startCol);
             }
@@ -362,8 +360,7 @@ public final class GlslLexer {
     /** 消耗当前字符并更新行列号 */
     private char consume() {
         char c = source.charAt(position++);
-        if (c == '
-') {
+        if (c == '\n') {
             currentLine++;
             currentColumn = 1;
         } else {

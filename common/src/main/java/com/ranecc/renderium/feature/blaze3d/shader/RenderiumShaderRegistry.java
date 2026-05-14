@@ -65,7 +65,7 @@ public final class RenderiumShaderRegistry {
         Long prev = modules.put(location, shaderModule);
         if (prev != null && prev != shaderModule) {
             LOGGER.fine("Shader registry 更新: " + location +
-                    " → 0x" + Long.toHexString(shaderModule) +"
+                    " → 0x" + Long.toHexString(shaderModule) +
                     " (旧: 0x" + Long.toHexString(prev) + ")");
         }
     }

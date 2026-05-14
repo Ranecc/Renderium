@@ -59,7 +59,7 @@ public final class EmergencyCleanupStrategy implements CleanupStrategy {
         this.tracker = ResourceTracker.getInstance();
         try {
             this.asyncLoader = Class.forName(
-                    "com.renderium.module.impl.blaze3d.memory.AsyncResourceLoader")"
+                    "com.renderium.module.impl.blaze3d.memory.AsyncResourceLoader")
                     .getMethod("getInstance").invoke(null);
         } catch (Exception ignored) {
             // AsyncResourceLoader 可能尚未初始化

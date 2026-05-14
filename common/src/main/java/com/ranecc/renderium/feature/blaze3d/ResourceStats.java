@@ -591,34 +591,24 @@ public final class ResourceStats {
     public static String formatReport() {
         StringBuilder report = new StringBuilder();
 
-        report.append("╔══════════════════════════════════════════╗
-");
-        report.append("║        Resource Statistics Report        ║
-");
-        report.append("╚══════════════════════════════════════════╝
+        report.append("╔══════════════════════════════════════════╗\n");
+        report.append("║        Resource Statistics Report        ║\n");
+        report.append("╚══════════════════════════════════════════╝\n");
 
-");
-
-        report.append(String.format("Status: %s | Active Resources: %d | Types: %d
-
-",
+        report.append(String.format("Status: %s | Active Resources: %d | Types: %d\n",
                 enabled.get() ? "ENABLED" : "DISABLED",
                 activeResources.size(),
                 typeStatistics.size()));
 
         if (typeStatistics.isEmpty()) {
-            report.append("(No data recorded yet)
-");
+            report.append("(No data recorded yet)\n");
             return report.toString();
         }
 
         // 表头
-        report.append("┌──────────────────────────────────────────────────────────────────────────────────┐
-");
-        report.append("│ Type          Acquire  Release  Active  Peak  PoolHit  Miss  HitRate  AvgAcq    Total│
-");
-        report.append("├──────────────────────────────────────────────────────────────────────────────────┤
-");
+        report.append("┌──────────────────────────────────────────────────────────────────────────────────┐\n");
+        report.append("│ Type          Acquire  Release  Active  Peak  PoolHit  Miss  HitRate  AvgAcq    Total│\n");
+        report.append("├──────────────────────────────────────────────────────────────────────────────────┤\n");
 
         for (var entry : typeStatistics.entrySet()) {
             ResourceTypeStatistics stats = entry.getValue();
@@ -626,8 +616,7 @@ public final class ResourceStats {
             double avgAcq = getAverageAcquireTimeUs(entry.getKey());
 
             report.append(String.format(
-                    "│ %-12s %7d  %7d  %6d  %5d  %7d  %5d  %6.1f%%  %7.1fµs  %8s │"
-",
+                    "│ %-12s %7d  %7d  %6d  %5d  %7d  %5d  %6.1f%%  %7.1fµs  %8s │\n",
                     truncateString(entry.getKey(), 12),
                     stats.acquireCount.get(),
                     stats.releaseCount.get(),
@@ -641,16 +630,14 @@ public final class ResourceStats {
             ));
         }
 
-        report.append("└──────────────────────────────────────────────────────────────────────────────────┘
-");
+        report.append("└──────────────────────────────────────────────────────────────────────────────────┘\n");
 
         // 泄露检测
         var leaks = detectPotentialLeaks(LEAK_DETECTION_THRESHOLD_MS);
         if (!leaks.isEmpty()) {
-            "\",\nleaks.size(), LEAK_DETECTION_THRESHOLD_MS));
+            report.append(String.format("检测到 %d 个潜在泄露 (阈值=%dms)\n", leaks.size(), LEAK_DETECTION_THRESHOLD_MS));
             for (String leak : leaks) {
-                report.append(String.format("  - %s
-", leak));
+                report.append(String.format("  - %s\n", leak));
             }
         }
 

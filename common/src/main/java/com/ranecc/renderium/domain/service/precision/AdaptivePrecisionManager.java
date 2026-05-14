@@ -261,7 +261,7 @@ public final class AdaptivePrecisionManager {
     public AdaptivePrecisionManager(int tileSize) {
         if (tileSize < 8 || (tileSize & (tileSize - 1)) != 0) {
             throw new IllegalArgumentException(
-                "Tile大小必须 >= 8 且为2的幂次方: " + tileSize"
+                "Tile大小必须 >= 8 且为2的幂次方: " + tileSize
             );
         }
         this.tileSize = tileSize;

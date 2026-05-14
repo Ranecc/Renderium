@@ -244,20 +244,16 @@ public final class ResourceTracker {
      */
     public String getStatusReport() {
         StringBuilder sb = new StringBuilder();
-        sb.append("=== Resource Tracker Status ===
-");
-        sb.append(String.format("Tracked Resources: %d
-", accessRecords.size()));
-        sb.append(String.format("LRU Queue Size: %d
-", lruQueue.size()));
+        sb.append("=== Resource Tracker Status ===\n");
+        sb.append(String.format("Tracked Resources: %d\n", accessRecords.size()));
+        sb.append(String.format("LRU Queue Size: %d\n", lruQueue.size()));
 
-        "\");
+        sb.append("\n");
         for (ResourceType type : ResourceType.values()) {
             int count = getCountByType(type);
             long bytes = getBytesByType(type);
             if (count > 0) {
-                sb.append(String.format("  %-20s %6d items %8d KB
-",
+                sb.append(String.format("  %-20s %6d items %8d KB\n",
                         type.description, count, bytes / 1024));
             }
         }
@@ -270,7 +266,7 @@ public final class ResourceTracker {
             if (isHotData(info, now)) hotCount++;
             else coldCount++;
         }
-        "\", hotCount, coldCount));
+        sb.append(String.format("  Hot: %d | Cold: %d\n", hotCount, coldCount));
 
         return sb.toString();
     }

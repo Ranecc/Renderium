@@ -1,0 +1,343 @@
+// ============================================================
+// Lyapunov 质量检测 Compute Shader (GPU 实时版本)
+// ============================================================
+//
+// 基于 TOPS v2.5 自修复系统 §2.3 的 Lyapunov 稳定性理论
+//
+// 功能：
+//   - 计算图像梯度能量 V = ∫‖∇I‖² dz
+//   - 使用 Sobel 算子进行梯度计算
+//   - 通过并行归约求和实现高性能
+//
+// 性能目标：
+//   - 1080p 图像延迟 < 1ms
+//   - 使用共享内存优化带宽利用率
+//   - 支持任意尺寸的输入纹理
+//
+// 使用方式：
+//   1. 绑定输入纹理到 layout(binding = 0)
+//   2. 创建输出 SSBO (layout(binding = 1)) 存储结果
+//   3. Dispatch: (width + 15) / 16, (height + 15) / 16, 1
+//   4. 从 SSBO 读取梯度能量值
+//
+// 集成要求：
+//   - OpenGL 4.3+ / Vulkan GLSL (compute shader)
+//   - 需要 NanGuardShader 数值保护库
+//
+// @see LyapunovQualityChecker.java (CPU 版本)
+// @see nanguard.glsl (数值保护)
+// ============================================================
+
+#version 450 core
+
+// ============================================================
+// 扩展和配置
+// ============================================================
+
+// 启用 GL_ARB_shader_group_vote 以支持 vote 优化（可选）
+#extension GL_ARB_shader_group_vote : enable
+
+// 工作组大小配置
+// 推荐使用 16×16 或 8×8 以平衡寄存器使用率和 occupancy
+#ifndef WORKGROUP_SIZE_X
+#define WORKGROUP_SIZE_X 16
+#endif
+
+#ifndef WORKGROUP_SIZE_Y
+#define WORKGROUP_SIZE_Y 16
+#endif
+
+layout(local_size_x = WORKGROUP_SIZE_X, local_size_y = WORKGROUP_SIZE_Y, local_size_z = 1) in;
+
+// ============================================================
+// 资源绑定
+// ============================================================
+
+// 输入：当前帧纹理（RGBA8 或 RGBA16F）
+// 格式要求：sampler2D，包含渲染输出的颜色数据
+layout(binding = 0) uniform sampler2D u_inputTexture;
+
+// 输出：梯度能量值（通过 SSBO 写回）
+// 结构：单个 float 值，表示总梯度能量
+// 注意：需要在外部进行多工作组归约（见下方说明）
+layout(std430, binding = 1) buffer OutputBuffer {
+    float gradientEnergy;  // 最终输出：总梯度能量
+};
+
+// 可选：uniform 配置参数
+layout(push_constant) uniform PushConstants {
+    vec2 u_imageSize;       // 图像尺寸 (width, height)
+    float u_thresholdRatio; // 阈值系数（用于 GPU 端质量检验）
+    int u_enableDebug;      // 是否启用调试模式（输出中间结果）
+};
+
+// ============================================================
+// 共享内存（用于工作组内归约）
+// ============================================================
+
+shared float s_partialEnergy[WORKGROUP_SIZE_X * WORKGROUP_SIZE_Y];
+
+// ============================================================
+// Sobel 卷积核常量
+// ============================================================
+
+// Sobel X 方向核（检测垂直边缘）
+const int SOBEL_X[9] = int[](
+    -1,  0,  1,
+    -2,  0,  2,
+    -1,  0,  1
+);
+
+// Sobel Y 方向核（检测水平边缘）
+const int SOBEL_Y[9] = int[](
+    -1, -2, -1,
+     0,  0,  0,
+     1,  2,  1
+);
+
+// Sobel 归一化因子（核的 L1 范数 = 8）
+const float SOBEL_NORM = 8.0;
+
+// ============================================================
+// NanGuard 内联函数（避免外部依赖）
+// ============================================================
+
+/**
+ * nanGuardClamp: 带 NaN/Inf 检测的安全钳位
+ * 与 Java 端 NanGuardShader.nanGuardClamp() 功能完全一致
+ */
+float nanGuardClamp(float value, float minValue, float maxValue, float defaultValue) {
+    // 检测 NaN 或 Inf
+    float invalidMask = float(isnan(value)) + float(isinf(value));
+
+    // 对正常值进行钳位
+    float clampedValue = clamp(value, minValue, maxValue);
+
+    // 无分支选择
+    return mix(clampedValue, defaultValue, invalidMask);
+}
+
+/**
+ * safeDivide: 安全除法（防止除零）
+ * 与 Java 端 NanGuardShader.safeDivide() 功能一致
+ */
+float safeDivide(float dividend, float divisor, float defaultValue, float epsilon) {
+    float absDivisor = abs(divisor);
+    float safeMask = step(epsilon, absDivisor);
+    return mix(defaultValue, dividend / divisor, safeMask);
+}
+
+// ============================================================
+// 主计算逻辑
+// ============================================================
+
+/**
+ * 将 RGBA 像素转换为灰度值
+ * 使用 ITU-R BT.601 标准亮度公式:
+ *   Y = 0.299 R + 0.587 G + 0.114 B
+ *
+ * @param color 输入颜色值 (RGBA)
+ * @return 归一化灰度值 [0.0, 1.0]
+ */
+float rgbToLuminance(vec4 color) {
+    return dot(color.rgb, vec3(0.299, 0.587, 0.114));
+}
+
+/**
+ * 在指定位置应用 3x3 Sobel 卷积核
+ *
+ * @param texCoords 中心像素的纹理坐标
+ * @param texelSize 单个纹素的大小 (1/width, 1/height)
+ * @param kernel    3x3 Sobel 核（长度为 9 的数组）
+ * @return 卷积结果（梯度分量）
+ */
+float applySobelKernel(vec2 texCoords, vec2 texelSize, int kernel[9]) {
+    float sum = 0.0;
+
+    // 3x3 卷积窗口
+    for (int ky = -1; ky <= 1; ky++) {
+        for (int kx = -1; kx <= 1; kx++) {
+            // 计算采样坐标
+            vec2 sampleCoord = texCoords + vec2(float(kx), float(ky)) * texelSize;
+
+            // 读取像素并转为灰度
+            vec4 color = texture(u_inputTexture, sampleCoord);
+            float luminance = rgbToLuminance(color);
+
+            // 应用卷积核权重
+            int kernelIndex = (ky + 1) * 3 + (kx + 1);
+            sum += luminance * float(kernel[kernelIndex]);
+        }
+    }
+
+    return sum;
+}
+
+/**
+ * 计算单个像素的梯度能量贡献
+ * 返回 Gx² + Gy²
+ *
+ * @param texCoords 中心像素纹理坐标
+ * @param texelSize 纹素大小
+ * @return 该像素的梯度能量
+ */
+float computePixelGradientEnergy(vec2 texCoords, vec2 texelSize) {
+    // 计算 Sobel X 和 Y 梯度
+    float gx = applySobelKernel(texCoords, texelSize, SOBEL_X);
+    float gy = applySobelKernel(texCoords, texelSize, SOBEL_Y);
+
+    // 数值保护（NanGuard）
+    gx = nanGuardClamp(gx, -255.0, 255.0, 0.0);
+    gy = nanGuardClamp(gy, -255.0, 255.0, 0.0);
+
+    // 归一化并返回梯度能量: (Gx² + Gy²) / norm²
+    float energy = (gx * gx + gy * gy) / (SOBEL_NORM * SOBEL_NORM);
+
+    return energy;
+}
+
+// ============================================================
+// Compute Shader 入口点
+// ============================================================
+
+void main() {
+    // 获取当前工作项的全局 ID
+    ivec2 globalId = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 localId = ivec2(gl_LocalInvocationID.xy);
+
+    // 获取图像尺寸
+    vec2 imageSize = (u_imageSize.x > 0.0) ? u_imageSize : vec2(textureSize(u_inputTexture, 0));
+    vec2 texelSize = 1.0 / imageSize;
+
+    // 边界检查（确保不越界访问纹理）
+    bool outOfBounds = (globalId.x >= int(imageSize.x)) || (globalId.y >= int(imageSize.y));
+
+    // 初始化局部能量为 0
+    float pixelEnergy = 0.0;
+
+    if (!outOfBounds) {
+        // 计算当前像素的纹理坐标（像素中心偏移 0.5 个纹素）
+        vec2 texCoords = (vec2(globalId) + 0.5) * texelSize;
+
+        // 边界检查：Sobel 算子需要 1 像素的边界
+        // 第一行/列和最后行/列不能计算梯度
+        bool isBoundary = (globalId.x <= 0) || (globalId.y <= 0) ||
+                          (globalId.x >= int(imageSize.x) - 1) ||
+                          (globalId.y >= int(imageSize.y) - 1);
+
+        if (!isBoundary) {
+            // 计算该像素的梯度能量
+            pixelEnergy = computePixelGradientEnergy(texCoords, texelSize);
+        }
+    }
+
+    // 将局部能量写入共享内存
+    uint localIndex = localId.y * WORKGROUP_SIZE_X + localId.x;
+    s_partialEnergy[localIndex] = pixelEnergy;
+
+    // 同步所有工作项（确保共享内存写入完成）
+    memoryBarrierShared();
+    barrier();
+
+    // ==================== 并行归约（Parallel Reduction）====================
+    // 目标：将工作组内的所有像素能量累加到一个值
+    //
+    // 算法：树形归约（Tree Reduction）
+    // 时间复杂度：O(log N)，其中 N = WORKGROUP_SIZE_X * WORKGROUP_SIZE_Y
+    //
+    // 示例（8 个元素）：
+    //   步骤0: [0+4] [1+5] [2+6] [3+7]  (stride=4)
+    //   步骤1: [01+45] [23+67]          (stride=2)
+    //   步骤2: [0145+2367]              (stride=1)
+    //   结果: s_partialEnergy[0] = 总和
+    // ======================================================================
+
+    uint groupSize = uint(WORKGROUP_SIZE_X * WORKGROUP_SIZE_Y);
+    uint stride = groupSize >> 1;  // 初始步长 = N/2
+
+    for (; stride > 0; stride >>= 1) {
+        if (localIndex < stride) {
+            s_partialEnergy[localIndex] += s_partialEnergy[localIndex + stride];
+        }
+        memoryBarrierShared();
+        barrier();
+    }
+
+    // 工作组的第一个工作项将结果写出到全局内存
+    if (localIndex == 0) {
+        // 使用原子操作确保线程安全（多个工作组可能同时写入）
+        // 注意：这里使用 atomicAdd 进行累加
+        // 外部代码需要在 dispatch 前将 gradientEnergy 清零！
+        atomicAdd(gradientEnergy, s_partialEnergy[0]);
+
+        // 调试输出（可选）
+        if (u_enableDebug != 0) {
+            // 可以写入额外的调试 buffer（此处省略）
+        }
+    }
+}
+
+// ============================================================
+// 使用说明和集成指南
+// ============================================================
+//
+// 【CPU 端集成伪代码】
+//
+// /*
+//  * 步骤1: 准备资源
+//  */
+// GLuint inputTexture = ...;     // 输入纹理（已加载帧数据）
+// GLuint outputSSBO = 0;
+// glGenBuffers(1, &outputSSBO);
+// glBindBuffer(GL_SHADER_STORAGE_BUFFER, outputSSBO);
+// glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(float), NULL, GL_DYNAMIC_READ);
+//
+// /*
+//  * 步骤2: 清零输出缓冲区（重要！shader 使用 atomicAdd 累加）
+//  */
+// float zero = 0.0f;
+// glBindBuffer(GL_SHADER_STORAGE_BUFFER, outputSSBO);
+// glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(float), &zero);
+//
+// /*
+//  * 步骤3: 绑定资源和 Dispatch
+//  */
+// glUseProgram(computeProgram);
+// glActiveTexture(GL_TEXTURE0);
+// glBindTexture(GL_TEXTURE_2D, inputTexture);
+// glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, outputSSBO);
+//
+// // 设置 Push Constants
+// struct PushConstants {
+//     glm::vec2 imageSize;      // 图像尺寸
+//     float thresholdRatio;     // 阈值系数
+//     int enableDebug;          // 调试标志
+// };
+// PushConstants pushConsts = { {1920.0f, 1080.0f}, 0.1f, 0 };
+// glPushConstants(..., sizeof(pushConsts), &pushConsts);
+//
+// // Dispatch: (width + WG_SIZE-1) / WG_SIZE
+// int groupsX = (width + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X;
+// int groupsY = (height + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y;
+// glDispatchCompute(groupsX, groupsY, 1);
+//
+// /*
+//  * 步骤4: 读取结果
+//  */
+// glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+// float gradientEnergy = 0.0f;
+// glGetNamedBufferSubData(outputSSBO, 0, sizeof(float), &gradientEnergy);
+//
+// printf("GPU 梯度能量: %.2f\n", gradientEnergy);
+//
+// /*
+//  * 步骤5: 与 CPU 端 LyapunovQualityChecker 配合使用
+//  */
+// LyapunovQualityChecker checker;
+// ValidationResult result = checker.validateQuality(energyBefore, gradientEnergy);
+// if (!result.isPassed()) {
+//     LOG_WARNING("质量检测失败: %s", result.getMessage().c_str());
+//     // 触发降级机制...
+// }
+//
+// ============================================================

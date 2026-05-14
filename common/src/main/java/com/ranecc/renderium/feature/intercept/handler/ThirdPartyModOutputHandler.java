@@ -73,7 +73,7 @@ public class ThirdPartyModOutputHandler implements ModOutputHandler {
 
     /** 示例模组的 RenderDevice 类路径（用于反射示例） */
     private static final String EXAMPLE_MOD_RENDER_DEVICE =
-        "me.jellysquid.mods.sodium.render.chunk.RenderDevice";"
+        "me.jellysquid.mods.sodium.render.chunk.RenderDevice";
 
     /** 默认无效句柄值 */
     private static final long INVALID_HANDLE = 0L;
@@ -255,7 +255,7 @@ public class ThirdPartyModOutputHandler implements ModOutputHandler {
 
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE,
-                "模组输出处理发生异常 [modId=" + context.getModId() + "]: " + e.getMessage(),"
+                "模组输出处理发生异常 [modId=" + context.getModId() + "]: " + e.getMessage(),
                 e
             );
         }
@@ -410,14 +410,14 @@ public class ThirdPartyModOutputHandler implements ModOutputHandler {
 
         } catch (SecurityException e) {
             LOGGER.log(Level.WARNING,
-                "反射安全限制导致 FBO 拦截失败 [" + modId + "]: " + e.getMessage(),"
+                "反射安全限制导致 FBO 拦截失败 [" + modId + "]: " + e.getMessage(),
                 e
             );
             return false;
 
         } catch (Exception e) {
             LOGGER.log(Level.WARNING,
-                "FBO 拦截过程中发生意外异常 [" + modId + "]: " + e.getMessage(),"
+                "FBO 拦截过程中发生意外异常 [" + modId + "]: " + e.getMessage(),
                 e
             );
             return false;
@@ -611,7 +611,7 @@ public class ThirdPartyModOutputHandler implements ModOutputHandler {
 
         } catch (Exception e) {
             LOGGER.log(Level.WARNING,
-                "更新渲染上下文时发生异常: " + e.getMessage(),"
+                "更新渲染上下文时发生异常: " + e.getMessage(),
                 e
             );
             return false;
@@ -740,7 +740,7 @@ public class ThirdPartyModOutputHandler implements ModOutputHandler {
 
         } catch (IllegalAccessException | java.lang.reflect.InvocationTargetException e) {
             LOGGER.log(Level.WARNING,
-                "反射访问 RenderDevice 实例失败 [" + modId + "]: " + e.getMessage(),"
+                "反射访问 RenderDevice 实例失败 [" + modId + "]: " + e.getMessage(),
                 e
             );
             return null;

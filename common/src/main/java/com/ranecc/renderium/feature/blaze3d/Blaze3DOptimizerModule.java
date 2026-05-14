@@ -551,7 +551,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
     public String getStatusString() {
         String mode = enabled ?
                 (aggressiveMode ? "⚡ ACTIVE [AGGRESSIVE]" : "○ ACTIVE [COMPATIBLE]") :
-                "○ INACTIVE";"
+                "○ INACTIVE";
         return String.format("%s [%s] v%s", METADATA.name(), mode, METADATA.version());
     }
 
@@ -580,84 +580,59 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
     public String getMixinStatus() {
         StringBuilder report = new StringBuilder();
 
-        report.append("╔══════════════════════════════════════════════════╗
-");
-        report.append("║       Blaze3D Mixin 集成状态报告                ║
-");
-        report.append("╠══════════════════════════════════════════════════╣
-");
+        report.append("╔══════════════════════════════════════════════════╗\n");
+        report.append("║       Blaze3D Mixin 集成状态报告                ║\n");
+        report.append("╠══════════════════════════════════════════════════╣\n");
 
         // 基础设施状态
-        report.append(String.format("║  基础设施:                                            ║
-"));
-        report.append(String.format("║    VersionAdapter:  %-35s ║
-",
+        report.append(String.format("║  基础设施:                                            ║\n"));
+        report.append(String.format("║    VersionAdapter:  %-35s ║\n",
                 formatInfrastructureStatus("VersionAdapter", versionAdapterReady)));
-        report.append(String.format("║    RenderiumProfiler: %-35s ║
-",
+        report.append(String.format("║    RenderiumProfiler: %-35s ║\n",
                 formatInfrastructureStatus("RenderiumProfiler", profilerReady)));
-        report.append(String.format("║    ResourceStats:    %-35s ║
-",
+        report.append(String.format("║    ResourceStats:    %-35s ║\n",
                 formatInfrastructureStatus("ResourceStats", resourceStatsReady)));
 
-        report.append("╠══════════════════════════════════════════════════╣
-");
+        report.append("╠══════════════════════════════════════════════════╣\n");
 
         // 🔒 SAFE 级别 Mixin
-        report.append("║  🔒 SAFE 级别 Mixin:                                  ║
-");
-        report.append(String.format("║    CommandEncoderMixin: %-32s ║
-",
+        report.append("║  🔒 SAFE 级别 Mixin:                                  ║\n");
+        report.append(String.format("║    CommandEncoderMixin: %-32s ║\n",
                 getMixinStatusEntry("CommandEncoderMixin")));
-        report.append(String.format("║    LevelRendererMixin:  %-32s ║
-",
+        report.append(String.format("║    LevelRendererMixin:  %-32s ║\n",
                 getMixinStatusEntry("LevelRendererMixin")));
-        report.append(String.format("║    RenderPassMixin:     %-32s ║
-",
+        report.append(String.format("║    RenderPassMixin:     %-32s ║\n",
                 getMixinStatusEntry("RenderPassMixin")));
 
         // 🔐 GUARDED 级别 Mixin
-        report.append("║  🔐 GUARDED 级别 Mixin:                               ║
-");
-        report.append(String.format("║    FrameGraphBuilderMixin: %-29s ║
-",
+        report.append("║  🔐 GUARDED 级别 Mixin:                               ║\n");
+        report.append(String.format("║    FrameGraphBuilderMixin: %-29s ║\n",
                 getMixinStatusEntry("FrameGraphBuilderMixin")));
-        report.append(String.format("║    PostChainMixin:      %-32s ║
-",
+        report.append(String.format("║    PostChainMixin:      %-32s ║\n",
                 getMixinStatusEntry("PostChainMixin")));
 
         // ⚠️ RISKY 级别 Mixin
-        report.append("║  ⚠️ RISKY 级别 Mixin:                                 ║
-");
-        report.append(String.format("║    GpuDeviceMixin:      %-32s ║
-",
+        report.append("║  ⚠️ RISKY 级别 Mixin:                                 ║\n");
+        report.append(String.format("║    GpuDeviceMixin:      %-32s ║\n",
                 getMixinStatusEntry("GpuDeviceMixin")));
 
-        report.append("╠══════════════════════════════════════════════════╣
-");
+        report.append("╠══════════════════════════════════════════════════╣\n");
 
         // GpuDevice 优化器引用详情（通过 MCRenderBridge 查询）
         boolean gpuInit = MCRenderBridge.isGpuDeviceInitialized();
-        report.append(String.format("║  GpuDevice 优化器引用详情:                              ║
-"));
-        report.append(String.format("║    完全初始化: %-37b ║
-", gpuInit));
-        report.append(String.format("║    MemoryOptimizer: %-35s ║
-",
+        report.append(String.format("║  GpuDevice 优化器引用详情:                              ║\n"));
+        report.append(String.format("║    完全初始化: %-37b ║\n", gpuInit));
+        report.append(String.format("║    MemoryOptimizer: %-35s ║\n",
                 memoryOptimizer != null && memoryOptimizer.isEnabled() ? "✓ 已注入" : "✗ 未注入"));
-        report.append(String.format("║    PipelineOptimizer: %-34s ║
-",
+        report.append(String.format("║    PipelineOptimizer: %-34s ║\n",
                 shaderPipelineOptimizer != null && shaderPipelineOptimizer.isEnabled() ? "✓ 已注入" : "✗ 未注入"));
 
-        report.append("╠══════════════════════════════════════════════════╣
-");
+        report.append("╠══════════════════════════════════════════════════╣\n");
 
         // 整体状态
-        report.append(String.format("║  整体状态: loaded=%b, enabled=%b, infraReady=%b    ║
-",
+        report.append(String.format("║  整体状态: loaded=%b, enabled=%b, infraReady=%b    ║\n",
                 mixinLoaded, enabled, isInfrastructureReady()));
-        report.append("╚══════════════════════════════════════════════════╝
-");
+        report.append("╚══════════════════════════════════════════════════╝\n");
 
         return report.toString();
     }

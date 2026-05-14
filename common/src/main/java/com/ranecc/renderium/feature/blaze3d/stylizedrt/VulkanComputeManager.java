@@ -374,32 +374,22 @@ public class VulkanComputeManager implements AutoCloseable {
      */
     public String getResourceReport() {
         StringBuilder sb = new StringBuilder();
-        sb.append("╔══════════════════════════════════════════╗
-");
-        sb.append("║    Vulkan Compute 资源报告               ║
-");
-        sb.append("╠══════════════════════════════════════════╣
-");
-        sb.append(String.format("║ Pipeline数量: %-25d ║
-", pipelines.size()));
-        sb.append(String.format("║ Buffer数量: %-27d ║
-", buffers.size()));
-        sb.append(String.format("║ 总GPU内存: %-25.1f MB ║
-",
+        sb.append("╔══════════════════════════════════════════╗\n");
+        sb.append("║    Vulkan Compute 资源报告               ║\n");
+        sb.append("╠══════════════════════════════════════════╣\n");
+        sb.append(String.format("║ Pipeline数量: %-25d ║\n", pipelines.size()));
+        sb.append(String.format("║ Buffer数量: %-27d ║\n", buffers.size()));
+        sb.append(String.format("║ 总GPU内存: %-25.1f MB ║\n",
                 totalGPUMemoryUsed / (1024.0 * 1024.0)));
 
-        sb.append("╠══════════════════════════════════════════╣
-");
-        sb.append("║ Buffer详情:                              ║
-");
+        sb.append("╠══════════════════════════════════════════╣\n");
+        sb.append("║ Buffer详情:                              ║\n");
         for (BufferDescriptor buf : buffers.values()) {
-            sb.append(String.format("║   %-15s %8.2f MB  handle=0x%06X ║
-",
+            sb.append(String.format("║   %-15s %8.2f MB  handle=0x%06X ║\n",
                     buf.name, buf.sizeBytes / (1024.0 * 1024.0), buf.bufferHandle));
         }
 
-        sb.append("╚══════════════════════════════════════════╝
-");
+        sb.append("╚══════════════════════════════════════════╝\n");
         return sb.toString();
     }
 

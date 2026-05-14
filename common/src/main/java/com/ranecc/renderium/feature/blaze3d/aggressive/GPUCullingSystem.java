@@ -595,7 +595,7 @@ public class GPUCullingSystem implements AutoCloseable {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "GPU 剔除执行异常: %s", e.getMessage()"
+                    "GPU 剔除执行异常: %s", e.getMessage()
             ));
         }
     }

@@ -77,11 +77,11 @@ public class StreamlineIntegration implements AutoCloseable {
 
     /** Streamline DLL 路径 */
     public static final String STREAMLINE_DLL_PATH =
-            "e:\\DEV\\Renderium\\env\\streamline-sdk-v2.10.3\\lib\\x64\\sl.common.dll";"
+            "e:\\DEV\\Renderium\\env\\streamline-sdk-v2.10.3\\lib\\x64\\sl.common.dll";
 
     /** Streamline 插件目录路径（DLSS/Reflex 等 DLL 所在目录） */
     public static final String STREAMLINE_PLUGIN_PATH =
-            "e:\\DEV\\Renderium\\env\\streamline-sdk-v2.10.3\\lib\\x64";"
+            "e:\\DEV\\Renderium\\env\\streamline-sdk-v2.10.3\\lib\\x64";
 
     // ==================== 状态机枚举 ====================
 
@@ -1003,68 +1003,43 @@ public class StreamlineIntegration implements AutoCloseable {
                 : 0;
 
         StringBuilder sb = new StringBuilder();
-        sb.append("╔══════════════════════════════════════════════════╗
-");
-        sb.append("║     Streamline 性能分析报告 (真实数据)           ║
-");
-        sb.append("╠══════════════════════════════════════════════════╣
-");
-        sb.append(String.format("║ 当前状态: %-34s ║
-", currentState));
-        sb.append(String.format("║ 采样帧数: %-34d ║
-", n));
-        sb.append(String.format("║ 平均帧耗时: %-27.2f ms ║
-", avgTotalUs / 1000.0));
-        sb.append(String.format("║ 平均Warp效率: %-26.1f%% ║
-", avgWarpEff));
-        sb.append(String.format("║ 平均SM占用率: %-26.1f%% ║
-", avgOccupancy));
-        sb.append(String.format("║ 平均带宽利用: %-26.1f GB/s ║
-", avgBandwidthUtil));
-        sb.append("╠══════════════════════════════════════════════════╣
-");
-        sb.append("║ Streamline 开销统计:                             ║
-");
-        sb.append(String.format("║   平均开销: %-29.2f µs ║
-", avgOverheadUs));
-        sb.append(String.format("║   最大开销: %-29.2f µs ║
-", maxStreamlineTimeNs.get() / 1000.0));
-        sb.append(String.format("║   最小开销: %-29.2f µs ║
-",
+        sb.append("╔══════════════════════════════════════════════════╗\n");
+        sb.append("║     Streamline 性能分析报告 (真实数据)           ║\n");
+        sb.append("╠══════════════════════════════════════════════════╣\n");
+        sb.append(String.format("║ 当前状态: %-34s ║\n", currentState));
+        sb.append(String.format("║ 采样帧数: %-34d ║\n", n));
+        sb.append(String.format("║ 平均帧耗时: %-27.2f ms ║\n", avgTotalUs / 1000.0));
+        sb.append(String.format("║ 平均Warp效率: %-26.1f%% ║\n", avgWarpEff));
+        sb.append(String.format("║ 平均SM占用率: %-26.1f%% ║\n", avgOccupancy));
+        sb.append(String.format("║ 平均带宽利用: %-26.1f GB/s ║\n", avgBandwidthUtil));
+        sb.append("╠══════════════════════════════════════════════════╣\n");
+        sb.append("║ Streamline 开销统计:                             ║\n");
+        sb.append(String.format("║   平均开销: %-29.2f µs ║\n", avgOverheadUs));
+        sb.append(String.format("║   最大开销: %-29.2f µs ║\n", maxStreamlineTimeNs.get() / 1000.0));
+        sb.append(String.format("║   最小开销: %-29.2f µs ║\n",
                 minStreamlineTimeNs.get() == Long.MAX_VALUE ? 0 : minStreamlineTimeNs.get() / 1000.0));
-        sb.append("╠══════════════════════════════════════════════════╣
-");
+        sb.append("╠══════════════════════════════════════════════════╣\n");
 
         // 关键工程约束分析
-        sb.append("║ 工程约束分析:                                    ║
-");
+        sb.append("║ 工程约束分析:                                    ║\n");
         if (avgWarpEff > 0 && avgWarpEff < 70) {
-            sb.append("║ ⚠ Warp效率 < 70%: 自适应步长divergence严重!     ║
-");
-            sb.append("║   建议: 考虑固定步长+注解跳过替代自适应步长       ║
-");
+            sb.append("║ ⚠ Warp效率 < 70%: 自适应步长divergence严重!     ║\n");
+            sb.append("║   建议: 考虑固定步长+注解跳过替代自适应步长       ║\n");
         }
         if (avgBandwidthUtil > 400) {
-            sb.append("║ ⚠ 带宽利用 > 400 GB/s: 接近RTX 5060理论极限!    ║
-");
-            sb.append("║   建议: 使用FP16势能场或降低网格分辨率            ║
-");
+            sb.append("║ ⚠ 带宽利用 > 400 GB/s: 接近RTX 5060理论极限!    ║\n");
+            sb.append("║   建议: 使用FP16势能场或降低网格分辨率            ║\n");
         }
         if (avgOccupancy < 50) {
-            sb.append("║ ⚠ Occupancy < 50%: 寄存器压力过大!               ║
-");
-            sb.append("║   建议: 将Hessian移到shared memory                ║
-");
+            sb.append("║ ⚠ Occupancy < 50%: 寄存器压力过大!               ║\n");
+            sb.append("║   建议: 将Hessian移到shared memory                ║\n");
         }
         if (avgOverheadUs > 500) {
-            sb.append("║ ⚠ Streamline开销 > 500µs: 可能影响帧率!          ║
-");
-            sb.append("║   建议: 减少每帧计数器数量或异步采集               ║
-");
+            sb.append("║ ⚠ Streamline开销 > 500µs: 可能影响帧率!          ║\n");
+            sb.append("║   建议: 减少每帧计数器数量或异步采集               ║\n");
         }
 
-        sb.append("╚══════════════════════════════════════════════════╝
-");
+        sb.append("╚══════════════════════════════════════════════════╝\n");
 
         return sb.toString();
     }

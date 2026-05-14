@@ -403,19 +403,14 @@ public final class ParameterRegistry {
      */
     public String exportConfig() {
         StringBuilder sb = new StringBuilder(512);
-        sb.append("{
-");
-        sb.append("  \"exportTime\": \"").append(java.time.Instant.now().toString()).append("\",
-");
-        sb.append("  \"totalParameters\": ").append(knobMap.size()).append(",
-");
-        sb.append("  \"parameters\": [
-");
+        sb.append("{\n");
+        sb.append("  \"exportTime\": \"").append(java.time.Instant.now().toString()).append("\",\n");
+        sb.append("  \"totalParameters\": ").append(knobMap.size()).append(",\n");
+        sb.append("  \"parameters\": [\n");
 
         boolean first = true;
         for (ParameterKnob<?> knob : knobMap.values()) {
-            if (!first) sb.append(",
-");
+            if (!first) sb.append(",\n");
             first = false;
 
             sb.append("    {\"id\": \"").append(escapeJson(knob.getId())).append("\", ");

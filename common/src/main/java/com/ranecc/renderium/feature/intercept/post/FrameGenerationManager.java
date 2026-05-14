@@ -268,7 +268,7 @@ public final class FrameGenerationManager {
                 LOGGER.warning(
                     "当前硬件不支持帧生成 | " +
                     "DLSS-FG: " + isDLSSFGAvailable() + ", " +
-                    "FSR-FG: " + isFSRFGAvailable()"
+                    "FSR-FG: " + isFSRFGAvailable()
                 );
                 initialized.set(true);
                 enabled.set(false);

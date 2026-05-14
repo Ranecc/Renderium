@@ -378,7 +378,7 @@ public class ShaderPipelineOptimizer implements AutoCloseable {
         if (removed != null) {
             totalSpirvSizeBytes.addAndGet(-removed.spirvBytes.length);
             LOGGER.fine(String.format(
-                    "SPIR-V invalidated: type=%d", shaderType"
+                    "SPIR-V invalidated: type=%d", shaderType
             ));
             return true;
         }

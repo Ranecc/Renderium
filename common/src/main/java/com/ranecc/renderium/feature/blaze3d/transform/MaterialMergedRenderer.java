@@ -465,8 +465,7 @@ public class MaterialMergedRenderer implements AutoCloseable {
                             maxTextures, textureId
                     ));
                     throw new IllegalStateException(
-                            "Bindless texture table full! Max: " + maxTextures +"
-                                    ", Requested: " + textureId);
+                            "Bindless texture table full! Max: " + maxTextures + "\nRequested: " + textureId);
                 }
             }
 
@@ -938,31 +937,20 @@ public class MaterialMergedRenderer implements AutoCloseable {
                 : 0.0;
 
         StringBuilder sb = new StringBuilder();
-        sb.append("╔══════════════════════════════════════════════════╗
-");
-        sb.append("║      MaterialMergedRenderer 性能统计 (GT3)        ║
-");
-        sb.append("╠══════════════════════════════════════════════════╣
-");
-        sb.append(String.format("║ 总处理帧数: %-37d ║
-", totalFramesProcessed));
-        sb.append(String.format("║ 平均构建时间: %-30.3f ms ║
-", avgBuildTimeMs));
-        sb.append(String.format("║ 当前材质批次数: %-30d ║
-", materialBatches.size()));
-        sb.append(String.format("║ 总渲染材质数: %-33d ║
-", totalMaterialsRendered));
+        sb.append("╔══════════════════════════════════════════════════╗\n");
+        sb.append("║      MaterialMergedRenderer 性能统计 (GT3)        ║\n");
+        sb.append("╠══════════════════════════════════════════════════╣\n");
+        sb.append(String.format("║ 总处理帧数: %-37d ║\n", totalFramesProcessed));
+        sb.append(String.format("║ 平均构建时间: %-30.3f ms ║\n", avgBuildTimeMs));
+        sb.append(String.format("║ 当前材质批次数: %-30d ║\n", materialBatches.size()));
+        sb.append(String.format("║ 总渲染材质数: %-33d ║\n", totalMaterialsRendered));
 
         if (textureTable != null) {
-            sb.append("╠══════════════════════════════════════════════════╣
-");
-            sb.append("║ Bindless Texture Table 状态:                     ║
-");
-            sb.append(String.format("║   已注册: %-7d / %-7d                  ║
-",
+            sb.append("╠══════════════════════════════════════════════════╣\n");
+            sb.append("║ Bindless Texture Table 状态:                     ║\n");
+            sb.append(String.format("║   已注册: %-7d / %-7d                  ║\n",
                     textureTable.getRegisteredCount(), textureTable.getMaxTextures()));
-            sb.append(String.format("║   利用率: %-6.1f%%                          ║
-",
+            sb.append(String.format("║   利用率: %-6.1f%%                          ║\n",
                     textureTable.getUtilizationPercent()));
         }
 

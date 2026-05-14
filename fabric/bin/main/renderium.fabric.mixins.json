@@ -1,0 +1,18 @@
+{
+  "required": true,
+  "package": "com.ranecc.renderium.platform.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "MixinWindow",
+    "MixinGpuDevice",
+    "MixinFrameGraph",
+    "MixinRenderSystem",
+    "MixinLevelRenderer",
+    "MixinGameRenderer"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  },
+  "mixins": [],
+  "comment": "Renderium Mixins v1.1.0 - MC 26.2-snapshot-3 (L0 Anti-Corruption Layer: 6 platform-independent mixins)"
+}

@@ -400,20 +400,15 @@ public final class VersionAdapter {
         StringBuilder report = new StringBuilder();
         String currentVersion = getMCVersion();
 
-        report.append("Version Adapter Report:
-");
-        report.append(String.format("  Current MC Version: %s
-", currentVersion));
-        report.append(String.format("  Registered Versions: %d
-", methodSignatureRegistry.size()));
-        report.append(String.format("  Registered Features: %d
-", featureRegistry.size()));
+        report.append("Version Adapter Report:\n");
+        report.append(String.format("  Current MC Version: %s\n", currentVersion));
+        report.append(String.format("  Registered Versions: %d\n", methodSignatureRegistry.size()));
+        report.append(String.format("  Registered Features: %d\n", featureRegistry.size()));
 
-        "\");
+        report.append("\n");
         for (String feature : featureRegistry.keySet()) {
             boolean available = hasFeature(feature);
-            report.append(String.format("    %-30s %s
-",
+            report.append(String.format("    %-30s %s\n",
                     feature,
                     available ? "✓ AVAILABLE" : "✗ UNAVAILABLE"));
         }

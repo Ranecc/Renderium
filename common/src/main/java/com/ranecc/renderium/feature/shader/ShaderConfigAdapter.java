@@ -335,16 +335,11 @@ public final class ShaderConfigAdapter {
          */
         @Override
         public String toString() {
-            StringBuilder sb = new StringBuilder("ShaderParams{
-");
-            sb.append("  defines=").append(shaderDefines).append('
-');
-            sb.append("  computeDefines=").append(computeDefines).append('
-');
-            sb.append("  uniforms=").append(uniformValues).append('
-');
-            sb.append("  pushConstants=").append(pushConstants).append('
-');
+            StringBuilder sb = new StringBuilder("ShaderParams{\n");
+            sb.append("  defines=").append(shaderDefines).append('\n');
+            sb.append("  computeDefines=").append(computeDefines).append('\n');
+            sb.append("  uniforms=").append(uniformValues).append('\n');
+            sb.append("  pushConstants=").append(pushConstants).append('\n');
             sb.append('}');
             return sb.toString();
         }

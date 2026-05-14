@@ -631,11 +631,9 @@ public final class EnhancedEffectPipeline {
      */
     public String generateDependencyGraph() {
         StringBuilder sb = new StringBuilder();
-        sb.append("graph TB
-");
+        sb.append("graph TB\n");
 
-        sb.append("    A[\"输入帧\"]
-");
+        sb.append("    A[\"输入帧\"]\n");
 
         char lastNode = 'A';
         synchronized (effectEntries) {
@@ -646,35 +644,28 @@ public final class EnhancedEffectPipeline {
                 
                 String color = enabled ? "#69f" : "#ccc";
                 sb.append(String.format(
-                    "    %s[\"%s%s\"]"
-",
+                    "    %s[\"%s%s\"]\n",
                     currentNode,
                     entry.type.name(),
                     enabled ? "" : " (禁用)"
                 ));
                 
                 sb.append(String.format(
-                    "    style %s fill:%s"
-",
+                    "    style %s fill:%s\n",
                     currentNode,
                     color
                 ));
 
                 // 连接到上一个节点
-                sb.append(String.format("    %s --> %s
-", lastNode, currentNode));
+                sb.append(String.format("    %s --> %s\n", lastNode, currentNode));
                 lastNode = currentNode;
             }
         }
 
-        sb.append(String.format("    style %s fill:#6f9
-", lastNode));
-        sb.append(String.format("    %s[\"输出帧\"]
-", (char)(lastNode + 1)));
-        sb.append(String.format("    %s --> %s
-", lastNode, (char)(lastNode + 1)));
-        sb.append(String.format("    style %s fill:#6f9
-", (char)(lastNode + 1)));
+        sb.append(String.format("    style %s fill:#6f9\n", lastNode));
+        sb.append(String.format("    %s[\"输出帧\"]\n", (char)(lastNode + 1)));
+        sb.append(String.format("    %s --> %s\n", lastNode, (char)(lastNode + 1)));
+        sb.append(String.format("    style %s fill:#6f9\n", (char)(lastNode + 1)));
 
         return sb.toString();
     }
@@ -964,14 +955,11 @@ public final class EnhancedEffectPipeline {
      */
     private void generateExecutionGraphSnapshot(List<EffectEntry> order, long totalNs) {
         StringBuilder sb = new StringBuilder();
-        sb.append("graph LR
-");
-        sb.append(String.format("    subgraph \"后处理管线 (%.2fms)\"
-", totalNs / 1_000_000.0));
+        sb.append("graph LR\n");
+        sb.append(String.format("    subgraph \"后处理管线 (%.2fms)\"\n", totalNs / 1_000_000.0));
         
         char prevNode = 'A';
-        sb.append("    A[\"输入\"]
-");
+        sb.append("    A[\"输入\"]\n");
         
         for (EffectEntry entry : order) {
             if (!isEffectEnabled(entry.type)) {
@@ -993,24 +981,18 @@ public final class EnhancedEffectPipeline {
             }
             
             sb.append(String.format(
-                "    %s[\"%s\"
-%.2fms\"]
-",
+                "    %s[\"%s\"\n%.2fms\"]\n",
                 currNode,
                 entry.type.name(),
                 avgMs
             ));
-            sb.append(String.format("    %s --> %s
-", (char)(currNode - 1), currNode));
+            sb.append(String.format("    %s --> %s\n", (char)(currNode - 1), currNode));
         }
         
         char endNode = prevNode;
-        sb.append(String.format("    %s[\"输出\"]
-", endNode));
-        sb.append(String.format("    %s --> %s
-", (char)(endNode - 1), endNode));
-        sb.append("    end
-");
+        sb.append(String.format("    %s[\"输出\"]\n", endNode));
+        sb.append(String.format("    %s --> %s\n", (char)(endNode - 1), endNode));
+        sb.append("    end\n");
         
         lastExecutionGraphSnapshot = sb.toString();
     }
@@ -1028,8 +1010,7 @@ public final class EnhancedEffectPipeline {
             "[EnhancedEffectPipeline] 帧 #%d 性能摘要:" +
             "  总耗时: %.2f ms (预算: %.2f ms, 利用率: %.1f%%)" +
             "  性能等级: %s (%.0f%% 质量)" +
-            "  各效果平均耗时:"
-%s",
+            "  各效果平均耗时:\n%s",
             frameIndex,
             totalMs,
             budgetMs,
@@ -1051,8 +1032,7 @@ public final class EnhancedEffectPipeline {
         
         for (Map.Entry<String, Double> entry : timings.entrySet()) {
             sb.append(String.format(
-                "    %-15s: %.2f ms"
-",
+                "    %-15s: %.2f ms\n",
                 entry.getKey(),
                 entry.getValue()
             ));

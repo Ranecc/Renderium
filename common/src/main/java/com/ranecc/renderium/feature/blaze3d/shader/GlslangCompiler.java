@@ -187,8 +187,8 @@ public final class GlslangCompiler {
         InputStream is = getClass().getClassLoader().getResourceAsStream(resourcePath);
         if (is == null) {
             throw new FileNotFoundException(
-                    "找不到原生库: " + resourcePath +"
-                    "\"Windows 需要 glslang.dll\\" +\"\n\"Linux 需要 libglslang.so\\" +\"\n\"macOS 需要 libglslang.dylib\\"\""
+                    "找不到原生库: " + resourcePath +
+                    "\nWindows 需要 glslang.dll\nLinux 需要 libglslang.so\nmacOS 需要 libglslang.dylib"
             );
         }
 
@@ -308,11 +308,9 @@ public final class GlslangCompiler {
         if (infoLog != null && !infoLog.isEmpty()) {
             if (infoLog.toLowerCase().contains("error") ||
                     infoLog.toLowerCase().contains("warning")) {
-                LOGGER.fine("glslang 编译日志:
-" + infoLog);
+                LOGGER.fine("glslang 编译日志:\n" + infoLog);
                 if (infoLog.toLowerCase().contains("error")) {
-                    throw new GlslCompileException("GLSL 编译失败:
-" + infoLog);
+                    throw new GlslCompileException("GLSL 编译失败:\n" + infoLog);
                 }
             }
         }
@@ -356,7 +354,7 @@ public final class GlslangCompiler {
 
         if (magic != 0x07230203) {
             throw new GlslCompileException(
-                    "SPIR-V magic number 无效: 0x" +"
+                    "SPIR-V magic number 无效: 0x" +
                             Long.toHexString(magic & 0xFFFFFFFFL));
         }
     }
@@ -396,7 +394,7 @@ public final class GlslangCompiler {
     private FunctionDescriptor getDescriptor(String name) {
         return switch (name) {
             case "glslang_initialize_process", "glslang_finalize_process",
-                 "glslang_shader_delete", "glslang_input_delete" ->"
+                 "glslang_shader_delete", "glslang_input_delete" ->
                     FunctionDescriptor.ofVoid(ValueLayout.ADDRESS);
             case "glslang_input_new", "glslang_shader_compile" ->
                     FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS);
@@ -405,7 +403,7 @@ public final class GlslangCompiler {
             case "glslang_input_set_stage" ->
                     FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_INT);
             case "glslang_shader_get_info_log", "glslang_shader_get_info_debug_log",
-                 "glslang_shader_get_spirv" ->"
+                 "glslang_shader_get_spirv" ->
                     FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS);
             case "glslang_shader_get_spirv_size" ->
                     FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS);

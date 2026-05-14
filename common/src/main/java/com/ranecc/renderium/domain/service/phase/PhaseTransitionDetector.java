@@ -412,12 +412,12 @@ public final class PhaseTransitionDetector {
         // 参数校验
         if (smoothingWindow <= 0) {
             throw new IllegalArgumentException(
-                "滑动窗口大小必须为正数: " + smoothingWindow"
+                "滑动窗口大小必须为正数: " + smoothingWindow
             );
         }
         if (diagnosticHistorySize <= 0) {
             throw new IllegalArgumentException(
-                "诊断历史容量必须为正数: " + diagnosticHistorySize"
+                "诊断历史容量必须为正数: " + diagnosticHistorySize
             );
         }
 
@@ -488,8 +488,8 @@ public final class PhaseTransitionDetector {
         }
         if (currentFrame.length != previousFrame.length) {
             throw new IllegalArgumentException(
-                "帧数据长度不一致: current=" + currentFrame.length +"
-                ", previous=" + previousFrame.length"
+                "帧数据长度不一致: current=" + currentFrame.length +
+                ", previous=" + previousFrame.length
             );
         }
         if (currentFrame.length == 0) {
@@ -774,7 +774,7 @@ public final class PhaseTransitionDetector {
             } catch (Exception e) {
                 // 回调异常不应影响主流程，仅记录警告
                 LOGGER.log(Level.WARNING,
-                    "相变回调执行异常 [type=" + phaseType + "]: " + e.getMessage(),"
+                    "相变回调执行异常 [type=" + phaseType + "]: " + e.getMessage(),
                     e
                 );
             }
