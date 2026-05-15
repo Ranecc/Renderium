@@ -13,7 +13,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.logging.Logger;
-import com.ranecc.renderium.feature.lod.GPULODDataManager;
 
 /**
  * GPU 驱动的 LOD 数据管理器。

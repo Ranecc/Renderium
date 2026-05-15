@@ -6,7 +6,6 @@ package com.ranecc.renderium.feature.pipeline.node;
 import com.ranecc.renderium.None;
 import java.util.logging.Logger;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
-import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 
 /**

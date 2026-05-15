@@ -2,7 +2,7 @@
 // 模组输出上下文类 - 封装模组渲染输出的信息
 
 package com.ranecc.renderium.domain.model;
-import com.ranecc.renderium.tech.stub.modoutputhandler.ModOutputHandler;
+import com.ranecc.renderium.feature.intercept.handler.ModOutputHandler;
 
 /**
  * 模组输出上下文

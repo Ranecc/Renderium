@@ -1,5 +1,5 @@
 package com.ranecc.renderium.domain.service.algorithm;
-import com.ranecc.renderium.feature.lod.GPULODDataManager;
+import com.ranecc.renderium.infrastructure.gpu.GPULODDataManager;
 
 import com.ranecc.renderium.domain.model.LodResult;
 import java.util.Arrays;

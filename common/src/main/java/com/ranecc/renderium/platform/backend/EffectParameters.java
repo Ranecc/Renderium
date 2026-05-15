@@ -3,6 +3,7 @@
 
 package com.ranecc.renderium.platform.backend;
 
+import com.ranecc.renderium.domain.enums.EffectType;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;

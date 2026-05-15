@@ -4,7 +4,7 @@
 package com.ranecc.renderium.platform.backend;
 
 import com.ranecc.renderium.None;
-
+import com.ranecc.renderium.domain.enums.EffectType;
 import java.util.List;
 import java.util.logging.Logger;
 

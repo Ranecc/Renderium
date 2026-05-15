@@ -2,13 +2,13 @@
 // 前拦截层接口 - 定义渲染前的拦截操作
 
 package com.ranecc.renderium.feature.intercept.pre;
-import com.ranecc.renderium.feature.intercept.base.LODContext;
+import com.ranecc.renderium.domain.model.LODContext;
 import com.ranecc.renderium.feature.culling.core.CullingContext;
 import com.ranecc.renderium.feature.intercept.base.InterceptionCallback;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
 import com.ranecc.renderium.feature.culling.core.CullingContext;
-import com.ranecc.renderium.tech.stub.modoutputhandler.ModOutputHandler;
+import com.ranecc.renderium.feature.intercept.handler.ModOutputHandler;
 
 import com.ranecc.renderium.None;
 

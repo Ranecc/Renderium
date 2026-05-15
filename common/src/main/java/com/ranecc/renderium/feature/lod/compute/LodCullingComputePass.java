@@ -17,7 +17,7 @@ import java.nio.ByteOrder;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import com.ranecc.renderium.feature.lod.GPULODDataManager;
+import com.ranecc.renderium.infrastructure.gpu.GPULODDataManager;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 
 /**

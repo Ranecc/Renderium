@@ -2,14 +2,13 @@
 // 第三方模组输出处理器 - 通用实现，处理第三方渲染模组的 FBO 输出
 
 package com.ranecc.renderium.feature.intercept.handler;
-import com.ranecc.renderium.tech.stub.modoutputhandler.ModOutputHandler;
+import com.ranecc.renderium.feature.intercept.handler.ModOutputHandler;
 
 import com.ranecc.renderium.None;
 
 import java.lang.reflect.Field;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import com.ranecc.renderium.feature.intercept.handler.ModOutputHandler;
 /**
  * 第三方模组输出处理器
  * <p>

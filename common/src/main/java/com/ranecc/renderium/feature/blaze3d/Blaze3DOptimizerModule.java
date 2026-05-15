@@ -7,6 +7,7 @@ import com.ranecc.renderium.feature.module.RenderiumModule;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 import com.ranecc.renderium.feature.module.ModuleContext;
 import com.ranecc.renderium.feature.module.ModuleMetadata;
+import com.ranecc.renderium.feature.module.ModuleCategory;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;

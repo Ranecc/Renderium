@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
-import com.ranecc.renderium.feature.intercept.base.LODContext;
+import com.ranecc.renderium.domain.model.LODContext;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 
 /**

@@ -4,9 +4,7 @@
 // v1.1.0 修复: Object → BfsFFIAdapter (类型安全)
 
 package com.ranecc.renderium.domain.service.algorithm.impl;
-import com.ranecc.renderium.feature.pipeline.strategy.AlgorithmStrategy;
-import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
-import com.ranecc.renderium.feature.pipeline.strategy.AlgorithmStrategy;
+import com.ranecc.renderium.domain.service.algorithm.AlgorithmStrategy;
 import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
 
 import com.ranecc.renderium.domain.service.algorithm.BfsFFIAdapter;

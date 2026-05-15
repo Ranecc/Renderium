@@ -3,7 +3,7 @@
 
 package com.ranecc.renderium.feature.pipeline.parameter;
 import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob;
-import com.ranecc.renderium.tech.stub.knobtype.KnobType;
+import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob.KnobType;
 
 import com.ranecc.renderium.None;
 

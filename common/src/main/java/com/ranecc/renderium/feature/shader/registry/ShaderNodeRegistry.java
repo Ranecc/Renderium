@@ -23,6 +23,7 @@
 package com.ranecc.renderium.feature.shader.registry;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.feature.shader.descriptor.ShaderCompDescriptor;
 
 import java.io.IOException;
 import java.nio.file.*;
