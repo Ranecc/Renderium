@@ -178,7 +178,7 @@ public class GPUCullingPipeline {
         // ======== 参数校验 ========
         if (maxDistance < 32.0f || maxDistance > 4096.0f) {
             throw new IllegalArgumentException(
-                "最大渲染距离必须在 [32, 4096] 范围内: " + maxDistance"
+                "最大渲染距离必须在 [32, 4096] 范围内: " + maxDistance
             );
         }
 
@@ -339,7 +339,7 @@ public class GPUCullingPipeline {
 
         } catch (Exception e) {
             LOGGER.log(Level.WARNING,
-                "executeCPUCulling() 过程中发生异常: " + e.getMessage(), e"
+                "executeCPUCulling() 过程中发生异常: " + e.getMessage(), e
             );
 
             // 异常情况下返回保守结果（全部可见，宁可多画也不可漏画）

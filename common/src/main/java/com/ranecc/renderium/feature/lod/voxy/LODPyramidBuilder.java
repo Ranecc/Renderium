@@ -210,13 +210,13 @@ public class LODPyramidBuilder {
         // ======== 参数校验 ========
         if (maxLODLevels < 2 || maxLODLevels > 12) {
             throw new IllegalArgumentException(
-                "最大 LOD 级别数必须在 [2, 12] 范围内: " + maxLODLevels"
+                "最大 LOD 级别数必须在 [2, 12] 范围内: " + maxLODLevels
             );
         }
 
         if (cacheSize < 16 || cacheSize > 4096) {
             throw new IllegalArgumentException(
-                "缓存容量必须在 [16, 4096] 范围内: " + cacheSize"
+                "缓存容量必须在 [16, 4096] 范围内: " + cacheSize
             );
         }
 
@@ -845,7 +845,7 @@ public class LODPyramidBuilder {
     public int getLevelDataSize(int lodLevel) {
         if (lodLevel < 0 || lodLevel >= maxLODLevels) {
             throw new IllegalArgumentException(
-                "LOD 级别超出范围 [0, " + maxLODLevels + "): " + lodLevel"
+                "LOD 级别超出范围 [0, " + maxLODLevels + "): " + lodLevel
             );
         }
 

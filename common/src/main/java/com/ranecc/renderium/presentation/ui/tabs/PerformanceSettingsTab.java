@@ -139,22 +139,22 @@ public class PerformanceSettingsTab extends Screen {
 
         // BFS 算法开关
         addAlgorithmToggle(centerX, algoStartY + algoSpacing * 2, buttonWidth, buttonHeight,
-                "BFS Occlusion", config.getAlgorithmConfig().getBfs().isEnabled(),"
+                "BFS Occlusion", config.getAlgorithmConfig().getBfs().isEnabled(),
                 enabled -> config.getAlgorithmConfig().getBfs().setEnabled(enabled));
 
         // BFS 优先 Native 开关
         addAlgorithmToggle(centerX, algoStartY + algoSpacing * 3, buttonWidth, buttonHeight,
-                "BFS Prefer Native", config.getAlgorithmConfig().getBfs().isPreferNative(),"
+                "BFS Prefer Native", config.getAlgorithmConfig().getBfs().isPreferNative(),
                 enabled -> config.getAlgorithmConfig().getBfs().setPreferNative(enabled));
 
         // LOD 算法开关
         addAlgorithmToggle(centerX, algoStartY + algoSpacing * 4, buttonWidth, buttonHeight,
-                "LOD Calculator", config.getAlgorithmConfig().getLod().isEnabled(),"
+                "LOD Calculator", config.getAlgorithmConfig().getLod().isEnabled(),
                 enabled -> config.getAlgorithmConfig().getLod().setEnabled(enabled));
 
         // Kahan 算法开关
         addAlgorithmToggle(centerX, algoStartY + algoSpacing * 5, buttonWidth, buttonHeight,
-                "Kahan Accumulator", config.getAlgorithmConfig().getKahan().isEnabled(),"
+                "Kahan Accumulator", config.getAlgorithmConfig().getKahan().isEnabled(),
                 enabled -> config.getAlgorithmConfig().getKahan().setEnabled(enabled));
 
         // 实时统计显示（只读标签）
@@ -265,7 +265,7 @@ public class PerformanceSettingsTab extends Screen {
     private void addForceModeButton(int centerX, int y, int width, int height) {
         String currentMode = config.getAlgorithmConfig().getForceMode();
         final int[] modeIndex = {"auto".equals(currentMode) ? 0 :
-                                  "java".equals(currentMode) ? 1 : 2};"
+                                  "java".equals(currentMode) ? 1 : 2};
 
         final String[] modes = {"auto", "java", "native"};
         final String[] labels = {"Mode: AUTO", "Mode: JAVA (Safe)", "Mode: NATIVE (Fast)"};

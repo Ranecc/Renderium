@@ -1315,7 +1315,7 @@ public final class ShaderCompDescriptor {
             sb.append(String.format("      \"category\": \"%s\",\n", p.getCategory().name()));
             sb.append(String.format("      \"uiHint\": \"%s\",\n", p.getUiHint().name()));
             sb.append(String.format("      \"isCore\": %b\n", p.isCore()));
-            "\");
+            sb.append("},\n");
         }
         sb.append("  ],\n");
 
@@ -1327,7 +1327,7 @@ public final class ShaderCompDescriptor {
             sb.append(String.format("      \"name\": \"%s\",\n", escapeJson(in.getName())));
             sb.append(String.format("      \"type\": \"%s\",\n", in.getType().name()));
             sb.append(String.format("      \"required\": %b\n", in.isRequired()));
-            "\");
+            sb.append("},\n");
         }
         sb.append("  ],\n");
 
@@ -1338,7 +1338,7 @@ public final class ShaderCompDescriptor {
             sb.append("    {\n");
             sb.append(String.format("      \"name\": \"%s\",\n", escapeJson(out.getName())));
             sb.append(String.format("      \"type\": \"%s\"\n", out.getType().name()));
-            "\");
+            sb.append("},\n");
         }
         sb.append("  ],\n");
 
@@ -1382,7 +1382,7 @@ public final class ShaderCompDescriptor {
      */
     private static String escapeJson(String s) {
         if (s == null) return "";
-        "\", \"\\n\").replace(\"\r\", \"\\r\").replace(\"\t\", \"\\t\");
+        return s.replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
     }
 
     /**
@@ -1400,7 +1400,7 @@ public final class ShaderCompDescriptor {
             return String.valueOf(value);
         }
         if (value instanceof Boolean) return String.valueOf(value);
-        if (value instanceof String) return "\" + escapeJson((String) value) + "\"";
+        if (value instanceof String) return "\"" + escapeJson((String) value) + "\"";
         if (value instanceof float[]) {
             float[] arr = (float[]) value;
             StringBuilder sb = new StringBuilder("[");
@@ -1421,7 +1421,7 @@ public final class ShaderCompDescriptor {
             sb.append("]");
             return sb.toString();
         }
-        return "\" + escapeJson(value.toString()) + "\"";
+        return "\"" + escapeJson(value.toString()) + "\"";
     }
 
     // ==================== Object 方法重写 ====================

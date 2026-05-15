@@ -317,7 +317,7 @@ public class VoxyInspiredLODSystem {
 
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE,
-                "VoxyInspiredLODSystem 初始化失败: " + e.getMessage(), e"
+                "VoxyInspiredLODSystem 初始化失败: " + e.getMessage(), e
             );
             return false;
         }
@@ -443,7 +443,7 @@ public class VoxyInspiredLODSystem {
 
         } catch (Exception e) {
             LOGGER.log(Level.WARNING,
-                "update() 过程中发生异常: " + e.getMessage(), e"
+                "update() 过程中发生异常: " + e.getMessage(), e
             );
             lastUpdateTimeNanos = System.nanoTime() - startTime;
         }

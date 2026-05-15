@@ -347,12 +347,12 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
 
             if (!rayTracingSupported) {
                 LOGGER.warning(
-                        "╔══════════════════════════════════════════════════╗\n" +";
-                        "║  ⚠️ 光线追踪扩展不可用！                            ║\n" +";
-                        "╠══════════════════════════════════════════════════╣\n" +";
-                        "║  影响: 所有光线追踪功能将被禁用                   ║\n" +";
-                        "║  回退: 使用传统光栅化方案                          ║\n" +";
-                        "║  建议: 需要 NVIDIA RTX 20+ / AMD RX 6000+ 显卡   ║\n" +";
+                        "╔══════════════════════════════════════════════════╗\n" +
+                        "║  ⚠️ 光线追踪扩展不可用！                            ║\n" +
+                        "╠══════════════════════════════════════════════════╣\n" +
+                        "║  影响: 所有光线追踪功能将被禁用                   ║\n" +
+                        "║  回退: 使用传统光栅化方案                          ║\n" +
+                        "║  建议: 需要 NVIDIA RTX 20+ / AMD RX 6000+ 显卡   ║\n" +
                         "╚══════════════════════════════════════════════════╝"
                 );
                 loaded = true; // 以降级模式加载
@@ -394,7 +394,7 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "RayTracingModule: 初始化失败! 错误: %s", e.getMessage()"
+                    "RayTracingModule: 初始化失败! 错误: %s", e.getMessage()
             ));
             return false;
         }
@@ -484,7 +484,7 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
 
         } catch (Exception e) {
             LOGGER.severe(String.format(
-                    "RayTracingModule: 释放资源时错误: %s", e.getMessage()"
+                    "RayTracingModule: 释放资源时错误: %s", e.getMessage()
             ));
         }
     }
@@ -684,7 +684,7 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
         }
 
         LOGGER.fine(String.format(
-                "RayTracingModule: 构建 TLAS [instances=%d]", instanceCount"
+                "RayTracingModule: 构建 TLAS [instances=%d]", instanceCount
         ));
 
         // TODO: 实际 Vulkan 实现:
@@ -749,7 +749,7 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
         }
 
         LOGGER.finest(String.format(
-                "RayTracingModule: 更新 TLAS [instances=%d]", instanceCount"
+                "RayTracingModule: 更新 TLAS [instances=%d]", instanceCount
         ));
 
         // TODO: 使用 VK_BUILD_ACCELERATION_STRUCTURE_UPDATE_MODE_KHR 执行增量更新
@@ -811,7 +811,7 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
         long startTime = System.nanoTime();
 
         LOGGER.finest(String.format(
-                "RayTracingModule: 执行 %s Pass...", passType.getChineseName()"
+                "RayTracingModule: 执行 %s Pass...", passType.getChineseName()
         ));
 
         // TODO: 实现光线追踪渲染:
@@ -881,7 +881,7 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
         this.currentConfig = config;
 
         LOGGER.info(String.format(
-                "RayTracingModule: 配置已更新 → %s", config.toString()"
+                "RayTracingModule: 配置已更新 → %s", config.toString()
         ));
     }
 

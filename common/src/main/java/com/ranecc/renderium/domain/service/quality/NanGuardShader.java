@@ -2005,21 +2005,15 @@ public final class NanGuardShader {
         "//   当 weight=0 时返回 a，weight=1 时返回 b\n" +
         "// ================================================\n" +
         "float nanGuardClamp(float value, float minValue, float maxValue, float defaultValue) {\n" +
-        "    // 检测 NaN 或 Inf（异常时返回 1.0，正常时返回 0.0）"
-
-
-
-
-
-
-        "    float invalidMask = float(isnan(value)) + float(isinf(value));
-
-
-
-
-
-
-        "\" +\n\"    // 对正常值进行钳位\n\" +\n\"    float clampedValue = clamp(value, minValue, maxValue);\n\" +\n\"\n\" +\n\"    // 无分支选择：invalidMask=0 → clampedValue, invalidMask=1 → defaultValue\n\" +\n\"    // mix 是 GPU 原生的线性插值指令，不产生分支\n\" +\n\"    return mix(clampedValue, defaultValue, invalidMask);\n\" +\n\"}\n\";"
+        "    // 检测 NaN 或 Inf（异常时返回 1.0，正常时返回 0.0）\n" +
+        "    float invalidMask = float(isnan(value)) + float(isinf(value));\n" +
+        "    // 对正常值进行钳位\n" +
+        "    float clampedValue = clamp(value, minValue, maxValue);\n" +
+        "\n" +
+        "    // 无分支选择：invalidMask=0 → clampedValue, invalidMask=1 → defaultValue\n" +
+        "    // mix 是 GPU 原生的线性插值指令，不产生分支\n" +
+        "    return mix(clampedValue, defaultValue, invalidMask);\n" +
+        "}\n";
 
 
 
@@ -2178,7 +2172,22 @@ public final class NanGuardShader {
         "//   step(edge, x) 是阶跃函数：x<=edge→0, x>edge→1\n" +
         "//   这避免了 if (length < eps) 导致的 Warp 分化\n" +
         "// ================================================\n" +
-        "\" +\n\"#ifndef NANGUARD_MIN_NORMALIZE_LENGTH\n\" +\n\"#define NANGUARD_MIN_NORMALIZE_LENGTH 1e-8\n\" +\n\"#endif\n\" +\n\"\n\" +\n\"vec3 safeNormalize(vec3 vector, vec3 defaultDirection) {\n\" +\n\"    // 计算向量长度（L2 范数）\n\" +\n\"    float len = length(vector);\n\" +\n\"\n\" +\n\"    // 无分支检测：长度是否超过最小阈值\n\" +\n\"    // step(edge, x) 返回: x > edge ? 1.0 : 0.0\n\" +\n\"    // 因此 safeMask: 长度安全→1.0, 长度过短→0.0\n\" +\n\"    float safeMask = step(NANGUARD_MIN_NORMALIZE_LENGTH, len);\n\" +\n\"\n\" +\n\"    // 计算归一化结果（即使长度很短也会计算，但不会被选中）\n\" +\n\"    vec3 normalizedVector = vector / max(len, NANGUARD_MIN_NORMALIZE_LENGTH);\n\" +\n\"\n\" +\n\"    // 无分支选择：safeMask=1.0 → normalizedVector, safeMask=0.0 → defaultDirection\n\" +\n\"    // 这是唯一的出口点，保证所有线程都执行相同路径\n\" +\n\"    return mix(defaultDirection, normalizedVector, safeMask);\n\" +\n\"}\n\";"
+        "\"\n#endif\n\nvec3 safeNormalize(vec3 vector, vec3 defaultDirection) {\n" +
+        "    // 计算向量长度（L2 范数）\n" +
+        "    float len = length(vector);\n" +
+        "\n" +
+        "    // 无分支检测：长度是否超过最小阈值\n" +
+        "    // step(edge, x) 返回: x > edge ? 1.0 : 0.0\n" +
+        "    // 因此 safeMask: 长度安全→1.0, 长度过短→0.0\n" +
+        "    float safeMask = step(NANGUARD_MIN_NORMALIZE_LENGTH, len);\n" +
+        "\n" +
+        "    // 计算归一化结果（即使长度很短也会计算，但不会被选中）\n" +
+        "    vec3 normalizedVector = vector / max(len, NANGUARD_MIN_NORMALIZE_LENGTH);\n" +
+        "\n" +
+        "    // 无分支选择：safeMask=1.0 → normalizedVector, safeMask=0.0 → defaultDirection\n" +
+        "    // 这是唯一的出口点，保证所有线程都执行相同路径\n" +
+        "    return mix(defaultDirection, normalizedVector, safeMask);\n" +
+        "}\n";
 
 
 
@@ -2313,7 +2322,7 @@ public final class NanGuardShader {
         "//   dividend     - 被除数\n" +
         "//   divisor      - 除数（可能为零或接近零）\n" +
         "//   defaultValue - 除法失败时的回退值（默认 0.0）\n" +
-        "//   epsilon      - 判定'除数过小'的阈值（默认 1e-6）\n" +
+        "//   epsilon      - 判定'\n'除数过小'\n'的阈值（默认 1e-6）\n" +
         "// 返回:\n" +
         "//   除数安全 → dividend / divisor\n" +
         "//   除数过小 → defaultValue\n" +
@@ -2322,7 +2331,25 @@ public final class NanGuardShader {
         "//   使用 step() 检测除数绝对值，mix() 进行无分支选择\n" +
         "//   完全避免 if (abs(divisor) < eps) 的分支判断\n" +
         "// ================================================\n" +
-        "\" +\n\"#ifndef NANGUARD_DIVIDE_EPSILON\n\" +\n\"#define NANGUARD_DIVIDE_EPSILON 1e-6\n\" +\n\"#endif\n\" +\n\"\n\" +\n\"float safeDivide(float dividend, float divisor, float defaultValue, float epsilon) {\n\" +\n\"    // 计算除数的绝对值\n\" +\n\"    float absDivisor = abs(divisor);\n\" +\n\"\n\" +\n\"    // 无分支检测：除数绝对值是否大于 epsilon\n\" +\n\"    // step(edge, x): x > edge → 1.0, x <= edge → 0.0\n\" +\n\"    // safeMask: 除数安全→1.0, 除数危险→0.0\n\" +\n\"    float safeMask = step(epsilon, absDivisor);\n\" +\n\"\n\" +\n\"    // 计算除法结果（即使除数为零也会执行，GPU 会产生 ±Inf 但不会崩溃）\n\" +\n\"    float divisionResult = dividend / divisor;\n\" +\n\"\n\" +\n\"    // 无分支选择：safeMask=1.0 → divisionResult, safeMask=0.0 → defaultValue\n\" +\n\"    return mix(defaultValue, divisionResult, safeMask);\n\" +\n\"}\n\";"
+        "#ifndef NANGUARD_DIVIDE_EPSILON\n" +
+        "#define NANGUARD_DIVIDE_EPSILON 1e-6\n" +
+        "#endif\n" +
+        "\n" +
+        "float safeDivide(float dividend, float divisor, float defaultValue, float epsilon) {\n" +
+        "    // 计算除数的绝对值\n" +
+        "    float absDivisor = abs(divisor);\n" +
+        "\n" +
+        "    // 无分支检测：除数绝对值是否大于 epsilon\n" +
+        "    // step(edge, x): x > edge → 1.0, x <= edge → 0.0\n" +
+        "    // safeMask: 除数安全→1.0, 除数危险→0.0\n" +
+        "    float safeMask = step(epsilon, absDivisor);\n" +
+        "\n" +
+        "    // 计算除法结果（即使除数为零也会执行，GPU 会产生 ±Inf 但不会崩溃）\n" +
+        "    float divisionResult = dividend / divisor;\n" +
+        "\n" +
+        "    // 无分支选择：safeMask=1.0 → divisionResult, safeMask=0.0 → defaultValue\n" +
+        "    return mix(defaultValue, divisionResult, safeMask);\n" +
+        "}\n";
 
 
 
@@ -2360,15 +2387,14 @@ public final class NanGuardShader {
        ">// 作者: Renderium Team\n" +
         "// 许可: 与 Renderium 主项目相同\n" +
         "//\n" +
-        "// 使用方式:"
+        "// 使用方式:\n" +
+        "//   将此文件作为 GLSL 头文件包含:\n" +
+        "//   #include \"nan_guard.glsl\"\n" +
+        "//\n" +
+        "//   或者将此文件内容直接粘贴到 shader 顶部\n" +
 
 
 
-
-
-
-        \1
-" +";
 
 
 
@@ -2387,60 +2413,85 @@ public final class NanGuardShader {
         "//      - 安全的向量归一化（处理零向量）\n" +
         "//   3. safeDivide(dividend, divisor, defaultVal, epsilon)\n" +
         "//      - 安全的除法运算（避免除零）\n" +
-        "// ============================================================"
-
-
-
-
-
-
-        "\" +\n\"// 防止重复包含的保护宏\n\" +\n\"#ifndef NANGUARD_GLSL_INCLUDED\n\" +\n\"#define NANGUARD_GLSL_INCLUDED\n\" +\n\"\n\" +\n\"// ================================================\n\" +
+        "// ============================================================\n" +
+        "// 防止重复包含的保护宏\n" +
+        "#ifndef NANGUARD_GLSL_INCLUDED\n" +
+        "#define NANGUARD_GLSL_INCLUDED\n" +
+        "\n" +
+        "// ================================================\n" +
 
 
 
         // 全局配置常量
 
-
-
         "// 全局配置常量（可通过 #define 覆盖）\n" +
-        "// ================================================"
-
-
-
-
-
-
-        \1
-" +";
-
-
-
-        GLSL_SAFE_NORMALIZE + "
-
-
-
-
-
-
-
-
-
-
-        GLSL_SAFE_DIVIDE + "
-
-
-
-
-
-
-
-
-
-
         "// ================================================\n" +
-        "// 便捷包装函数（使用默认参数）\n" +
+        GLSL_SAFE_NORMALIZE + "\n" +
+        GLSL_SAFE_DIVIDE + "\n" +
         "// ================================================\n" +
-        "\" +\n\"/**\n\" +\n\" * nanGuardClamp 的便捷版本（defaultValue = 0.0）\n\" +\n\" */\n\" +\n\"float nanGuardClamp(float value, float minValue, float maxValue) {\n\" +\n\"    return nanGuardClamp(value, minValue, maxValue, NANGUARD_DEFAULT_SAFE_VALUE);\n\" +\n\"}\n\" +\n\"\n\" +\n\"/**\n\" +\n\" * safeNormalize 的便捷版本（defaultDirection = vec3(0.0, 0.0, 1.0)）\n\" +\n\" */\n\" +\n\"vec3 safeNormalize(vec3 vector) {\n\" +\n\"    return safeNormalize(vector, vec3(0.0, 0.0, 1.0));\n\" +\n\"}\n\" +\n\"\n\" +\n\"/**\n\" +\n\" * safeDivide 的便捷版本（epsilon = 1e-6, defaultValue = 0.0）\n\" +\n\" */\n\" +\n\"float safeDivide(float dividend, float divisor, float defaultValue) {\n\" +\n\"    return safeDivide(dividend, divisor, defaultValue, NANGUARD_DIVIDE_EPSILON);\n\" +\n\"}\n\" +\n\"\n\" +\n\"/**\n\" +\n\" * safeDivide 的最简版本（defaultValue = 0.0）\n\" +\n\" */\n\" +\n\"float safeDivide(float dividend, float divisor) {\n\" +\n\"    return safeDivide(dividend, divisor, NANGUARD_DEFAULT_SAFE_VALUE, NANGUARD_DIVIDE_EPSILON);\n\" +\n\"}\n\" +\n\"\n\" +\n\"// ================================================\n\" +\n\"// 扩展函数：向量和矩阵版本\n\" +\n\"// ================================================\n\" +\n\"\n\" +\n\"/**\n\" +\n\" * nanGuardClamp 的 vec2/vec3/vec4 版本（分量级操作）\n\" +\n\" */\n\" +\n\"vec2 nanGuardClamp(vec2 value, vec2 minValue, vec2 maxValue, vec2 defaultValue) {\n\" +\n\"    vec2 invalidMask = vec2(\n\" +\n\"        float(isnan(value.x)) + float(isinf(value.x)),\n\" +\n\"        float(isnan(value.y)) + float(isinf(value.y))\n\" +\n\"    );\n\" +\n\"    return mix(clamp(value, minValue, maxValue), defaultValue, invalidMask);\n\" +\n\"}\n\" +\n\"\n\" +\n\"vec3 nanGuardClamp(vec3 value, vec3 minValue, vec3 maxValue, vec3 defaultValue) {\n\" +\n\"    vec3 invalidMask = vec3(\n\" +\n\"        float(isnan(value.x)) + float(isinf(value.x)),\n\" +\n\"        float(isnan(value.y)) + float(isinf(value.y)),\n\" +\n\"        float(isnan(value.z)) + float(isinf(value.z))\n\" +\n\"    );\n\" +\n\"    return mix(clamp(value, minValue, maxValue), defaultValue, invalidMask);\n\" +\n\"}\n\" +\n\"\n\" +\n\"vec4 nanGuardClamp(vec4 value, vec4 minValue, vec4 maxValue, vec4 defaultValue) {\n\" +\n\"    vec4 invalidMask = vec4(\n\" +\n\"        float(isnan(value.x)) + float(isinf(value.x)),\n\" +\n\"        float(isnan(value.y)) + float(isinf(value.y)),\n\" +\n\"        float(isnan(value.z)) + float(isinf(value.z)),\n\" +\n\"        float(isnan(value.w)) + float(isinf(value.w))\n\" +\n\"    );\n\" +\n\"    return mix(clamp(value, minValue, maxValue), defaultValue, invalidMask);\n\" +\n\"}\n\" +\n\"\n\" +\n\"#endif // NANGUARD_GLSL_INCLUDED\n\";"
+        "/**\n" +
+        " * nanGuardClamp 的便捷版本（defaultValue = 0.0）\n" +
+        " */\n" +
+        "float nanGuardClamp(float value, float minValue, float maxValue) {\n" +
+        "    return nanGuardClamp(value, minValue, maxValue, NANGUARD_DEFAULT_SAFE_VALUE);\n" +
+        "}\n" +
+        "\n" +
+        "/**\n" +
+        " * safeNormalize 的便捷版本（defaultDirection = vec3(0.0, 0.0, 1.0)）\n" +
+        " */\n" +
+        "vec3 safeNormalize(vec3 vector) {\n" +
+        "    return safeNormalize(vector, vec3(0.0, 0.0, 1.0));\n" +
+        "}\n" +
+        "\n" +
+        "/**\n" +
+        " * safeDivide 的便捷版本（epsilon = 1e-6, defaultValue = 0.0）\n" +
+        " */\n" +
+        "float safeDivide(float dividend, float divisor, float defaultValue) {\n" +
+        "    return safeDivide(dividend, divisor, defaultValue, NANGUARD_DIVIDE_EPSILON);\n" +
+        "}\n" +
+        "\n" +
+        "/**\n" +
+        " * safeDivide 的最简版本（defaultValue = 0.0）\n" +
+        " */\n" +
+        "float safeDivide(float dividend, float divisor) {\n" +
+        "    return safeDivide(dividend, divisor, NANGUARD_DEFAULT_SAFE_VALUE, NANGUARD_DIVIDE_EPSILON);\n" +
+        "}\n" +
+        "\n" +
+        "// ================================================\n" +
+        "// 扩展函数：向量和矩阵版本\n" +
+        "// ================================================\n" +
+        "\n" +
+        "/**\n" +
+        " * nanGuardClamp 的 vec2/vec3/vec4 版本（分量级操作）\n" +
+        " */\n" +
+        "vec2 nanGuardClamp(vec2 value, vec2 minValue, vec2 maxValue, vec2 defaultValue) {\n" +
+        "    vec2 invalidMask = vec2(\n" +
+        "        float(isnan(value.x)) + float(isinf(value.x)),\n" +
+        "        float(isnan(value.y)) + float(isinf(value.y))\n" +
+        "    );\n" +
+        "    return mix(clamp(value, minValue, maxValue), defaultValue, invalidMask);\n" +
+        "}\n" +
+        "\n" +
+        "vec3 nanGuardClamp(vec3 value, vec3 minValue, vec3 maxValue, vec3 defaultValue) {\n" +
+        "    vec3 invalidMask = vec3(\n" +
+        "        float(isnan(value.x)) + float(isinf(value.x)),\n" +
+        "        float(isnan(value.y)) + float(isinf(value.y)),\n" +
+        "        float(isnan(value.z)) + float(isinf(value.z))\n" +
+        "    );\n" +
+        "    return mix(clamp(value, minValue, maxValue), defaultValue, invalidMask);\n" +
+        "}\n" +
+        "\n" +
+        "vec4 nanGuardClamp(vec4 value, vec4 minValue, vec4 maxValue, vec4 defaultValue) {\n" +
+        "    vec4 invalidMask = vec4(\n" +
+        "        float(isnan(value.x)) + float(isinf(value.x)),\n" +
+        "        float(isnan(value.y)) + float(isinf(value.y)),\n" +
+        "        float(isnan(value.z)) + float(isinf(value.z)),\n" +
+        "        float(isnan(value.w)) + float(isinf(value.w))\n" +
+        "    );\n" +
+        "    return mix(clamp(value, minValue, maxValue), defaultValue, invalidMask);\n" +
+        "}\n" +
+        "\n" +
+        "#endif // NANGUARD_GLSL_INCLUDED\n";
 
 
 
@@ -2536,7 +2587,95 @@ public final class NanGuardShader {
         "//   - clamp(x, 0, 1) → saturate(x)\n" +
         "//   - fma() → mad()\n" +
         "// ============================================================\n" +
-        "\" +\n\"#ifndef NANGUARD_HLSL_INCLUDED\n\" +\n\"#define NANGUARD_HLSL_INCLUDED\n\" +\n\"\n\" +\n\"// 配置常量\n\" +\n\"#ifndef NANGUARD_EPSILON\n\" +\n\"#define NANGUARD_EPSILON 1e-6\n\" +\n\"#endif\n\" +\n\"\n\" +\n\"#ifndef NANGUARD_MIN_NORMALIZE_LENGTH\n\" +\n\"#define NANGUARD_MIN_NORMALIZE_LENGTH 1e-8\n\" +\n\"#endif\n\" +\n\"\n\" +\n\"#ifndef NANGUARD_DEFAULT_SAFE_VALUE\n\" +\n\"#define NANGUARD_DEFAULT_SAFE_VALUE 0.0\n\" +\n\"#endif\n\" +\n\"\n\" +\n\"#ifndef NANGUARD_DIVIDE_EPSILON\n\" +\n\"#define NANGUARD_DIVIDE_EPSILON 1e-6\n\" +\n\"#endif\n\" +\n\"\n\" +\n\"// ================================================\n\" +\n\"// nanGuardClamp: 带 NaN/Inf 检测的安全钳位\n\" +\n\"// ================================================\n\" +\n\"float nanGuardClamp(float value, float minValue, float maxValue, float defaultValue) {\n\" +\n\"    // 检测 NaN 或 Inf（HLSL 同样支持 isnan/isinf）\n\" +\n\"    float invalidMask = isnan(value) + isinf(value);\n\" +\n\"\n\" +\n\"    // 对正常值进行钳位\n\" +\n\"    float clampedValue = clamp(value, minValue, maxValue);\n\" +\n\"\n\" +\n\"    // HLSL 使用 lerp 进行线性插值（等同于 GLSL 的 mix）\n\" +\n\"    return lerp(clampedValue, defaultValue, invalidMask);\n\" +\n\"}\n\" +\n\"\n\" +\n\"// ================================================\n\" +\n\"// safeNormalize: 安全的向量归一化\n\" +\n\"// ================================================\n\" +\n\"float3 safeNormalize(float3 vector, float3 defaultDirection) {\n\" +\n\"    // 计算向量长度\n\" +\n\"    float len = length(vector);\n\" +\n\"\n\" +\n\"    // 无分支检测：长度是否安全\n\" +\n\"    float safeMask = step(NANGUARD_MIN_NORMALIZE_LENGTH, len);\n\" +\n\"\n\" +\n\"    // 计算归一化结果\n\" +\n\"    float3 normalizedVector = vector / max(len, NANGUARD_MIN_NORMALIZE_LENGTH);\n\" +\n\"\n\" +\n\"    // 无分支选择\n\" +\n\"    return lerp(defaultDirection, normalizedVector, safeMask);\n\" +\n\"}\n\" +\n\"\n\" +\n\"// ================================================\n\" +\n\"// safeDivide: 安全的除法运算\n\" +\n\"// ================================================\n\" +\n\"float safeDivide(float dividend, float divisor, float defaultValue, float epsilon) {\n\" +\n\"    // 计算除数绝对值\n\" +\n\"    float absDivisor = abs(divisor);\n\" +\n\"\n\" +\n\"    // 无分支检测：除数是否安全\n\" +\n\"    float safeMask = step(epsilon, absDivisor);\n\" +\n\"\n\" +\n\"    // 计算除法结果\n\" +\n\"    float divisionResult = dividend / divisor;\n\" +\n\"\n\" +\n\"    // 无分支选择\n\" +\n\"    return lerp(defaultValue, divisionResult, safeMask);\n\" +\n\"}\n\" +\n\"\n\" +\n\"// ================================================\n\" +\n\"// 便捷包装函数（使用默认参数）\n\" +\n\"// ================================================\n\" +\n\"\n\" +\n\"float nanGuardClamp(float value, float minValue, float maxValue) {\n\" +\n\"    return nanGuardClamp(value, minValue, maxValue, NANGUARD_DEFAULT_SAFE_VALUE);\n\" +\n\"}\n\" +\n\"\n\" +\n\"float3 safeNormalize(float3 vector) {\n\" +\n\"    return safeNormalize(vector, float3(0.0, 0.0, 1.0));\n\" +\n\"}\n\" +\n\"\n\" +\n\"float safeDivide(float dividend, float divisor, float defaultValue) {\n\" +\n\"    return safeDivide(dividend, divisor, defaultValue, NANGUARD_DIVIDE_EPSILON);\n\" +\n\"}\n\" +\n\"\n\" +\n\"float safeDivide(float dividend, float divisor) {\n\" +\n\"    return safeDivide(dividend, divisor, NANGUARD_DEFAULT_SAFE_VALUE, NANGUARD_DIVIDE_EPSILON);\n\" +\n\"}\n\" +\n\"\n\" +\n\"#endif // NANGUARD_HLSL_INCLUDED\n\";"
+        "#ifndef NANGUARD_HLSL_INCLUDED\n" +
+        "#define NANGUARD_HLSL_INCLUDED\n" +
+        "\n" +
+        "// 配置常量\n" +
+        "#ifndef NANGUARD_EPSILON\n" +
+        "#define NANGUARD_EPSILON 1e-6\n" +
+        "#endif\n" +
+        "\n" +
+        "#ifndef NANGUARD_MIN_NORMALIZE_LENGTH\n" +
+        "#define NANGUARD_MIN_NORMALIZE_LENGTH 1e-8\n" +
+        "#endif\n" +
+        "\n" +
+        "#ifndef NANGUARD_DEFAULT_SAFE_VALUE\n" +
+        "#define NANGUARD_DEFAULT_SAFE_VALUE 0.0\n" +
+        "#endif\n" +
+        "\n" +
+        "#ifndef NANGUARD_DIVIDE_EPSILON\n" +
+        "#define NANGUARD_DIVIDE_EPSILON 1e-6\n" +
+        "#endif\n" +
+        "\n" +
+        "// ================================================\n" +
+        "// nanGuardClamp: 带 NaN/Inf 检测的安全钳位\n" +
+        "// ================================================\n" +
+        "float nanGuardClamp(float value, float minValue, float maxValue, float defaultValue) {\n" +
+        "    // 检测 NaN 或 Inf（HLSL 同样支持 isnan/isinf）\n" +
+        "    float invalidMask = isnan(value) + isinf(value);\n" +
+        "\n" +
+        "    // 对正常值进行钳位\n" +
+        "    float clampedValue = clamp(value, minValue, maxValue);\n" +
+        "\n" +
+        "    // HLSL 使用 lerp 进行线性插值（等同于 GLSL 的 mix）\n" +
+        "    return lerp(clampedValue, defaultValue, invalidMask);\n" +
+        "}\n" +
+        "\n" +
+        "// ================================================\n" +
+        "// safeNormalize: 安全的向量归一化\n" +
+        "// ================================================\n" +
+        "float3 safeNormalize(float3 vector, float3 defaultDirection) {\n" +
+        "    // 计算向量长度\n" +
+        "    float len = length(vector);\n" +
+        "\n" +
+        "    // 无分支检测：长度是否安全\n" +
+        "    float safeMask = step(NANGUARD_MIN_NORMALIZE_LENGTH, len);\n" +
+        "\n" +
+        "    // 计算归一化结果\n" +
+        "    float3 normalizedVector = vector / max(len, NANGUARD_MIN_NORMALIZE_LENGTH);\n" +
+        "\n" +
+        "    // 无分支选择\n" +
+        "    return lerp(defaultDirection, normalizedVector, safeMask);\n" +
+        "}\n" +
+        "\n" +
+        "// ================================================\n" +
+        "// safeDivide: 安全的除法运算\n" +
+        "// ================================================\n" +
+        "float safeDivide(float dividend, float divisor, float defaultValue, float epsilon) {\n" +
+        "    // 计算除数绝对值\n" +
+        "    float absDivisor = abs(divisor);\n" +
+        "\n" +
+        "    // 无分支检测：除数是否安全\n" +
+        "    float safeMask = step(epsilon, absDivisor);\n" +
+        "\n" +
+        "    // 计算除法结果\n" +
+        "    float divisionResult = dividend / divisor;\n" +
+        "\n" +
+        "    // 无分支选择\n" +
+        "    return lerp(defaultValue, divisionResult, safeMask);\n" +
+        "}\n" +
+        "\n" +
+        "// ================================================\n" +
+        "// 便捷包装函数（使用默认参数）\n" +
+        "// ================================================\n" +
+        "\n" +
+        "float nanGuardClamp(float value, float minValue, float maxValue) {\n" +
+        "    return nanGuardClamp(value, minValue, maxValue, NANGUARD_DEFAULT_SAFE_VALUE);\n" +
+        "}\n" +
+        "\n" +
+        "float3 safeNormalize(float3 vector) {\n" +
+        "    return safeNormalize(vector, float3(0.0, 0.0, 1.0));\n" +
+        "}\n" +
+        "\n" +
+        "float safeDivide(float dividend, float divisor, float defaultValue) {\n" +
+        "    return safeDivide(dividend, divisor, defaultValue, NANGUARD_DIVIDE_EPSILON);\n" +
+        "}\n" +
+        "\n" +
+        "float safeDivide(float dividend, float divisor) {\n" +
+        "    return safeDivide(dividend, divisor, NANGUARD_DEFAULT_SAFE_VALUE, NANGUARD_DIVIDE_EPSILON);\n" +
+        "}\n" +
+        "\n" +
+        "#endif // NANGUARD_HLSL_INCLUDED\n";
 
 
 

@@ -37,7 +37,7 @@ public final class ShaderPreprocessor {
     /** Vulkan GLSL 必需的扩展 */
     private static final String VULKAN_EXTENSIONS =
             "#extension GL_ARB_separate_shader_objects : enable" +
-            "#extension GL_ARB_shading_language_420pack : enable"
+            "#extension GL_ARB_shading_language_420pack : enable";
 
     // ==================== 预定义宏 ====================
 
@@ -97,8 +97,7 @@ public final class ShaderPreprocessor {
         StringBuilder sb = new StringBuilder();
 
         // 注入版本声明
-        sb.append(DEFAULT_GLSL_VERSION).append('
-');
+        sb.append(DEFAULT_GLSL_VERSION).append('\n');
 
         // 注入 Vulkan 扩展
         sb.append(VULKAN_EXTENSIONS);
@@ -110,10 +109,9 @@ public final class ShaderPreprocessor {
         for (Map.Entry<String, String> entry : predefinedMacros.entrySet()) {
             sb.append("#define ").append(entry.getKey());
             if (!entry.getValue().isEmpty()) {
-                sb.append(' ').append(entry.getValue());
+                sb.append('\n').append(entry.getValue());
             }
-            sb.append('
-');
+            sb.append('\n');
         }
 
         // 注入用户自定义宏
@@ -156,7 +154,7 @@ public final class ShaderPreprocessor {
         }
 
         StringBuilder result = new StringBuilder();
-        "\");
+        result.append("\n");
 
         for (String line : lines) {
             String trimmed = line.trim();
@@ -165,8 +163,7 @@ public final class ShaderPreprocessor {
             if (trimmed.startsWith("#include")) {
                 String includePath = extractIncludePath(trimmed);
                 if (includePath == null) {
-                    result.append(line).append('
-');
+                    result.append(line).append('\n');
                     continue;
                 }
 
@@ -185,14 +182,11 @@ public final class ShaderPreprocessor {
 
                 // 递归处理包含文件中的 #include
                 String expanded = processIncludes(includeContent, includedFiles, depth + 1);
-                result.append("// --- Begin include: ").append(includePath).append(" ---
-");
+                result.append("// --- Begin include: ").append(includePath).append(" ---\n");
                 result.append(expanded);
-                result.append("// --- End include: ").append(includePath).append(" ---
-");
+                result.append("// --- End include: ").append(includePath).append(" ---\n");
             } else {
-                result.append(line).append('
-');
+                result.append(line).append('\n');
             }
         }
 
@@ -235,24 +229,17 @@ public final class ShaderPreprocessor {
 
         switch (stage) {
             case VERTEX -> {
-                sb.append("// Vulkan vertex shader preamble
-");
-                sb.append("#define gl_VertexID gl_VertexIndex
-");
-                sb.append("#define gl_InstanceID gl_InstanceIndex
-");
+                sb.append("// Vulkan vertex shader preamble\n");
+                sb.append("#define gl_VertexID gl_VertexIndex\n");
+                sb.append("#define gl_InstanceID gl_InstanceIndex\n");
             }
             case FRAGMENT -> {
-                sb.append("// Vulkan fragment shader preamble
-");
-                sb.append("layout(early_fragment_tests) in;
-");
+                sb.append("// Vulkan fragment shader preamble\n");
+                sb.append("layout(early_fragment_tests) in;\n");
             }
             case COMPUTE -> {
-                sb.append("// Vulkan compute shader preamble
-");
-                sb.append("layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-");
+                sb.append("// Vulkan compute shader preamble\n");
+                sb.append("layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;\n");
             }
         }
 

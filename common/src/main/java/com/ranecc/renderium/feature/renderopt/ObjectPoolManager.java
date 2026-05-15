@@ -584,12 +584,12 @@ public class ObjectPoolManager implements AutoCloseable {
         if (!initialized) return "ObjectPoolManager not initialized";
 
         return String.format(
-                "Object Pool Manager Report:" +
-                "  Status: %s" +
-                "  Global pools: %d (%d objects)" +
-                "  Frame pools: %d (%d objects)" +
-                "  Total active: %d" +
-                "  Total pooled: %d" +
+                "Object Pool Manager Report:\n" +
+                "  Status: %s\n" +
+                "  Global pools: %d (%d objects)\n" +
+                "  Frame pools: %d (%d objects)\n" +
+                "  Total active: %d\n" +
+                "  Total pooled: %d\n" +
                 "  Frame: %d",
                 enabled ? "ENABLED" : "DISABLED",
                 getGlobalPoolCount(),
@@ -609,11 +609,11 @@ public class ObjectPoolManager implements AutoCloseable {
         StringBuilder sb = new StringBuilder();
         sb.append("=== Global Pools ===\n");
         for (ObjectPool<?> pool : globalPools.values()) {
-            "\");
+            sb.append(pool.getStats().format()).append("\n");
         }
-        "\");
+        sb.append("\n=== Per-Frame Pools ===\n");
         for (ObjectPool<?> pool : perFramePools.values()) {
-            "\");
+            sb.append(pool.getStats().format()).append("\n");
         }
         return sb.toString();
     }

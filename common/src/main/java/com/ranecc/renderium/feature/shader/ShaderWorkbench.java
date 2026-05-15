@@ -387,7 +387,7 @@ public final class ShaderWorkbench {
     }
 
     /**
-     * 获取平台对应的 'where'/'which' 命令
+     * 获取平台对应的 '\n'where'\n'/'\n'which'\n' 命令
      *
      * @return 命令名称
      */
@@ -436,18 +436,16 @@ public final class ShaderWorkbench {
             StringBuilder output = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) {
-                "\");
+                output.append(line).append("\n");
             }
 
             int exitCode = process.waitFor();
 
             if (exitCode == 0) {
-                LOGGER.fine("编译器验证成功:
-" + output);
+                LOGGER.fine("编译器验证成功:\n" + output);
                 return true;
             } else {
-                LOGGER.warning("编译器验证失败 (exit code=" + exitCode + "):
-" + output);
+                LOGGER.warning("编译器验证失败 (exit code=" + exitCode + "):\n" + output);
                 return false;
             }
         } catch (IOException | InterruptedException e) {
@@ -709,12 +707,10 @@ public final class ShaderWorkbench {
     private void logKeyParameters(Map<String, Float> params) {
         String[] keyParams = {"exposure", "contrast", "saturation", "bloom_strength"};
 
-        StringBuilder sb = new StringBuilder("[沙盒模式] 关键参数:
-");
+        StringBuilder sb = new StringBuilder("[沙盒模式] 关键参数:\n");
         for (String key : keyParams) {
             if (params.containsKey(key)) {
-                sb.append(String.format("  %s = %.3f
-", key, params.get(key)));
+                sb.append(String.format("  %s = %.3f\n", key, params.get(key)));
             }
         }
         LOGGER.info(sb.toString());
@@ -954,7 +950,7 @@ public final class ShaderWorkbench {
     private void transferHandlesToShaderPack(RenderiumGraphBinary rgb, String packName,
                                               long device, long queue) {
         LOGGER.info(String.format(
-                "[夺舍模式] 正在将 Vulkan 句柄传递给光影包 '%s'...", packName));
+                "[夺舍模式] 正在将 Vulkan 句柄传递给光影包 '\n'%s'\n'...", packName));
 
         // 打包句柄到上下文对象
         TakeoverContext context = new TakeoverContext(device, queue);
@@ -1212,8 +1208,7 @@ public final class ShaderWorkbench {
 
         if (exitCode != 0) {
             String errorOutput = outputStream.toString(java.nio.charset.StandardCharsets.UTF_8);
-            LOGGER.severe("编译器返回错误 (exit code=" + exitCode + "):
-" + errorOutput);
+            LOGGER.severe("编译器返回错误 (exit code=" + exitCode + "):\n" + errorOutput);
             return null;
         }
 
@@ -1440,7 +1435,7 @@ public final class ShaderWorkbench {
      * 解析 Pass 之间的依赖关系，生成拓扑排序的执行顺序。
      *
      * <h3>算法说明</h3>
-     * <p>使用 Kahn's algorithm（BFS 拓扑排序）处理 DAG：
+     * <p>使用 Kahn'\n's algorithm（BFS 拓扑排序）处理 DAG：
      * <ol>
      *   <li>构建依赖图（邻接表）</li>
      *   <li>计算每个节点的入度</li>
@@ -1535,7 +1530,7 @@ public final class ShaderWorkbench {
     }
 
     /**
-     * 拓扑排序（Kahn's Algorithm - BFS）
+     * 拓扑排序（Kahn'\n's Algorithm - BFS）
      *
      * @param dependencies 依赖关系图
      * @return 拓扑排序后的节点列表

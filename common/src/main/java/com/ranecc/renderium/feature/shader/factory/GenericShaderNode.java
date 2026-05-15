@@ -174,7 +174,7 @@ public class GenericShaderNode extends AbstractPipelineNode
             boolean gpuAvailable = mgr.isInitialized();
 
             if (!gpuAvailable) {
-                ".formatted(getName()));
+                LOGGER.warning("GPU not available for shader node: {}", getName());
                 return inputResources.length > 0 ? inputResources[0] : 0L;
             }
 
@@ -194,7 +194,7 @@ public class GenericShaderNode extends AbstractPipelineNode
 
                 if (outputRes.isValid()) {
                     outputHandle = outputRes.handle;
-                    ".formatted(getName(), outputHandle, outW, outH));
+                    LOGGER.fine("Output: %s handle=0x%X (%dx%d)".formatted(getName(), outputHandle, outW, outH));
                 }
             }
 
@@ -211,14 +211,17 @@ public class GenericShaderNode extends AbstractPipelineNode
                 );
             }
 
-            ".formatted(getName(), inputResources.length, uniforms.size(),workGroupX, workGroupY,outputHandle != 0L ? \" → output=0x%X\".formatted(outputHandle) : \" → pass-through\"));
+            LOGGER.fine("Dispatch: %s in=%d uniforms=%d wg=(%d,%d)%s".formatted(
+                    getName(), inputResources.length, uniforms.size(),
+                    workGroupX, workGroupY,
+                    outputHandle != 0L ? " → output=0x%X".formatted(outputHandle) : " → pass-through"));
 
             // 返回输出纹理句柄，或降级为输入直通
             return outputHandle != 0L ? outputHandle
                     : (inputResources.length > 0 ? inputResources[0] : 0L);
 
         } catch (Exception e) {
-            ".formatted(getName()), e);
+            LOGGER.log(Level.WARNING, "GenericShader %s 执行异常".formatted(getName()), e);
             return inputResources.length > 0 ? inputResources[0] : 0L;
         }
     }

@@ -228,7 +228,7 @@ public final class FrameContext {
     public void beginFrame(float deltaTime) {
         if (initialized) {
             throw new IllegalStateException(
-                    "beginFrame called without previous endFrame. Current frame index: " + frameIndex"
+                    "beginFrame called without previous endFrame. Current frame index: " + frameIndex
                             + ". Ensure endFrame() is called before the next beginFrame()."
             );
         }

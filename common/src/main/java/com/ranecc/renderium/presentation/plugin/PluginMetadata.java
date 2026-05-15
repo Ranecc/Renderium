@@ -59,14 +59,14 @@ public record PluginMetadata(
         }
         if (!id.matches("^[a-z][a-z0-9._-]*$")) {
             throw new IllegalArgumentException(
-                    "Invalid plugin ID format: '" + id + "'. Must match ^[a-z][a-z0-9._-]*$"
+                    "Invalid plugin ID format: '\n'" + id + "'\n'. Must match ^[a-z][a-z0-9._-]*$"
             );
         }
 
         // 验证版本号格式（基本语义版本检查）
         if (!pluginVersion.matches("^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.]+)?$")) {
             throw new IllegalArgumentException(
-                    "Invalid plugin version format: '" + pluginVersion +"
+                    "Invalid plugin version format: '" + pluginVersion +
                             "'. Expected semantic version like '1.0.0'"
             );
         }

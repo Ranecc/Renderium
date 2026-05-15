@@ -503,7 +503,7 @@ public class SSAO extends AbstractPipelineNode {
                                       float bias,
                                       float intensity) {
         if (positionHandle == 0L || normalHandle == 0L) {
-            ".formatted(positionHandle, normalHandle));
+            logger.warn("position/normal handle 为 0: {} {}", positionHandle, normalHandle);
             return 0L;
         }
 
@@ -525,7 +525,7 @@ public class SSAO extends AbstractPipelineNode {
             );
 
             if (!aoOutput.isValid()) {
-                ".formatted(screenWidth, screenHeight));
+                LOGGER.warning("SSAO output texture invalid: {}x{}", screenWidth, screenHeight);
                 return 0L;
             }
 
@@ -548,7 +548,7 @@ public class SSAO extends AbstractPipelineNode {
             }
 
             LOGGER.fine(String.format(
-                    "[SSAO] compute dispatch 'ssao_main' (%dx%d, samples=%d, radius=%.2f) " +
+                    "[SSAO] compute dispatch '\n'ssao_main'\n' (%dx%d, samples=%d, radius=%.2f) " +
                     "→ aoOutput=0x%X, workgroups=(%d,%d)",
                     screenWidth, screenHeight, sampleCount, radius,
                     aoOutput.handle, workGroupCountX, workGroupCountY));
@@ -599,7 +599,7 @@ public class SSAO extends AbstractPipelineNode {
                                           int screenWidth,
                                           int screenHeight) {
         if (aoInput == 0L || normalHandle == 0L) {
-            ".formatted(aoInput, normalHandle));
+            LOGGER.warning("SSAO invalid: ao=%d, normal=%d".formatted(aoInput, normalHandle));
             return 0L;
         }
 
@@ -639,7 +639,7 @@ public class SSAO extends AbstractPipelineNode {
             }
 
             LOGGER.fine(String.format(
-                    "[SSAO] compute dispatch 'ssao_blur' (%dx%d) → blurOutput=0x%X",
+                    "[SSAO] compute dispatch '\n'ssao_blur'\n' (%dx%d) → blurOutput=0x%X",
                     screenWidth, screenHeight, blurOutput.handle));
 
             return blurOutput.handle;

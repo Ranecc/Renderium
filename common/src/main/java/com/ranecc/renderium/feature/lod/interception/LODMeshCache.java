@@ -281,7 +281,7 @@ public final class LODMeshCache {
 
         if (lodLevel < 0 || lodLevel >= maxLODLevels) {
             throw new IllegalArgumentException(
-                "LOD 等级超出范围 [0, " + (maxLODLevels - 1) + "]: " + lodLevel"
+                "LOD 等级超出范围 [0, " + (maxLODLevels - 1) + "]: " + lodLevel
             );
         }
 

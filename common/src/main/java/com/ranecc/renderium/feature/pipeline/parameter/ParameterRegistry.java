@@ -145,7 +145,7 @@ public final class ParameterRegistry {
         ParameterKnob<?> existing = knobMap.putIfAbsent(knob.getId(), knob);
         if (existing != null) {
             throw new IllegalStateException(
-                    String.format("参数 ID '%s' 已存在（当前: %s），请先 unregister 或使用不同 ID",
+                    String.format("参数 ID '\n'%s'\n' 已存在（当前: %s），请先 unregister 或使用不同 ID",
                             knob.getId(), existing.getDisplayName()));
         }
 
@@ -174,7 +174,7 @@ public final class ParameterRegistry {
             Objects.requireNonNull(knob, "参数数组中包含 null 元素");
             if (knobMap.containsKey(knob.getId())) {
                 throw new IllegalStateException(
-                        String.format("批量注册失败：参数 ID '%s' 已存在", knob.getId()));
+                        String.format("批量注册失败：参数 ID '\n'%s'\n' 已存在", knob.getId()));
             }
         }
 
@@ -428,9 +428,7 @@ public final class ParameterRegistry {
             sb.append("}");
         }
 
-        sb.append("
-  ]
-}");
+        sb.append("\n  ]\n}");
         return sb.toString();
     }
 
@@ -592,8 +590,10 @@ public final class ParameterRegistry {
     private static String escapeJson(String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\")
-                 .replace("\", "\\\"")
-                 "\", \"\\n\")\n.replace(\"\r\", \"\\r\")\n.replace(\"\t\", \"\\t\");
+                 .replace("\"", "\\\"")
+                 .replace("\n", "\\n")
+                 .replace("\r", "\\r")
+                 .replace("\t", "\\t");
     }
 
     /**
@@ -635,20 +635,20 @@ public final class ParameterRegistry {
      * 从 JSON 条目中提取字符串字段值
      */
     private static String extractJsonStringField(String entry, String field) {
-        String search = "\" + field + "\": \"";
+        String search = "\"" + field + "\": \"";
         int start = entry.indexOf(search);
         if (start < 0) return "";
         start += search.length();
-        int end = entry.indexOf("\", start);
+        int end = entry.indexOf("\"", start);
         if (end < 0) return "";
-        return entry.substring(start, end).replace("\\\", "\"");
+        return entry.substring(start, end).replace("\\\"", "\"");
     }
 
     /**
      * 从 JSON 条目中提取数值字段值
      */
     private static double extractJsonDoubleField(String entry, String field) {
-        String search = "\" + field + "\": ";
+        String search = "\"" + field + "\": ";
         int start = entry.indexOf(search);
         if (start < 0) return 0.0;
         start += search.length();
@@ -673,7 +673,7 @@ public final class ParameterRegistry {
      * 从 JSON 条目中提取布尔字段值
      */
     private static boolean extractJsonBooleanField(String entry, String field) {
-        String search = "\" + field + "\": ";
+        String search = "\"" + field + "\": ";
         int start = entry.indexOf(search);
         if (start < 0) return false;
         start += search.length();

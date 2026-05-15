@@ -333,7 +333,7 @@ public final class ReflexManagerImpl {
 
             if (result != SLFFMBindings.RESULT_OK) {
                 LOGGER.warning(String.format(
-                    "loadReflexOptionsFunction: slGetFeatureFunction returned %d", result"
+                    "loadReflexOptionsFunction: slGetFeatureFunction returned %d", result
                 ));
                 return false;
             }

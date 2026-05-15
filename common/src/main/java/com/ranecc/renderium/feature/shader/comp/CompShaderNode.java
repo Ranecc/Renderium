@@ -112,7 +112,7 @@ public class CompShaderNode extends AbstractPipelineNode {
      */
     public CompShaderNode(Path compPath, Path metaPath) throws IOException {
         super("comp:" + compPath.getFileName().toString(),
-              "Compute Shader: " + compPath.getFileName(),"
+              "Compute Shader: " + compPath.getFileName(),
               PipelineNode.Category.POST_PROCESS,  // Compute Shader 属于后处理阶段
               100);  // 默认优先级
 
@@ -381,12 +381,12 @@ public class CompShaderNode extends AbstractPipelineNode {
                     );
                 }
 
-                ".formatted(getName(), wgX, wgY, wgZ));
+                LOGGER.fine("Dispatch: %s, wg=(%d,%d,%d)".formatted(getName(), wgX, wgY, wgZ));
             } else {
-                ".formatted(getName(),meta.getWorkgroupX(), meta.getWorkgroupY(), meta.getWorkgroupZ()));
+                LOGGER.fine("Dispatch: %s, wg=(%d,%d,%d)".formatted(getName(), meta.getWorkgroupX(), meta.getWorkgroupY(), meta.getWorkgroupZ()));
             }
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "[CompShader] dispatch '%s' 异常".formatted(getName()), e);
+            LOGGER.log(Level.WARNING, "[CompShader] dispatch %s 异常".formatted(getName()), e);
         }
 
         // 返回输出资源 handle（通常是最后一个 binding 的 image）

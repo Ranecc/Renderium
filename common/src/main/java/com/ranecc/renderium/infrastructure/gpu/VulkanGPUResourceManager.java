@@ -255,7 +255,7 @@ public final class VulkanGPUResourceManager {
 
             initialized.set(true);
 
-            ".formatted(useVulkanDeviceHolder ? \"VulkanDeviceHolder\" : \"OfficialVulkanHijacker\"));
+            LOGGER.info("VulkanGPUResourceManager 初始化完毕，使用: " + (useVulkanDeviceHolder ? "VulkanDeviceHolder" : "OfficialVulkanHijacker"));
             return true;
 
         } catch (Exception e) {
@@ -730,43 +730,31 @@ public final class VulkanGPUResourceManager {
     public String formatReport() {
         StringBuilder sb = new StringBuilder();
 
-        sb.append("╔══════════════════════════════════════════╗
-");
-        sb.append("║  VulkanGPUResourceManager 报告              ║
-");
-        sb.append("╚══════════════════════════════════════════╝
+        sb.append("╔══════════════════════════════════════════╗\n");
+        sb.append("║  VulkanGPUResourceManager 报告              ║\n");
+        sb.append("╚══════════════════════════════════════════╝\n");
 
-");
-
-        sb.append(String.format("状态: %s | 已关闭: %s | VMA支持: %s
-",
+        sb.append(String.format("状态: %s | 已关闭: %s | VMA支持: %s\n",
                 initialized.get() ? "✓" : "✗",
                 closed.get() ? "是" : "否",
                 hasVmaSupport() ? "✓" : "✗"));
-        sb.append(String.format("数据源: %s
-",
+        sb.append(String.format("数据源: %s\n",
                 useVulkanDeviceHolder ? "VulkanDeviceHolder" : "OfficialVulkanHijacker"));
-        sb.append(String.format("vkDevice=0x%X | vma=0x%X
-", vkDevice, vmaAllocator));
+        sb.append(String.format("vkDevice=0x%X | vma=0x%X\n", vkDevice, vmaAllocator));
 
-        "");
-sb.append(String.format("Images:   %d
-", totalImagesCreated.get()));
-sb.append(String.format("Buffers:  %d
-", totalBuffersCreated.get()));
-sb.append(String.format("Views:    %d
-", totalViewsCreated.get()));";
+        sb.append("");
+        sb.append(String.format("Images:   %d\n", totalImagesCreated.get()));
+        sb.append(String.format("Buffers:  %d\n", totalBuffersCreated.get()));
+        sb.append(String.format("Views:    %d\n", totalViewsCreated.get()));
 
-        "");
-sb.append(String.format("延迟释放请求: %d
-", totalReleaseRequests.get()));";
+        sb.append("");
+        sb.append(String.format("延迟释放请求: %d\n", totalReleaseRequests.get()));
 
         // 延迟销毁详情
         try {
             VmaDeferredDeallocation deferred = getDeferredDeallocationIfAvailable();
             if (deferred != null) {
-                sb.append(String.format("待释放: %d | 峰值: %d
-",
+                sb.append(String.format("待释放: %d | 峰值: %d\n",
                         deferred.getPendingReleaseCount(), deferred.getPeakPendingCount()));
             }
         } catch (Exception ignored) {}

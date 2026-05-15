@@ -468,7 +468,7 @@ public final class LODCalculator {
     public float getLODScaleFactor(int lodLevel) {
         if (lodLevel < 0 || lodLevel >= maxLevels) {
             throw new IllegalArgumentException(
-                "LOD 等级超出范围: [" + 0 + ", " + (maxLevels - 1) + "]: " + lodLevel"
+                "LOD 等级超出范围: [" + 0 + ", " + (maxLevels - 1) + "]: " + lodLevel
             );
         }
 
@@ -635,7 +635,7 @@ public final class LODCalculator {
 
             if (i > 0 && thresholds[i] <= thresholds[i - 1]) {
                 throw new IllegalArgumentException(
-                    "距离阈值必须严格递增: thresholds[" + (i - 1) + "]=" +"
+                    "距离阈值必须严格递增: thresholds[" + (i - 1) + "]=" +
                     thresholds[i - 1] + " >= thresholds[" + i + "]=" + thresholds[i]
                 );
             }

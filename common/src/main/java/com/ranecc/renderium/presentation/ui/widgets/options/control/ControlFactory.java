@@ -118,7 +118,7 @@ public final class ControlFactory {
         }
 
         throw new IllegalArgumentException(
-            "Unsupported option type: " + option.getClass().getName()"
+            "Unsupported option type: " + option.getClass().getName()
         );
     }
 

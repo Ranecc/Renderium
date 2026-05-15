@@ -317,7 +317,7 @@ public class StreamlineSharedMemoryManager implements AutoCloseable {
         updatePeakMemoryUsage();
 
         LOGGER.fine(String.format(
-                "Frame %d started, buffer index=%d", frameNum, nextIndex"
+                "Frame %d started, buffer index=%d", frameNum, nextIndex
         ));
 
         return new FrameDataHandle(
@@ -347,7 +347,7 @@ public class StreamlineSharedMemoryManager implements AutoCloseable {
             totalBytesTransferred.addAndGet(handle.dataSize());
 
             LOGGER.fine(String.format(
-                    "Frame %d ended, data ready for processing", handle.frameNumber()"
+                    "Frame %d ended, data ready for processing", handle.frameNumber()
             ));
 
             return true;

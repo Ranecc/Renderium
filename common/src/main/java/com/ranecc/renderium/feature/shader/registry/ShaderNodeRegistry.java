@@ -691,7 +691,7 @@ public final class ShaderNodeRegistry {
     /**
      * 解析执行顺序（基于 DAG 的拓扑排序）
      * <p>
-     * 使用 Kahn's algorithm 进行拓扑排序，同时检测循环依赖。
+     * 使用 Kahn'\n's algorithm 进行拓扑排序，同时检测循环依赖。
      * 仅包含已注册且存在的节点。
      *
      * <h3>算法复杂度：</h3>
@@ -737,7 +737,7 @@ public final class ShaderNodeRegistry {
             }
         }
 
-        // Kahn's algorithm
+        // Kahn'\n's algorithm
         while (!queue.isEmpty()) {
             String id = queue.poll();
             orderedNodes.add(id);
@@ -1119,10 +1119,10 @@ public final class ShaderNodeRegistry {
      */
     public String dumpDescriptorsSummary() {
         StringBuilder sb = new StringBuilder();
-        sb.append("=== ShaderNodeRegistry Descriptors ==="
+        sb.append("=== ShaderNodeRegistry Descriptors ===\n");
         for (Map.Entry<String, ShaderCompDescriptor> entry : descriptorMap.entrySet()) {
             ShaderCompDescriptor d = entry.getValue();
-            sb.append(String.format("  [%s] %s v%s | cat=%s pri=%d | params=%d in=%d out=%d deps=%d\n",";
+            sb.append(String.format("  [%s] %s v%s | cat=%s pri=%d | params=%d in=%d out=%d deps=%d\n",
                     d.getMetadata().getId(),
                     d.getMetadata().getDisplayName(),
                     d.getMetadata().getVersion(),
@@ -1134,7 +1134,7 @@ public final class ShaderNodeRegistry {
                     d.getDependencies().size()
             ));
         }
-        sb.append("====================================="
+        sb.append("=====================================\n");
         return sb.toString();
     }
 

@@ -108,7 +108,7 @@ public abstract class MixinRenderSystem {
 
         if (!backendObj.getClass().getName().contains("VulkanDevice")) {
             LOGGER.warning(
-                "RenderSystem 后端不是 VulkanDevice (实际: " +"
+                "RenderSystem 后端不是 VulkanDevice (实际: " +
                 (backendObj != null ? backendObj.getClass().getSimpleName() : "null") +
                 ")，跳过 Renderium Vulkan 初始化"
             );
