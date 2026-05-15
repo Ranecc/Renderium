@@ -59,7 +59,7 @@ public record PluginMetadata(
         }
         if (!id.matches("^[a-z][a-z0-9._-]*$")) {
             throw new IllegalArgumentException(
-                    "Invalid plugin ID format: '\n'" + id + "'\n'. Must match ^[a-z][a-z0-9._-]*$"
+                    "Invalid plugin ID format: '" + id + "'. Must match ^[a-z][a-z0-9._-]*$"
             );
         }
 

@@ -2322,7 +2322,7 @@ public final class NanGuardShader {
         "//   dividend     - 被除数\n" +
         "//   divisor      - 除数（可能为零或接近零）\n" +
         "//   defaultValue - 除法失败时的回退值（默认 0.0）\n" +
-        "//   epsilon      - 判定'\n'除数过小'\n'的阈值（默认 1e-6）\n" +
+        "//   epsilon      - 判定'除数过小'的阈值（默认 1e-6）\n" +
         "// 返回:\n" +
         "//   除数安全 → dividend / divisor\n" +
         "//   除数过小 → defaultValue\n" +

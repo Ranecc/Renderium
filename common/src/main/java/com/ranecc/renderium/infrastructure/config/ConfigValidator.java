@@ -315,7 +315,7 @@ public final class ConfigValidator {
         // 验证强制模式
         String forceMode = algoConfig.getForceMode();
         if (!"auto".equals(forceMode) && !"java".equals(forceMode) && !"native".equals(forceMode)) {
-            errors.add("Algorithm forceMode must be '\n'auto'\n', '\n'java'\n', or '\n'native'\n' (current: '\n'" + forceMode + "'\n')");
+            errors.add("Algorithm forceMode must be 'auto', 'java', or 'native' (current: '" + forceMode + "')");
         }
 
         // 验证 BFS 配置

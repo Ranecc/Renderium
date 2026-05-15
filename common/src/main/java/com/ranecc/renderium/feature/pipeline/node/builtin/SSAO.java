@@ -548,7 +548,7 @@ public class SSAO extends AbstractPipelineNode {
             }
 
             LOGGER.fine(String.format(
-                    "[SSAO] compute dispatch '\n'ssao_main'\n' (%dx%d, samples=%d, radius=%.2f) " +
+                    "[SSAO] compute dispatch 'ssao_main' (%dx%d, samples=%d, radius=%.2f) " +
                     "→ aoOutput=0x%X, workgroups=(%d,%d)",
                     screenWidth, screenHeight, sampleCount, radius,
                     aoOutput.handle, workGroupCountX, workGroupCountY));
@@ -639,7 +639,7 @@ public class SSAO extends AbstractPipelineNode {
             }
 
             LOGGER.fine(String.format(
-                    "[SSAO] compute dispatch '\n'ssao_blur'\n' (%dx%d) → blurOutput=0x%X",
+                    "[SSAO] compute dispatch 'ssao_blur' (%dx%d) → blurOutput=0x%X",
                     screenWidth, screenHeight, blurOutput.handle));
 
             return blurOutput.handle;

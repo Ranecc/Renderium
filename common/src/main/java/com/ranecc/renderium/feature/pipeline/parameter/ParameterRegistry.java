@@ -145,7 +145,7 @@ public final class ParameterRegistry {
         ParameterKnob<?> existing = knobMap.putIfAbsent(knob.getId(), knob);
         if (existing != null) {
             throw new IllegalStateException(
-                    String.format("参数 ID '\n'%s'\n' 已存在（当前: %s），请先 unregister 或使用不同 ID",
+                    String.format("参数 ID '%s' 已存在（当前: %s），请先 unregister 或使用不同 ID",
                             knob.getId(), existing.getDisplayName()));
         }
 
@@ -174,7 +174,7 @@ public final class ParameterRegistry {
             Objects.requireNonNull(knob, "参数数组中包含 null 元素");
             if (knobMap.containsKey(knob.getId())) {
                 throw new IllegalStateException(
-                        String.format("批量注册失败：参数 ID '\n'%s'\n' 已存在", knob.getId()));
+                        String.format("批量注册失败：参数 ID '%s' 已存在", knob.getId()));
             }
         }
 

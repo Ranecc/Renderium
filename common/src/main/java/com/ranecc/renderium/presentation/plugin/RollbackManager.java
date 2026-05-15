@@ -143,9 +143,9 @@ public final class RollbackManager {
                 LOGGER.severe("⚠ State verification after rollback failed for: " + checkpoint.id());
             }
 
-            LOGGER.info("✓ Rollback to checkpoint '\n'" + checkpoint.id() + "'\n' completed");
+            LOGGER.info("✓ Rollback to checkpoint '" + checkpoint.id() + "' completed");
         } catch (Exception e) {
-            LOGGER.severe("✗ Rollback failed for checkpoint '\n'" + checkpoint.id() + "'\n': " + e.getMessage());
+            LOGGER.severe("✗ Rollback failed for checkpoint '" + checkpoint.id() + "': " + e.getMessage());
             // 尝试将检查点放回栈中以便重试
             checkpointStack.push(checkpoint);
             throw new RuntimeException("Rollback failed", e);

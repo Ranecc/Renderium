@@ -501,15 +501,15 @@ public class RayTracingNode extends AbstractPipelineNode {
      */
     private void submitComputeDispatch(RenderContext ctx, String pass, long[] inTexes, long outTex, float[] uniforms) {
         if (!rtAvailable) {
-            LOGGER.fine("[RayTracingNode] skip compute dispatch '\n'%s'\n' (RT 不可用)".formatted(pass));
+            LOGGER.fine("[RayTracingNode] skip compute dispatch '%s' (RT 不可用)".formatted(pass));
             return;
         }
 
         try {
             // TODO: 集成 VulkanStreamlineBridge 后实现真实的 vkCmdDispatch/vkCmdTraceRaysKHR
-            LOGGER.fine("[RayTracingNode] compute dispatch '\n'%s'\n' - 占位符，未执行实际调度".formatted(pass));
+            LOGGER.fine("[RayTracingNode] compute dispatch '%s' - 占位符，未执行实际调度".formatted(pass));
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "[RayTracingNode] compute dispatch '\n'%s'\n' 异常".formatted(pass), e);
+            LOGGER.log(Level.WARNING, "[RayTracingNode] compute dispatch '%s' 异常".formatted(pass), e);
         }
     }
 
@@ -527,9 +527,9 @@ public class RayTracingNode extends AbstractPipelineNode {
     private void submitFullScreenDraw(RenderContext ctx, String pass, long inTex, long outTex, float[] uniforms) {
         try {
             // TODO: 集成后实现 vkCmdDraw(6, 1, 0, 0) 全屏三角形
-            LOGGER.fine("[RayTracingNode] fullscreen draw '\n'%s'\n' - 占位符".formatted(pass));
+            LOGGER.fine("[RayTracingNode] fullscreen draw '%s' - 占位符".formatted(pass));
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "[RayTracingNode] fullscreen draw '\n'%s'\n' 异常".formatted(pass), e);
+            LOGGER.log(Level.WARNING, "[RayTracingNode] fullscreen draw '%s' 异常".formatted(pass), e);
         }
     }
 
