@@ -170,6 +170,8 @@ public final class RenderiumConfig {
     public boolean isMemoryOptimizationEnabled() { return memoryConfig != null; }
     public boolean isShaderPipelineOptimizationEnabled() { return shaderPipelineConfig != null; }
 
+    // TODO: 将来实现实际配置属性读取（如 ConfigManager.getProperty(key, defaultValue)）
+    // 当前版本为占位实现，始终返回默认值
     public String getProperty(String key, String defaultValue) { return defaultValue; }
 
     // ==================== 验证不变式 ====================

@@ -87,8 +87,8 @@ public class BfsOcclusionEngine {
         if (frustumData <= 0) {
             return true;
         }
-        long frustumFlags = (frustumData >> (nodeIndex % 48)) & 0xFL;
-        return (frustumFlags & 0x8L) != 0;
+        long frustumFlags = (frustumData >> (nodeIndex % 48)) & 0xF;
+        return (frustumFlags & 0x8) != 0;
     }
 
     /**
