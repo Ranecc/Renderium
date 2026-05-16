@@ -2,9 +2,7 @@
 // 插件加载器 - 负责发现、加载、管理插件
 
 package com.ranecc.renderium.presentation.plugin;
-import com.ranecc.renderium.domain.model.FrameData;
-
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.presentation.plugin.streamline.StreamlineFrameData;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

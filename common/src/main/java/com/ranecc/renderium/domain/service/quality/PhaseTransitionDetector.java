@@ -36,6 +36,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.ranecc.renderium.domain.service.phase.PhaseTransitionDetector.PhaseType;
 
 /**
  * 相变检测器
@@ -110,151 +111,6 @@ public final class PhaseTransitionDetector {
     /** 日志记录器 */
     private static final Logger LOGGER =
         Logger.getLogger(PhaseTransitionDetector.class.getName());
-
-    // ==================== 相变类型枚举 ====================
-
-    /**
-     * 相变类型枚举
-     * <p>
-     * 定义四种可检测的场景变化类型，以及表示无变化的 NONE 状态。
-     * 每种类型对应不同的触发条件和响应策略。
-     */
-    public enum PhaseType {
-        /**
-         * 无相变（正常渲染状态）
-         * <p>
-         * 表示当前帧与前一帧的差异在正常范围内，
-         * 不需要触发任何参数调整。
-         */
-        NONE("无相变", "正常渲染状态"),
-
-        /**
-         * Type A: 场景切换/镜头剪切
-         * <p>
-         * 触发条件：intensity > 0.5
-         * <p>
-         * 典型场景：
-         * <ul>
-         *   <li>镜头硬切（非渐变转场）</li>
-         *   <li>场景加载完成</li>
-         *   <li>传送门/快速旅行</li>
-         *   <li>过场动画结束</li>
-         * </ul>
-         * <p>
-         * 自动响应动作：
-         * <ul>
-         *   <li>清空历史帧缓冲</li>
-         *   <li>重置 SGS attract_k=0.3</li>
-         *   <li>重置 Lyapunov 基线</li>
-         * </ul>
-         * <p>
-         * 影响范围：全局
-         */
-        SCENE_CHANGE("场景切换", "镜头剪切或场景跳转"),
-
-        /**
-         * Type B: 光照突变
-         * <p>
-         * 触发条件：intensity > 0.3 且 variance > 1000
-         * <p>
-         * 典型场景：
-         * <ul>
-         *   <li>闪电/爆炸闪光</li>
-         *   <li>灯光开关</li>
-         *   <li>进入/离开洞穴</li>
-         *   <li>昼夜交替瞬间</li>
-         * </ul>
-         * <p>
-         * 自动响应动作：
-         * <ul>
-         *   <li>调整曝光参数</li>
-         *   <li>增大 SGS k=0.2</li>
-         * </ul>
-         * <p>
-         * 影响范围：曝光管线
-         */
-        LIGHTING_MUTATION("光照突变", "光照条件剧烈变化"),
-
-        /**
-         * Type C: 运动模式变化
-         * <p>
-         * 触发条件：intensity > 0.2
-         * <p>
-         * 典型场景：
-         * <ul>
-         *   <li>静止→高速移动</li>
-         *   <li>相机快速摇摄</li>
-         *   <li>物体突然加速</li>
-         *   <li>视角急剧转动</li>
-         * </ul>
-         * <p>
-         * 自动响应动作：
-         * <ul>
-         *   <li>切换光流算法参数（快速/精确模式）</li>
-         *   <li>调整运动补偿权重</li>
-         * </ul>
-         * <p>
-         * 影响范围：光流模块
-         */
-        MOTION_CHANGE("运动模式变化", "静止到高速运动的转变"),
-
-        /**
-         * Type D: 周期性干扰/闪烁
-         * <p>
-         * 触发条件：variance < 10 且 intensity > 0.05
-         * <p>
-         * 典型场景：
-         * <ul>
-         *   <li>显示器刷新率不匹配</li>
-         *   <li>电源纹波干扰</li>
-         *   <li>TAA 采样抖动异常</li>
-         *   <li>周期性后处理效果</li>
-         * </ul>
-         * <p>
-         * 自动响应动作：
-         * <ul>
-         *   <li>启用时域滤波抑制（TAA 增强）</li>
-         * </ul>
-         * <p>
-         * 影响范围：后处理模块
-         */
-        PERIODIC_NOISE("周期性干扰", "周期性噪声或闪烁");
-
-        /** 类型名称（中文） */
-        private final String name;
-
-        /** 类型描述 */
-        private final String description;
-
-        /**
-         * 枚举构造方法
-         *
-         * @param name        类型名称
-         * @param description 类型描述
-         */
-        PhaseType(String name, String description) {
-            this.name = name;
-            this.description = description;
-        }
-
-        /**
-         * 获取类型名称
-         *
-         * @return 中文名称
-         */
-        public String getName() {
-            return name;
-        }
-
-        /**
-         * 获取类型描述
-         *
-         * @return 描述文本
-         */
-        public String getDescription() {
-            return description;
-        }
-    }
 
     // ==================== 配置常量 ====================
 
@@ -961,8 +817,8 @@ public final class PhaseTransitionDetector {
 
         // 最近的历史记录
         sb.append("\u3010最近检测历史（最新在前）\u3011%n");
-        sb.append("%-8s %-12s %-10s %-10s %-12s %-15s%n",
-            "帧号", "原始强度", "平滑强度", "差异均值", "方差", "检测类型");
+        sb.append(String.format("%-8s %-12s %-10s %-10s %-12s %-15s%n",
+            "帧号", "原始强度", "平滑强度", "差异均值", "方差", "检测类型"));
         sb.append("--------------------------------------------------------------------------------%n");
 
         List<DiagnosticRecord> records = diagnosticHistory.toList();

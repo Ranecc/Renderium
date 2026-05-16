@@ -2,9 +2,8 @@
 // 超分辨率技术统一接口
 
 package com.ranecc.renderium.tech.superres;
-import com.ranecc.renderium.domain.model.FrameData;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.tech.dlss.DLSSManager;
 
 /**
  * 超分辨率适配器统一接口

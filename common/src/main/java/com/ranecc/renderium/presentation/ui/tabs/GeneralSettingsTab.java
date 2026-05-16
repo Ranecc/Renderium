@@ -5,8 +5,9 @@
 package com.ranecc.renderium.presentation.ui.tabs;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
+import com.ranecc.renderium.presentation.ui.MCAbstract;
+import com.ranecc.renderium.presentation.ui.RenderiumDualModeManager;
 
-import com.ranecc.renderium.None;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 
@@ -40,8 +41,8 @@ public class GeneralSettingsTab extends Screen {
     /** 启用开关按钮 */
     private Button enableButton;
 
-    /** 调试模式开关按钮 */
-    private Button debugButton;
+    /** 超分辨率开关按钮 */
+    private Button srButton;
 
     /**
      * 创建常规设置标签页
@@ -80,12 +81,12 @@ public class GeneralSettingsTab extends Screen {
                 .build();
         addRenderableWidget(enableButton);
 
-        // 调试模式开关
-        debugButton = MCAbstract.buttonBuilder(centerX - 100, startY + spacing * 2, 200, 20)
-                .text(config.isDebugMode() ? "Debug: ON" : "Debug: OFF")
-                .onClick(btn -> toggleDebugMode())
+        // 超分辨率开关
+        srButton = MCAbstract.buttonBuilder(centerX - 100, startY + spacing * 2, 200, 20)
+                .text(config.isSuperResolutionEnabled() ? "Super Res: ON" : "Super Res: OFF")
+                .onClick(btn -> toggleSuperResolution())
                 .build();
-        addRenderableWidget(debugButton);
+        addRenderableWidget(srButton);
     }
 
     /**
@@ -123,11 +124,11 @@ public class GeneralSettingsTab extends Screen {
     }
 
     /**
-     * 切换调试模式
+     * 切换超分辨率
      */
-    private void toggleDebugMode() {
-        boolean newState = !config.isDebugMode();
-        config.setDebugMode(newState);
-        debugButton.setMessage(MCAbstract.text(newState ? "Debug: ON" : "Debug: OFF"));
+    private void toggleSuperResolution() {
+        boolean newState = !config.isSuperResolutionEnabled();
+        config.setSuperResolutionEnabled(newState);
+        srButton.setMessage(MCAbstract.text(newState ? "Super Res: ON" : "Super Res: OFF"));
     }
 }

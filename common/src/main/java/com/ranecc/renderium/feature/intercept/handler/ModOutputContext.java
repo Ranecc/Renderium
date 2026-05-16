@@ -117,4 +117,139 @@ public class ModOutputContext {
         return String.format("ModOutputContext{mod='%s', type=%s, tex=%d, size=%dx%d}",
             modName, outputType, textureId, width, height);
     }
+
+    /**
+     * ModOutputContext 构建器
+     */
+    public static class Builder {
+        private String modId;
+        private String modName;
+        private long fboHandle;
+        private long colorTexture;
+        private long depthTexture;
+        private int width;
+        private int height;
+        private int frameIndex;
+
+        /** @param modId Mod ID */
+        public Builder modId(String modId) {
+            this.modId = modId;
+            return this;
+        }
+
+        /** @param modName Mod 名称 */
+        public Builder modName(String modName) {
+            this.modName = modName;
+            return this;
+        }
+
+        /** @param fboHandle FBO 句柄 */
+        public Builder fboHandle(long fboHandle) {
+            this.fboHandle = fboHandle;
+            return this;
+        }
+
+        /** @param colorTexture 颜色纹理 */
+        public Builder colorTexture(long colorTexture) {
+            this.colorTexture = colorTexture;
+            return this;
+        }
+
+        /** @param depthTexture 深度纹理 */
+        public Builder depthTexture(long depthTexture) {
+            this.depthTexture = depthTexture;
+            return this;
+        }
+
+        /** @param width 宽度 */
+        public Builder width(int width) {
+            this.width = width;
+            return this;
+        }
+
+        /** @param height 高度 */
+        public Builder height(int height) {
+            this.height = height;
+            return this;
+        }
+
+        /** @param frameIndex 帧索引 */
+        public Builder frameIndex(int frameIndex) {
+            this.frameIndex = frameIndex;
+            return this;
+        }
+
+        /** @return 构建的 ModOutputContext 实例 */
+        public ModOutputContext build() {
+            return new ModOutputContext(this);
+        }
+
+        /** @return modId */
+        public String getModId() { return modId; }
+
+        /** @return modName */
+        public String getModName() { return modName; }
+
+        /** @return fboHandle */
+        public long getFboHandle() { return fboHandle; }
+
+        /** @return colorTexture */
+        public long getColorTexture() { return colorTexture; }
+
+        /** @return depthTexture */
+        public long getDepthTexture() { return depthTexture; }
+
+        /** @return width */
+        public int getWidth() { return width; }
+
+        /** @return height */
+        public int getHeight() { return height; }
+
+        /** @return frameIndex */
+        public int getFrameIndex() { return frameIndex; }
+    }
+
+    // ==================== Builder 构造方法 ====================
+
+    /**
+     * 通过 Builder 构建 ModOutputContext
+     *
+     * @param builder Builder 实例
+     */
+    private ModOutputContext(Builder builder) {
+        this.modName = builder.modName != null ? builder.modName : (builder.modId != null ? builder.modId : "unknown");
+        this.outputType = OutputType.FBO;
+        this.textureId = (int) builder.colorTexture;
+        this.width = builder.width;
+        this.height = builder.height;
+        // 额外字段存储到上下文中，供第三方处理器通过 getter 访问
+        this.modId = builder.modId;
+        this.fboHandle = builder.fboHandle;
+        this.colorTexture = builder.colorTexture;
+        this.depthTexture = builder.depthTexture;
+        this.frameIndex = builder.frameIndex;
+    }
+
+    // ==================== 扩展字段（供第三方处理器使用） ====================
+
+    private String modId;
+    private long fboHandle;
+    private long colorTexture;
+    private long depthTexture;
+    private int frameIndex;
+
+    /** 获取 Mod ID */
+    public String getModId() { return modId; }
+
+    /** 获取 FBO 句柄 */
+    public long getFboHandle() { return fboHandle; }
+
+    /** 获取颜色纹理句柄 */
+    public long getColorTexture() { return colorTexture; }
+
+    /** 获取深度纹理句柄 */
+    public long getDepthTexture() { return depthTexture; }
+
+    /** 获取帧索引 */
+    public int getFrameIndex() { return frameIndex; }
 }

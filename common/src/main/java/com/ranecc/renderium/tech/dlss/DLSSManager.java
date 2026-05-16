@@ -3,9 +3,16 @@
 // 通过 Streamline SDK 2.10.3 + FFM API 实现
 
 package com.ranecc.renderium.tech.dlss;
-import com.ranecc.renderium.feature.pipeline.RenderExtension;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.infrastructure.vulkan.adapter.VulkanConst;
+import com.ranecc.renderium.tech.streamline.CameraMatrixHelper;
+import com.ranecc.renderium.tech.streamline.FrameEvaluator;
+import com.ranecc.renderium.tech.streamline.ResourceTagData;
+import com.ranecc.renderium.tech.streamline.SLContext;
+import com.ranecc.renderium.tech.streamline.SLAutoExtractor;
+import com.ranecc.renderium.tech.streamline.VulkanStreamlineBridge;
+import com.ranecc.renderium.tech.streamline.ffm.SLFFMBindings;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -292,17 +299,17 @@ public final class DLSSManager {
         }
 
         // 2. 标记资源（使用 FFM Bridge 进行真实的资源标记）
-        VulkanStreamlineBridge.ResourceTagData[] resources = {
-            new VulkanStreamlineBridge.ResourceTagData(
+        ResourceTagData[] resources = {
+            new ResourceTagData(
                 SLFFMBindings.BUFFER_TYPE_HUDLESS_COLOR, colorTexture,
                 textureWidth, textureHeight),
-            new VulkanStreamlineBridge.ResourceTagData(
+            new ResourceTagData(
                 SLFFMBindings.BUFFER_TYPE_DEPTH, depthTexture,
                 textureWidth, textureHeight),
-            new VulkanStreamlineBridge.ResourceTagData(
+            new ResourceTagData(
                 SLFFMBindings.BUFFER_TYPE_MOTION_VECTORS, motionVectors,
                 textureWidth, textureHeight),
-            new VulkanStreamlineBridge.ResourceTagData(
+            new ResourceTagData(
                 SLFFMBindings.BUFFER_TYPE_SCALING_OUTPUT_COLOR, outputTexture,
                 displayWidth, displayHeight)
         };

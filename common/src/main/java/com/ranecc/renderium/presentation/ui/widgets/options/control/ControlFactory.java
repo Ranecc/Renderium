@@ -3,7 +3,11 @@
 
 package com.ranecc.renderium.presentation.ui.widgets.options.control;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.infrastructure.config.structure.BooleanOption;
+import com.ranecc.renderium.infrastructure.config.structure.EnumOption;
+import com.ranecc.renderium.infrastructure.config.structure.IntegerOption;
+import com.ranecc.renderium.infrastructure.config.structure.RendererOption;
+import com.ranecc.renderium.presentation.ui.widgets.options.control.ControlValueFormatterImpls;
 import net.minecraft.network.chat.Component;
 
 /**
@@ -272,7 +276,7 @@ public final class ControlFactory {
     private static java.util.function.Function<Integer, Component> guessFormatterForOption(
         IntegerOption option
     ) {
-        String name = option.getId().getPath().toLowerCase();
+        String name = option.getId();
         var range = option.getRange();
 
         if (name.contains("brightness") || name.contains("gamma")) {

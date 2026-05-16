@@ -4,8 +4,9 @@
 
 package com.ranecc.renderium.presentation.ui.tabs;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
+import com.ranecc.renderium.tech.framegen.FrameGenMode;
+import com.ranecc.renderium.presentation.ui.MCAbstract;
 
-import com.ranecc.renderium.None;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 

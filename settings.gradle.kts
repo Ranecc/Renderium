@@ -7,6 +7,9 @@ pluginManagement {
         // CN Mirrors for faster plugin download (priority)
         maven("https://maven.aliyun.com/repository/gradle-plugin")
         maven("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/")
+        maven("https://bmclapi2.bangbang93.com/maven") {
+            name = "BMCLAPI"
+        }
 
         // Official sources (fallback)
         gradlePluginPortal()
@@ -29,42 +32,5 @@ include("fabric")
 // To re-enable: uncomment the line below and ensure MC version compatibility
 // include("neoforge")
 
-// Configure dependency repositories with CN mirrors for optimal performance
-dependencyResolutionManagement {
-    repositories {
-        // === CN Mirrors (Priority) ===
-
-        // Aliyun - Fastest and most complete
-        maven("https://maven.aliyun.com/repository/public") {
-            name = "Aliyun Public"
-        }
-
-        // Tencent Cloud (backup)
-        maven("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/") {
-            name = "Tencent Cloud"
-        }
-
-        // Huawei Cloud (backup)
-        maven("https://repo.huaweicloud.com/repository/maven/") {
-            name = "Huawei Cloud"
-        }
-
-        // === Specialized Repositories ===
-
-        // Mojang official library
-        maven("https://libraries.minecraft.net/") {
-            name = "Mojang"
-            content {
-                includeGroup("com.mojang")
-            }
-        }
-
-        // Fabric repository (primary for this project)
-        maven("https://maven.fabricmc.net/") {
-            name = "Fabric"
-        }
-
-        // Fallback to Maven Central
-        mavenCentral()
-    }
-}
+// 依赖仓库由根 build.gradle.kts 的 allprojects.repositories 统一管理
+// （含阿里云、腾讯云、华为云、BMCLAPI Fabric 镜像、Maven Central）

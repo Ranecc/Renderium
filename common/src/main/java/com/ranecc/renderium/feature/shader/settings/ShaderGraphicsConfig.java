@@ -22,6 +22,7 @@ import java.util.logging.Logger;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob;
 import com.ranecc.renderium.feature.shader.settings.ParameterRegistry;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.FloatKnob;
 /**
  * Shader 图形配置中心
  * <p>

@@ -20,6 +20,8 @@ import com.ranecc.renderium.None;
 import com.ranecc.renderium.tech.framegen.*;
 import com.ranecc.renderium.tech.streamline.*;
 import com.ranecc.renderium.tech.superres.*;
+import com.ranecc.renderium.tech.reflex.ReflexManager;
+import com.ranecc.renderium.tech.dlss.DLSSManager;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 
 /**
@@ -134,8 +136,8 @@ public final class ModernTechManager {
 
         // 超分辨率配置
         if (superResolutionManager != null && superResolutionManager.isAvailable()) {
-            superResolutionManager.setPreferredTechnology(config.getTechnology());
-            superResolutionManager.setQuality(config.getQuality());
+            superResolutionManager.setPreferredTechnology(toAdapterTechnology(config.getSrTechnology()));
+            superResolutionManager.setQuality(toAdapterQuality(config.getQualityLevel()));
             superResolutionManager.enable();
         }
 
@@ -189,6 +191,36 @@ public final class ModernTechManager {
 
     public boolean isReflexEnabled() {
         return reflexManager != null && reflexManager.isEnabled();
+    }
+
+    // ==================== 枚举转换方法 ====================
+
+    /**
+     * 将领域层 SRTechnology 转换为适配器层 Technology
+     */
+    private static SuperResolutionAdapter.Technology toAdapterTechnology(com.ranecc.renderium.domain.enums.SRTechnology srTech) {
+        if (srTech == null) return SuperResolutionAdapter.Technology.AUTO;
+        return switch (srTech) {
+            case DLSS -> SuperResolutionAdapter.Technology.DLSS;
+            case FSR -> SuperResolutionAdapter.Technology.FSR;
+            case NATIVE -> SuperResolutionAdapter.Technology.NATIVE;
+            case AUTO -> SuperResolutionAdapter.Technology.AUTO;
+            // CAS 和 IESMGU 没有直接对应，降级为 AUTO
+            case CAS, IESMGU -> SuperResolutionAdapter.Technology.AUTO;
+        };
+    }
+
+    /**
+     * 将领域层 QualityLevel 转换为适配器层 Quality
+     */
+    private static SuperResolutionAdapter.Quality toAdapterQuality(com.ranecc.renderium.domain.enums.QualityLevel ql) {
+        if (ql == null) return SuperResolutionAdapter.Quality.BALANCED;
+        return switch (ql) {
+            case ULTRA -> SuperResolutionAdapter.Quality.ULTRA_QUALITY;
+            case HIGH -> SuperResolutionAdapter.Quality.QUALITY;
+            case MEDIUM -> SuperResolutionAdapter.Quality.BALANCED;
+            case LOW -> SuperResolutionAdapter.Quality.PERFORMANCE;
+        };
     }
 
     // ==================== Getter 方法 ====================

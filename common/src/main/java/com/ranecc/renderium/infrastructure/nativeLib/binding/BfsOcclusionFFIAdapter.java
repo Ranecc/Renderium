@@ -5,6 +5,7 @@ package com.ranecc.renderium.infrastructure.nativeLib.binding;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import com.ranecc.renderium.infrastructure.gpu.NativeLibraryLoader;
 
 /**
  * BFS遮挡剔除 FFI适配器 - 通过图遍历确定可见区块

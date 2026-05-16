@@ -4,6 +4,10 @@
 package com.ranecc.renderium.feature.pipeline.parameter;
 import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob;
 import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob.KnobType;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.FloatKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.IntKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.BoolKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.EnumKnob;
 
 import com.ranecc.renderium.None;
 

@@ -3,9 +3,19 @@
 // 支持实时预览和性能影响预估
 
 package com.ranecc.renderium.presentation.ui.tabs;
+import com.ranecc.renderium.domain.model.config.InterceptionConfig;
+import com.ranecc.renderium.domain.model.config.InterceptionConfig.CullingInjectionConfig;
+import com.ranecc.renderium.domain.model.config.InterceptionConfig.EffectConfig;
+import com.ranecc.renderium.domain.model.config.InterceptionConfig.FrameCaptureConfig;
+import com.ranecc.renderium.domain.model.config.InterceptionConfig.FrameGenerationConfig;
+import com.ranecc.renderium.domain.model.config.InterceptionConfig.LODConfig;
+import com.ranecc.renderium.domain.model.config.InterceptionConfig.ModOutputRedirectConfig;
+import com.ranecc.renderium.domain.model.config.InterceptionConfig.PostInterceptorConfig;
+import com.ranecc.renderium.domain.model.config.InterceptionConfig.PostProcessingConfig;
+import com.ranecc.renderium.domain.model.config.InterceptionConfig.PreInterceptorConfig;
+import com.ranecc.renderium.domain.model.config.InterceptionConfig.SuperResolutionConfig;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
-
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.presentation.ui.MCAbstract;
 
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;

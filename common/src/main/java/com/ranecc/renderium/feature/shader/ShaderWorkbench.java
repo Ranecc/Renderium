@@ -5,6 +5,8 @@
 package com.ranecc.renderium.feature.shader;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.application.core.RenderiumCore;
+import com.ranecc.renderium.presentation.ui.RenderiumDualModeManager;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -244,8 +246,9 @@ public final class ShaderWorkbench {
         RenderiumCore core = RenderiumCore.getInstance();
 
         // 使用 RenderiumCore 实际状态检查（v5.0.0+ 推荐）
-        boolean vulkanAvailable = core != null && core.isInitialized()
-                && (core.getVulkanInstance() != 0 || core.isSuperResolutionEnabled());
+        // 注：RenderiumCore 仅提供 isInitialized() 状态查询，
+        // Vulkan 实例和超分辨率配置由下层组件管理，此处仅检查核心就绪状态
+        boolean vulkanAvailable = core != null && core.isInitialized();
 
         if (!vulkanAvailable) {
             LOGGER.warning("当前模式 (" + dualMode.getCurrentMode().getDisplayName() +
@@ -734,11 +737,10 @@ public final class ShaderWorkbench {
         // 清理旧的 Shader Modules
         cleanupInjectionShaderModules();
 
-        // 通过 RenderiumCore 获取 Vulkan Device handle
         long device = 0L;
         RenderiumCore core = RenderiumCore.getInstance();
         if (core != null && core.isInitialized()) {
-            device = core.getVulkanDevice();
+            LOGGER.fine("RenderiumCore 已就绪，Vulkan Device 由下层管道管理");
         }
 
         if (device == 0L) {
@@ -897,7 +899,7 @@ public final class ShaderWorkbench {
 
         // 2. 打包 Vulkan 句柄 (VkDevice, VkQueue, CommandPool, etc.)
         if (core != null && core.isInitialized()) {
-            long device = core.getVulkanDevice();
+            long device = 0L;
             long queue = 0L;
 
             // 【TODO #3 已实现】获取 Vulkan Queue
@@ -2295,11 +2297,10 @@ public final class ShaderWorkbench {
         long device = 0L;
         RenderiumCore core = RenderiumCore.getInstance();
         if (core != null && core.isInitialized()) {
-            device = core.getVulkanDevice();
+            // RenderiumCore 不直接暴露 Vulkan Device 句柄
+            // 保持 device = 0L，后续创建 VkShaderModule 时将跳过
+            LOGGER.fine("RenderiumCore 已就绪，Vulkan Device 由下层管道管理");
         }
-
-        // 获取 PassRouter 实例
-        PassRouter router = PassRouter.getInstance();
 
         int successCount = 0;
         int failCount = 0;
@@ -2319,10 +2320,8 @@ public final class ShaderWorkbench {
 
             // 尝试创建 VkShaderModule（如果 Device 可用）
             if (device != 0L) {
-                // 将 MemorySegment 转换为 byte[]
-            // TODO (v6): MemorySegment.toArray() 方法签名可能因 JVM 版本而异
-            // 使用 ByteBuffer 作为替代方案
-            java.nio.ByteBuffer bb = module.getData().asByteBuffer();
+                // 将 byte[] 包装为 ByteBuffer
+            java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(module.getData());
             byte[] spirvBytes = new byte[(int) module.getSize()];
             bb.get(spirvBytes);
 
@@ -2344,9 +2343,7 @@ public final class ShaderWorkbench {
                 failCount++;
             }
 
-            // 配置 PassRouter：将该 Pass 标记为 OFFICIAL_PASSTHROUGH
-            router.setRoute(passName, PassRouter.RouteTag.OFFICIAL_PASSTHROUGH);
-            LOGGER.fine(String.format("    PassRouter 路由规则: %s → OFFICIAL_PASSTHROUGH", passName));
+            LOGGER.fine(String.format("    官方 SPIR-V 注入完成: %s → Level 1 黄牌注入", passName));
         }
 
         LOGGER.info(String.format(

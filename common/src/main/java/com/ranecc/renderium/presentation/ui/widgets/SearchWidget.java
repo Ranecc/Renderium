@@ -3,7 +3,9 @@
 
 package com.ranecc.renderium.presentation.ui.widgets;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.presentation.ui.Layout;
+import com.ranecc.renderium.presentation.ui.util.Dim2i;
+import com.ranecc.renderium.presentation.ui.widgets.options.Colors;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;

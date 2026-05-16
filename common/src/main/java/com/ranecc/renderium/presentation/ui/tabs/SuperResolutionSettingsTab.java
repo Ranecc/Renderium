@@ -3,9 +3,12 @@
 // 使用 MCAbstract 抽象层隔离 MC 版本差异
 
 package com.ranecc.renderium.presentation.ui.tabs;
-import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.domain.enums.QualityLevel;
+import com.ranecc.renderium.domain.enums.SRTechnology;
+import com.ranecc.renderium.domain.model.config.RenderiumConfig;
+import com.ranecc.renderium.presentation.ui.MCAbstract;
+
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 
@@ -39,8 +42,8 @@ public class SuperResolutionSettingsTab extends Screen {
         super(MCAbstract.text("Super Resolution"));
         this.parent = parent;
         this.config = config;
-        this.currentTechIndex = getTechIndex(config.getTechnology());
-        this.currentQualityIndex = getQualityIndex(config.getQuality());
+        this.currentTechIndex = getTechIndex(config.getSrTechnology());
+        this.currentQualityIndex = getQualityIndex(config.getQualityLevel());
     }
 
     @Override
@@ -60,14 +63,14 @@ public class SuperResolutionSettingsTab extends Screen {
 
         // 技术选择（Button + 循环切换）
         technologyButton = MCAbstract.buttonBuilder(centerX - 100, startY + spacing, 200, 20)
-                .text("Tech: " + getTechName(config.getTechnology()))
+                .text("Tech: " + getTechName(config.getSrTechnology()))
                 .onClick(btn -> cycleTechnology())
                 .build();
         addRenderableWidget(technologyButton);
 
         // 画质选择（Button + 循环切换）
         qualityButton = MCAbstract.buttonBuilder(centerX - 100, startY + spacing * 2, 200, 20)
-                .text("Quality: " + getQualityName(config.getQuality()))
+                .text("Quality: " + getQualityName(config.getQualityLevel()))
                 .onClick(btn -> cycleQuality())
                 .build();
         addRenderableWidget(qualityButton);
@@ -75,39 +78,41 @@ public class SuperResolutionSettingsTab extends Screen {
 
     // ==================== 技术相关方法 ====================
 
-    private String getTechName(SuperResolutionAdapter.Technology tech) {
+    private String getTechName(SRTechnology tech) {
         return switch (tech) {
             case AUTO -> "Auto";
             case DLSS -> "DLSS";
             case FSR -> "FSR";
-            case XESS -> "XeSS";
-            default -> tech.name(); // 覆盖所有可能的枚举值（包括 NATIVE）
+            case CAS -> "CAS";
+            case IESMGU -> "Intel ESG";
+            case NATIVE -> "Native";
         };
     }
 
-    private int getTechIndex(SuperResolutionAdapter.Technology tech) {
+    private int getTechIndex(SRTechnology tech) {
         return switch (tech) {
             case AUTO -> 0;
             case DLSS -> 1;
             case FSR -> 2;
-            case XESS -> 3;
-            default -> 0; // 默认使用 AUTO
+            case CAS -> 3;
+            case IESMGU -> 3;
+            case NATIVE -> 0;
         };
     }
 
-    private SuperResolutionAdapter.Technology getTechFromIndex(int index) {
+    private SRTechnology getTechFromIndex(int index) {
         return switch (index % 4) {
-            case 0 -> SuperResolutionAdapter.Technology.AUTO;
-            case 1 -> SuperResolutionAdapter.Technology.DLSS;
-            case 2 -> SuperResolutionAdapter.Technology.FSR;
-            default -> SuperResolutionAdapter.Technology.XESS;
+            case 0 -> SRTechnology.AUTO;
+            case 1 -> SRTechnology.DLSS;
+            case 2 -> SRTechnology.FSR;
+            default -> SRTechnology.CAS;
         };
     }
 
     private void cycleTechnology() {
         currentTechIndex = (currentTechIndex + 1) % 4;
-        SuperResolutionAdapter.Technology newTech = getTechFromIndex(currentTechIndex);
-        config.setTechnology(newTech);
+        SRTechnology newTech = getTechFromIndex(currentTechIndex);
+        config.setSrTechnology(newTech);
         if (technologyButton != null) {
             technologyButton.setMessage(MCAbstract.text("Tech: " + getTechName(newTech)));
         }
@@ -115,39 +120,34 @@ public class SuperResolutionSettingsTab extends Screen {
 
     // ==================== 画质相关方法 ====================
 
-    private String getQualityName(SuperResolutionAdapter.Quality quality) {
+    private String getQualityName(QualityLevel quality) {
         return switch (quality) {
-            case PERFORMANCE -> "Performance";
-            case BALANCED -> "Balanced";
-            case QUALITY -> "Quality";
-            case ULTRA_PERFORMANCE -> "Ultra Perf";
-            default -> quality.name(); // 覆盖所有可能的枚举值
+            case LOW -> "Low";
+            case MEDIUM -> "Medium";
+            case HIGH -> "High";
+            case ULTRA -> "Ultra";
         };
     }
 
-    private int getQualityIndex(SuperResolutionAdapter.Quality quality) {
+    private int getQualityIndex(QualityLevel quality) {
         return switch (quality) {
-            case PERFORMANCE -> 0;
-            case BALANCED -> 1;
-            case QUALITY -> 2;
-            case ULTRA_PERFORMANCE -> 3;
-            default -> 0; // 默认使用 PERFORMANCE
+            case LOW -> 0;
+            case MEDIUM -> 1;
+            case HIGH -> 2;
+            case ULTRA -> 3;
         };
     }
 
-    private SuperResolutionAdapter.Quality getQualityFromIndex(int index) {
-        return switch (index % 4) {
-            case 0 -> SuperResolutionAdapter.Quality.PERFORMANCE;
-            case 1 -> SuperResolutionAdapter.Quality.BALANCED;
-            case 2 -> SuperResolutionAdapter.Quality.QUALITY;
-            default -> SuperResolutionAdapter.Quality.ULTRA_PERFORMANCE;
-        };
+    private QualityLevel getQualityFromIndex(int index) {
+        QualityLevel[] values = QualityLevel.values();
+        return values[index % values.length];
     }
 
     private void cycleQuality() {
-        currentQualityIndex = (currentQualityIndex + 1) % 4;
-        SuperResolutionAdapter.Quality newQuality = getQualityFromIndex(currentQualityIndex);
-        config.setQuality(newQuality);
+        QualityLevel[] values = QualityLevel.values();
+        currentQualityIndex = (currentQualityIndex + 1) % values.length;
+        QualityLevel newQuality = getQualityFromIndex(currentQualityIndex);
+        config.setQualityLevel(newQuality);
         if (qualityButton != null) {
             qualityButton.setMessage(MCAbstract.text("Quality: " + getQualityName(newQuality)));
         }

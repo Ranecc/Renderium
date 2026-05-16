@@ -23,4 +23,12 @@ public interface DrawIndexedHook {
      */
     boolean onDrawIndexed(int indexCount, int instanceCount, int firstIndex,
                           int vertexOffset, int firstInstance);
+
+    /**
+     * Called when visibility data has been updated.
+     *
+     * @param visibleSections  number of visible sections
+     * @param totalSections    total number of sections
+     */
+    default void onVisibilityUpdated(int visibleSections, int totalSections) {}
 }

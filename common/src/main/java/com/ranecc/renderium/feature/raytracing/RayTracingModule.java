@@ -14,6 +14,10 @@
 package com.ranecc.renderium.feature.raytracing;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.feature.module.ModuleContext;
+import com.ranecc.renderium.feature.module.ModuleMetadata;
+import com.ranecc.renderium.feature.module.ModuleCategory;
+import com.ranecc.renderium.feature.module.RenderiumModule;
 
 import java.util.List;
 import java.util.Optional;
@@ -310,6 +314,12 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
         // 4. 物理设备特性 (rayTracingPipeline, rayQuery 等)
 
         return true; // 即使不支持 RT 也可以加载 (降级模式)
+    }
+
+    @Override
+    public boolean load(ModuleContext context) {
+        LOGGER.fine("RayTracingModule: 加载中");
+        return initialize(context);
     }
 
     /**
@@ -1078,7 +1088,6 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
         // recordPerformanceMetrics();
     }
 
-    @Override
     public String getStatistics() {
         if (!loaded) {
             return "RayTracingModule: 未加载";

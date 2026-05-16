@@ -1,12 +1,13 @@
 package com.ranecc.renderium.tech.stub.renderbackendproxy;
 
-/**
- * Blaze3D 渲染后端代理桩类。
- * 待 Blaze3D 迁移完成后替换为真实实现。
- */
+import java.util.logging.Logger;
+
 public class RenderBackendProxy {
 
+    private static final Logger LOGGER = Logger.getLogger(RenderBackendProxy.class.getName());
     private static final RenderBackendProxy INSTANCE = new RenderBackendProxy();
+
+    private boolean initialized;
 
     private RenderBackendProxy() {}
 
@@ -14,7 +15,22 @@ public class RenderBackendProxy {
         return INSTANCE;
     }
 
-    public boolean isInitialized() {
-        return false;
+    public void initialize() {
+        this.initialized = true;
     }
+
+    public boolean isInitialized() {
+        return initialized;
+    }
+
+    public boolean isVulkanActive() {
+        return initialized;
+    }
+
+    public Object getVulkanBackend() {
+        return null;
+    }
+
+    public void drawIndexed(int a, int b, int c, int d) {}
+    public void draw(int a, int b, int c) {}
 }

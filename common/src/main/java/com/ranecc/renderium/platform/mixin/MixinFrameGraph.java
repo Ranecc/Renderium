@@ -3,8 +3,7 @@ package com.ranecc.renderium.platform.mixin;
 import com.mojang.blaze3d.framegraph.FrameGraphBuilder;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 // Inspector 是 FrameGraphBuilder 的内部接口: FrameGraphBuilder.Inspector
-import com.ranecc.renderium.None;
-import org.spongepowered.asm.mixin;
+import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -12,6 +11,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.platform.mixin.RenderiumPassInjector;
 
 /**
  * FrameGraphBuilder Mixin - Renderium Pass 注入点

@@ -5,6 +5,8 @@
 package com.ranecc.renderium.tech.reflex;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.tech.streamline.SLContext;
+import com.ranecc.renderium.tech.streamline.ffm.SLFFMBindings;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;

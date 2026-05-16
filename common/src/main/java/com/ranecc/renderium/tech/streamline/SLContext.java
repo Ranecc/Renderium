@@ -4,6 +4,8 @@
 package com.ranecc.renderium.tech.streamline;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.tech.streamline.ffm.SLFFMBindings;
+import com.ranecc.renderium.tech.streamline.ffm.SLFFMBindings.SLException;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;

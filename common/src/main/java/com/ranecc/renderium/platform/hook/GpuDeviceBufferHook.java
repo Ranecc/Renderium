@@ -43,6 +43,13 @@ public interface GpuDeviceBufferHook {
     Object onCreateBuffer(java.util.function.Supplier<String> label, int usage, long size);
 
     /**
+     * Called when frame data has been updated (non-abstract default method).
+     *
+     * @param frameData the frame data snapshot
+     */
+    default void onFrameDataUpdated(Object frameData) {}
+
+    /**
      * Default implementation using MemoryOptimizer Arena allocation.
      *
      * <p>This is the reference implementation that will be used by platform Mixins.

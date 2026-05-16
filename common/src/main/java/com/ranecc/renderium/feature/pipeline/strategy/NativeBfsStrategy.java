@@ -17,6 +17,8 @@
 package com.ranecc.renderium.feature.pipeline.strategy;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.feature.pipeline.BfsOcclusionEngine;
+import com.ranecc.renderium.infrastructure.nativeLib.RenderiumAccelerator;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -86,7 +88,7 @@ public final class NativeBfsStrategy implements AlgorithmStrategy<BfsInput, BfsO
     public synchronized boolean initialize() {
         try {
             if (!accelerator.isInitialized()) {
-                accelerator.initialize();
+                accelerator.initialize(null);
             }
 
             bfsModule = accelerator.bfs();
@@ -214,17 +216,12 @@ public final class NativeBfsStrategy implements AlgorithmStrategy<BfsInput, BfsO
      * 不在热路径上。
      */
     private BfsOcclusionEngine.CullResult convertToCullResult(int[] visibleIndices, BfsInput input) {
-        // TODO: 优化此转换，考虑直接从共享内存读取完整的 CullResult 结构
-        // 当前简化实现：仅记录可见索引数量
         int visibleCount = visibleIndices != null ? visibleIndices.length : 0;
 
-        // 创建一个最小的 CullResult（实际应从共享内存读取完整数据）
-        return new BfsOcclusionEngine.CullResult(
-            new BfsOcclusionEngine.OcclusionTask[0],  // 占位符
-            visibleCount,
-            maxSections,  // 总处理数（近似值）
-            System.nanoTime(),  // 耗时（应在调用前后测量）
-            input.frameNumber
-        );
+        BfsOcclusionEngine.CullResult result = new BfsOcclusionEngine.CullResult();
+        result.visibleIndices = visibleIndices != null ? visibleIndices : new int[0];
+        result.visibleCount = visibleCount;
+        result.cullTimeNanos = System.nanoTime();
+        return result;
     }
 }

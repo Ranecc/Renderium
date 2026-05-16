@@ -41,6 +41,22 @@ public final class FrameGenContext {
     private int generateCount;
 
     /**
+     * 帧生成倍率枚举（用于兼容 FrameGenerationManager 调用）
+     */
+    public enum Multiplier {
+        OFF, X2, X3
+    }
+
+    /** 帧生成倍率（兼容枚举形式） */
+    private Multiplier multiplier = Multiplier.X2;
+
+    /** 视口宽度（像素） */
+    private int width = 1920;
+
+    /** 视口高度（像素） */
+    private int height = 1080;
+
+    /**
      * 当前抖动相位 (0~63 for 8x8 模式)
      * <p>
      * 用于 TAA/Frame Generation 的亚像素抖动序列索引。
@@ -392,9 +408,19 @@ public final class FrameGenContext {
     public int getGenerateCount() { return generateCount; }
     public void setGenerateCount(int count) { this.generateCount = clampGenerateCount(count); }
 
+    public Multiplier getMultiplier() { return multiplier; }
+    public void setMultiplier(Multiplier m) { this.multiplier = m; }
+
+    public int getWidth() { return width; }
+    public void setWidth(int w) { this.width = w; }
+
+    public int getHeight() { return height; }
+    public void setHeight(int h) { this.height = h; }
+
     public int getJitterPhase() { return jitterPhase; }
 
     public long getCurrentColorView() { return currentColorView; }
+    public long getCurrentColorTexture() { return currentColorView; }
     public long getPreviousColorView() { return previousColorView; }
     public long getMotionVectorView() { return motionVectorView; }
     public long getDepthTextureView() { return depthTextureView; }

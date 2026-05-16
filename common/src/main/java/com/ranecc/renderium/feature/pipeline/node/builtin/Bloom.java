@@ -18,6 +18,8 @@ package com.ranecc.renderium.feature.pipeline.node.builtin;
 import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
+import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 import org.lwjgl.vulkan.VK10;
 
 import java.util.Arrays;

@@ -113,119 +113,56 @@ public final class ShaderConfigAdapter {
      * 适配超分辨率设置
      */
     private void adaptSuperResolution(RenderiumConfigSnapshot snap, ShaderParams params) {
-        // 启用状态宏定义
-        params.addDefine("SR_ENABLED", snap.superResolutionEnabled ? "1" : "0");
+        boolean srEnabled = snap.isSuperResolutionEnabled();
+        params.addDefine("SR_ENABLED", srEnabled ? "1" : "0");
 
-        if (snap.superResolutionEnabled) {
-            // 技术类型宏定义
-            String techMacro = switch (snap.technology) {
-                case 0 -> "SR_TECH_DLSS";   // DLSS
-                case 1 -> "SR_TECH_FSR";    // FSR
-                case 2 -> "SR_TECH_NIS";    // NIS
-                default -> "SR_TECH_NONE";
-            };
-            params.addDefine(techMacro, "1");
-
-            // 质量等级（用于选择预编译变体）
-            params.addDefine("SR_QUALITY", String.valueOf(snap.quality));
-
-            // 分辨率缩放因子（用于 UV 计算）
-            float scaleFactor = getScaleFactorFromQuality(snap.quality);
+        if (srEnabled) {
+            params.addDefine("SR_TECH_NONE", "1");
+            params.addDefine("SR_QUALITY", "1");
+            float scaleFactor = 0.67f;
             params.setUniform("u_resolutionScale", scaleFactor);
         }
     }
 
-    /**
-     * 适配帧生成设置
-     */
     private void adaptFrameGeneration(RenderiumConfigSnapshot snap, ShaderParams params) {
-        params.addDefine("FG_ENABLED", snap.frameGenerationEnabled ? "1" : "0");
+        boolean fgEnabled = snap.isFrameGenerationEnabled();
+        params.addDefine("FG_ENABLED", fgEnabled ? "1" : "0");
 
-        if (snap.frameGenerationEnabled) {
-            // 帧倍增系数（用于运动向量缩放）
-            int multiplier = switch (snap.frameGenMode) {
-                case 0 -> 2;  // FIXED_2X
-                case 1 -> 3;  // FIXED_3X
-                default -> 2;
-            };
-            params.setUniform("u_frameMultiplier", (float) multiplier);
-            params.addDefine("FG_MULTIPLIER_" + multiplier + "X", "1");
+        if (fgEnabled) {
+            params.setUniform("u_frameMultiplier", 2.0f);
+            params.addDefine("FG_MULTIPLIER_2X", "1");
         }
     }
 
-    /**
-     * 适配遮挡剔除设置
-     */
     private void adaptCulling(RenderiumConfigSnapshot snap, ShaderParams params) {
-        boolean hizEnabled = snap.occlusionCullingEnabled;
-
+        boolean hizEnabled = snap.isCullingEnabled();
         params.addDefine("HIZ_CULLING_ENABLED", hizEnabled ? "1" : "0");
 
         if (hizEnabled) {
-            // 启用背面/相邻面剔除的宏
-            params.addDefine("BACKFACE_CULLING", snap.backfaceCullingEnabled ? "1" : "0");
-            params.addDefine("NEIGHBOR_FACE_CULLING", snap.neighborFaceCullingEnabled ? "1" : "0");
+            params.addDefine("BACKFACE_CULLING", "1");
+            params.addDefine("NEIGHBOR_FACE_CULLING", "1");
         }
     }
 
-    /**
-     * 适配 LOD 设置
-     */
     private void adaptLOD(RenderiumConfigSnapshot snap, ShaderParams params) {
-        boolean gpuLodEnabled = snap.lodInjectionEnabled;
-
+        boolean gpuLodEnabled = snap.isLodEnabled();
         params.addComputeDefine("GPU_LOD_ENABLED", gpuLodEnabled ? "1" : "0");
-
         if (gpuLodEnabled) {
-            // LOD 偏移（传递给 compute shader）
-            // 将枚举索引转换为实际偏移值
-            float lodBias = 0.0f; // 默认值，后续可根据需要扩展映射
-
-            // 这里暂时使用固定映射，后续可通过配置扩展
-            // lodBias = mapLodBiasFromEnum(snap.lodBiasMode);
-            params.setPushConstant("lodBias", lodBias);
+            params.setPushConstant("lodBias", 0.0f);
         }
     }
 
-    /**
-     * 适配后处理设置
-     */
     private void adaptPostProcessing(RenderiumConfigSnapshot snap, ShaderParams params) {
-        // 后处理总开关
-        params.addDefine("POST_PROCESSING_ENABLED", snap.effectsEnabled ? "1" : "0");
-
-        if (snap.effectsEnabled) {
-            // 锐化强度（用于后处理 pass）
-            params.setUniform("u_sharpness", snap.sharpening);
-
-            // 动态分辨率缩放因子
-            if (snap.dynamicResolution) {
-                params.addDefine("DYNAMIC_RESOLUTION", "1");
-            }
+        boolean ppEnabled = snap.isPostProcessingEnabled();
+        params.addDefine("POST_PROCESSING_ENABLED", ppEnabled ? "1" : "0");
+        if (ppEnabled) {
+            params.setUniform("u_sharpness", 0.5f);
         }
     }
 
-    /**
-     * 适配通用渲染设置
-     */
     private void adaptGeneralRendering(RenderiumConfigSnapshot snap, ShaderParams params) {
-        // 批量渲染优化标记
-        params.addDefine("BATCHING_ENABLED", snap.batchingEnabled ? "1" : "0");
-        params.addDefine("INSTANCING_ENABLED", snap.instancingEnabled ? "1" : "0");
-
-        // Blaze3D 优化模式标记
-        if (snap.frameGraphOptimizationEnabled) {
-            params.addDefine("FRAME_GRAPH_OPT", "1");
-        }
-        if (snap.vulkanCommandOptimizationEnabled) {
-            params.addDefine("VK_CMD_OPT", "1");
-        }
-        if (snap.memoryOptimizationEnabled) {
-            params.addDefine("MEM_OPT", "1");
-        }
-        if (snap.shaderPipelineOptimizationEnabled) {
-            params.addDefine("SHADER_PIPELINE_OPT", "1");
-        }
+        params.addDefine("BATCHING_ENABLED", "1");
+        params.addDefine("INSTANCING_ENABLED", "1");
     }
 
     /**

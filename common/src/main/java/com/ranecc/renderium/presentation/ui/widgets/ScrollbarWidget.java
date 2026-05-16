@@ -3,7 +3,8 @@
 
 package com.ranecc.renderium.presentation.ui.widgets;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.presentation.ui.ColorARGB;
+import com.ranecc.renderium.presentation.ui.util.Dim2i;
 import net.minecraft.client.gui.ComponentPath;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.narration.NarrationElementOutput;

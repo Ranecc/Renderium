@@ -3,7 +3,7 @@
 
 package com.ranecc.renderium.tech.streamline;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.tech.streamline.ffm.SLFFMBindings;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -156,7 +156,7 @@ public final class FrameEvaluator {
 
             frameActive = true;
             return true;
-        } catch (SLException e) {
+        } catch (SLFFMBindings.SLException e) {
             LOGGER.severe("beginFrame error: " + e.getMessage());
             return false;
         }
@@ -251,7 +251,7 @@ public final class FrameEvaluator {
             }
 
             return true;
-        } catch (SLException e) {
+        } catch (SLFFMBindings.SLException e) {
             LOGGER.severe("setConstants error: " + e.getMessage());
             return false;
         }
@@ -291,7 +291,7 @@ public final class FrameEvaluator {
             }
 
             return true;
-        } catch (SLException e) {
+        } catch (SLFFMBindings.SLException e) {
             LOGGER.severe("evaluateFeature error: " + e.getMessage());
             return false;
         }

@@ -8,6 +8,13 @@ import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 import com.ranecc.renderium.feature.module.ModuleContext;
 import com.ranecc.renderium.feature.module.ModuleMetadata;
 import com.ranecc.renderium.feature.module.ModuleCategory;
+import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
+
+import com.ranecc.renderium.feature.blaze3d.VersionAdapter;
+import com.ranecc.renderium.feature.blaze3d.MethodSignature;
+import com.ranecc.renderium.feature.blaze3d.RenderiumProfiler;
+import com.ranecc.renderium.feature.blaze3d.ResourceStats;
+
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -949,7 +956,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
                 // 但 context.getPhysicalDeviceMemoryProperties() 返回 Object。
                 // 进行安全类型转换，若类型不匹配则传入空数组（VmaMemoryPools 内部会处理）。
                 int[] memProps = (memPropsRaw instanceof int[]) ? (int[]) memPropsRaw : new int[0];
-                com.renderium.module.impl.blaze3d.memory.VmaMemoryPools.getInstance().initializePools(vmaAllocator, memProps);
+                com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.getInstance().initializePools(vmaAllocator, memProps);
                 mixinRegistrationStatus.put("VmaMemoryPools", "✓ 已初始化 (6 个专用池)");
                 LOGGER.info("│  ✓ VmaMemoryPools: 6 个专用池已创建      │");
 
@@ -965,7 +972,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
             // - 防止 GPU 仍在使用时释放资源导致 Crash
             // - 支持 VMA 内置的帧索引追踪
             try {
-                com.renderium.module.impl.blaze3d.memory.VmaDeferredDeallocation.getInstance();
+                com.ranecc.renderium.feature.blaze3d.memory.VmaDeferredDeallocation.getInstance();
                 mixinRegistrationStatus.put("VmaDeferredDeallocation", "✓ 已初始化 (3帧延迟)");
                 LOGGER.info("│  ✓ VmaDeferredDeallocation: 3帧延迟启用   │");
 
@@ -983,7 +990,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
             // - 支持碎片整理以降低内存碎片
             long budgetBytes = context.getConfig().getVmaConfig().getMemoryBudgetBytes();
             try {
-                com.renderium.module.impl.blaze3d.memory.VmaMemoryBudget.getInstance().initializeBudget(budgetBytes);
+                com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryBudget.getInstance().initializeBudget(budgetBytes);
                 mixinRegistrationStatus.put("VmaMemoryBudget",
                         String.format("✓ 已初始化 (预算: %d MB)", budgetBytes / (1024 * 1024)));
                 LOGGER.info(String.format("│  ✓ VmaMemoryBudget: 预算 %d MB           │",
@@ -1003,7 +1010,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
             try {
                 // [编译修复] VmaMemoryAliasing.initialize() 仅接受 long vmaAllocator 单参数，
                 // 原代码错误地传入了 memProps（Object 类型），已移除。
-                com.renderium.module.impl.blaze3d.memory.VmaMemoryAliasing.getInstance()
+                com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryAliasing.getInstance()
                         .initialize(vmaAllocator);
                 mixinRegistrationStatus.put("VmaMemoryAliasing", "✓ 已初始化 (跨类型复用)");
                 LOGGER.info("│  ✓ VmaMemoryAliasing: 跨类型复用已启用   │");
@@ -1021,8 +1028,8 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
             // - 受保护内存：DRM 内容保护
             long vkDevice = context.getVkDevice();
             try {
-                com.renderium.module.impl.blaze3d.memory.VmaAdvancedFlags advancedFlags =
-                        new com.renderium.module.impl.blaze3d.memory.VmaAdvancedFlags();
+                com.ranecc.renderium.feature.blaze3d.memory.VmaAdvancedFlags advancedFlags =
+                        new com.ranecc.renderium.feature.blaze3d.memory.VmaAdvancedFlags();
                 advancedFlags.initialize(vmaAllocator, vkDevice);
                 mixinRegistrationStatus.put("VmaAdvancedFlags", "✓ 已初始化 (高级标志)");
                 LOGGER.info("│  ✓ VmaAdvancedFlags: 高级标志已启用      │");
@@ -1105,7 +1112,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - 综合压缩率: ~50%
         try {
             boolean compressionEnabled = config.getAggressiveConfig().isVertexCompressionEnabled();
-            com.renderium.module.impl.blaze3d.aggressive.VertexFormatCompressor.getInstance().setEnabled(compressionEnabled);
+            com.ranecc.renderium.feature.blaze3d.aggressive.VertexFormatCompressor.getInstance().setEnabled(compressionEnabled);
             mixinRegistrationStatus.put("VertexFormatCompressor",
                     compressionEnabled ? "✓ 已启用 (压缩模式)" : "○ 已禁用");
             LOGGER.info(String.format("│  ✓ VertexFormatCompressor: %s          │",
@@ -1125,7 +1132,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - Level 4: 跨帧合并（静态几何体缓存）
         try {
             boolean batchingEnabled = config.getAggressiveConfig().isAggressiveBatchingEnabled();
-            com.renderium.module.impl.blaze3d.aggressive.AggressiveBatchRenderer.getInstance().setEnabled(batchingEnabled);
+            com.ranecc.renderium.feature.blaze3d.aggressive.AggressiveBatchRenderer.getInstance().setEnabled(batchingEnabled);
             mixinRegistrationStatus.put("AggressiveBatchRenderer",
                     batchingEnabled ? "✓ 已启用 (MultiDrawIndirect)" : "○ 已禁用");
             LOGGER.info(String.format("│  ✓ AggressiveBatchRenderer: %s           │",
@@ -1144,7 +1151,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - Fence 信号量确保上传完成后再渲染
         try {
             boolean asyncUploadEnabled = config.getAggressiveConfig().isAsyncUploadEnabled();
-            com.renderium.module.impl.blaze3d.aggressive.AsyncChunkUploader.getInstance().setEnabled(asyncUploadEnabled);
+            com.ranecc.renderium.feature.blaze3d.aggressive.AsyncChunkUploader.getInstance().setEnabled(asyncUploadEnabled);
             mixinRegistrationStatus.put("AsyncChunkUploader",
                     asyncUploadEnabled ? "✓ 已启用 (Transfer Queue)" : "○ 已禁用");
             LOGGER.info(String.format("│  ✓ AsyncChunkUploader: %s                │",
@@ -1163,7 +1170,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - Pass 3: 并行压缩生成 Indirect Draw 命令
         // - CPU 开销: <0.1ms（vs 传统 2-5ms）
         try {
-            com.renderium.module.impl.blaze3d.aggressive.GPUCullingSystem.getInstance();
+            com.ranecc.renderium.feature.blaze3d.aggressive.GPUCullingSystem.getInstance();
             mixinRegistrationStatus.put("GPUCullingSystem", "✓ 已初始化 (Compute Shader)");
             LOGGER.info("│  ✓ GPUCullingSystem: Compute Shader 就绪   │");
 
@@ -1239,7 +1246,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         try {
             // init() 需要 (gpuDevice, hiZWidth, hiZHeight) 三个参数
             // hiZSize 作为正方形 Hi-Z 缓冲区的边长
-            com.renderium.module.impl.blaze3d.modern.GPUDrivenVisibilitySystem.getInstance()
+            com.ranecc.renderium.feature.blaze3d.modern.GPUDrivenVisibilitySystem.getInstance()
                     .init(gpuDevice, hiZSize, hiZSize);
             mixinRegistrationStatus.put("GPUDrivenVisibilitySystem",
                     String.format("✓ 已初始化 (HiZ: %dx%d)", hiZSize, hiZSize));
@@ -1260,7 +1267,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - 支持运行时纹理注册/注销/更新
         int maxTextures = config.getModernConfig().getBindlessMaxTextures();
         try {
-            com.renderium.module.impl.blaze3d.modern.BindlessResourceManager.getInstance().init(maxTextures);
+            com.ranecc.renderium.feature.blaze3d.modern.BindlessResourceManager.getInstance().init(maxTextures);
             mixinRegistrationStatus.put("BindlessResourceManager",
                     String.format("✓ 已初始化 (最大 %d 纹理)", maxTextures));
             LOGGER.info(String.format("│  ✓ BindlessResourceManager: %d 纹理槽位    │",
@@ -1280,7 +1287,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - Data stored continuously, cache-friendly (SoA layout)
         // - Supports multi-threaded System execution
         try {
-            com.renderium.module.impl.blaze3d.modern.ECSSceneGraph.getInstance();
+            com.ranecc.renderium.feature.blaze3d.modern.ECSSceneGraph.getInstance();
             mixinRegistrationStatus.put("ECSSceneGraph", "✓ 已初始化 (ECS 架构)");
             LOGGER.info("│  ✓ ECSSceneGraph: ECS 架构就绪             │");
 
@@ -1347,7 +1354,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - 消除 CPU 端数百万次矩阵乘法
         int maxChunks = config.getTransformConfig().getMaxChunks();
         try {
-            com.renderium.module.impl.blaze3d.transform.GPUVertexTransformSystem.getInstance().init(gpuDevice, maxChunks);
+            com.ranecc.renderium.feature.blaze3d.transform.GPUVertexTransformSystem.getInstance().init(gpuDevice, maxChunks);
             mixinRegistrationStatus.put("GPUVertexTransformSystem",
                     String.format("✓ 已初始化 (最大 %d Chunks)", maxChunks));
             LOGGER.info(String.format("│  ✓ GPUVertexTransformSystem: %d Chunks      │",
@@ -1365,8 +1372,8 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - 将 Draw Calls 从 N 个 Chunk 降低到 ~4 层
         // - TRANSLUCENT 层自动执行深度排序
         try {
-            com.renderium.module.impl.blaze3d.transform.LayerBatchMerger layerMerger =
-                    new com.renderium.module.impl.blaze3d.transform.LayerBatchMerger();
+            com.ranecc.renderium.feature.blaze3d.transform.LayerBatchMerger layerMerger =
+                    new com.ranecc.renderium.feature.blaze3d.transform.LayerBatchMerger();
             layerMerger.init(gpuDevice);
             mixinRegistrationStatus.put("LayerBatchMerger", "✓ 已初始化 (5 渲染层)");
             LOGGER.info("│  ✓ LayerBatchMerger: 5 渲染层已就绪      │");
@@ -1384,8 +1391,8 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - 支持最多 4096 纹理的 Bindless 描述符数组
         try {
             int maxTextures = config.getModernConfig().getBindlessMaxTextures();
-            com.renderium.module.impl.blaze3d.transform.MaterialMergedRenderer materialRenderer =
-                    new com.renderium.module.impl.blaze3d.transform.MaterialMergedRenderer(
+            com.ranecc.renderium.feature.blaze3d.transform.MaterialMergedRenderer materialRenderer =
+                    new com.ranecc.renderium.feature.blaze3d.transform.MaterialMergedRenderer(
                             maxTextures, 512);
             materialRenderer.init(gpuDevice);
             mixinRegistrationStatus.put("MaterialMergedRenderer",
@@ -1409,7 +1416,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - Reduces 70-80% of CPU-GPU transfer bandwidth (for static scenes)
         try {
             boolean staticCacheEnabled = config.getTransformConfig().isStaticGeometryCacheEnabled();
-            com.renderium.module.impl.blaze3d.transform.StaticGeometryCache.getInstance().setEnabled(staticCacheEnabled);
+            com.ranecc.renderium.feature.blaze3d.transform.StaticGeometryCache.getInstance().setEnabled(staticCacheEnabled);
             mixinRegistrationStatus.put("StaticGeometryCache",
                     staticCacheEnabled ? "✓ 已启用 (自动提升)" : "○ 已禁用");
             LOGGER.info(String.format("│  ✓ StaticGeometryCache: %s                  │",
@@ -1484,8 +1491,8 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
             // - GlslToVkTransformer: AST 级转换（attribute→layout, texture2D→texture）
             // - GlslangCompiler: libglslang SPIR-V 编译（Panama FFM）
             // - ShaderCache: L1 内存 + L2 磁盘二级缓存
-            com.renderium.module.impl.blaze3d.shader.ShaderTranspilerPipeline transpiler =
-                    com.renderium.module.impl.blaze3d.shader.ShaderTranspilerPipeline.getInstance();
+            com.ranecc.renderium.feature.blaze3d.shader.ShaderTranspilerPipeline transpiler =
+                    com.ranecc.renderium.feature.blaze3d.shader.ShaderTranspilerPipeline.getInstance();
             transpiler.initialize(vkDevice);
             mixinRegistrationStatus.put("ShaderTranspilerPipeline",
                     transpiler.isEnabled() ? "✓ 已初始化 (Panama FFM)" : "⚠ 初始化不完整");
@@ -1498,8 +1505,8 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
             // - 支持标准 MC Uniform (ModelViewProj, ChunkOffset 等)
             // - 运行时动态注册光影包自定义 Uniform
             try {
-                com.renderium.module.impl.blaze3d.shader.UniformRedirector uniformRedirector =
-                        com.renderium.module.impl.blaze3d.shader.UniformRedirector.getInstance();
+                com.ranecc.renderium.feature.blaze3d.shader.UniformRedirector uniformRedirector =
+                        com.ranecc.renderium.feature.blaze3d.shader.UniformRedirector.getInstance();
                 uniformRedirector.initialize();
                 mixinRegistrationStatus.put("UniformRedirector", "✓ 已初始化 (Uniform 映射)");
                 LOGGER.info("│  ✓ UniformRedirector: 映射表已加载      │");
@@ -1516,8 +1523,8 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
             // - 支持热重载（光影包切换时）
             // - 与 ShaderCache 联动避免重复编译
             try {
-                com.renderium.module.impl.blaze3d.shader.RenderiumShaderRegistry registry =
-                        com.renderium.module.impl.blaze3d.shader.RenderiumShaderRegistry.getInstance();
+                com.ranecc.renderium.feature.blaze3d.shader.RenderiumShaderRegistry registry =
+                        com.ranecc.renderium.feature.blaze3d.shader.RenderiumShaderRegistry.getInstance();
                 registry.initialize();
                 mixinRegistrationStatus.put("RenderiumShaderRegistry", "✓ 已初始化 (Shader 生命周期)");
                 LOGGER.info("│  ✓ RenderiumShaderRegistry: 就绪           │");

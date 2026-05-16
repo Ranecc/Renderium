@@ -28,6 +28,9 @@ public class CullingContext {
     /** 是否启用遮挡剔除 */
     private final boolean occlusionCullingEnabled;
 
+    /** 是否启用邻面剔除 */
+    private boolean neighborFaceCullingEnabled = true;
+
     /**
      * 构建剔除上下文
      *
@@ -66,6 +69,30 @@ public class CullingContext {
      */
     public boolean isOcclusionCullingEnabled() {
         return occlusionCullingEnabled;
+    }
+
+    /**
+     * 是否启用邻面剔除
+     * @return true 表示已启用
+     */
+    public boolean isNeighborFaceCullingEnabled() {
+        return neighborFaceCullingEnabled;
+    }
+
+    /**
+     * 设置邻面剔除启用状态
+     * @param enabled 是否启用
+     */
+    public void setNeighborFaceCullingEnabled(boolean enabled) {
+        this.neighborFaceCullingEnabled = enabled;
+    }
+
+    /**
+     * 获取最大绘制距离（与最大剔除距离相同）
+     * @return 绘制距离（方块单位）
+     */
+    public float getMaxDrawDistance() {
+        return getMaxCullDistance();
     }
 
     @Override

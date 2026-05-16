@@ -5,6 +5,7 @@ package com.ranecc.renderium.infrastructure.nativeLib.binding;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import com.ranecc.renderium.infrastructure.gpu.NativeLibraryLoader;
 
 /**
  * 收敛监控器 FFI适配器 - 四维收敛检测 (位置/速度/能量/质量)

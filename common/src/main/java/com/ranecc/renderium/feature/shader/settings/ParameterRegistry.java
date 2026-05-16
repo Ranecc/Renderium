@@ -2,13 +2,30 @@ package com.ranecc.renderium.feature.shader.settings;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob;
 
 /**
- * TODO [REVIEW] 桩类 - 着色器参数注册表
+ * 着色器参数注册表
  * 管理运行时着色器参数的存取
  */
 public class ParameterRegistry {
+    private static final ParameterRegistry INSTANCE = new ParameterRegistry();
+
     private final ConcurrentHashMap<String, Object> params = new ConcurrentHashMap<>();
+
+    public static ParameterRegistry getInstance() {
+        return INSTANCE;
+    }
+
+    /** 注册参数旋钮 */
+    public void register(ParameterKnob knob) {
+        params.put(knob.getId(), knob);
+    }
+
+    /** 根据ID获取参数 */
+    public ParameterKnob get(String id) {
+        return (ParameterKnob) params.get(id);
+    }
 
     /** 根据ID获取参数值 */
     public Object getParam(String id) { return params.get(id); }

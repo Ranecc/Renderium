@@ -4,7 +4,7 @@
 
 package com.ranecc.renderium.infrastructure.gpu;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.feature.lod.LODChunk;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -335,8 +335,8 @@ public final class GPULODDataManager {
             if (chunk == null) continue;
 
             int baseIdx = i * 8;
-            int chunkX = chunk.getChunkX();
-            int chunkZ = chunk.getChunkZ();
+            int chunkX = chunk.x;
+            int chunkZ = chunk.z;
 
             // 计算 AABB 世界坐标范围
             float worldMinX = chunkX * CHUNK_BLOCK_SIZE;
@@ -344,22 +344,9 @@ public final class GPULODDataManager {
             float worldMaxX = worldMinX + CHUNK_BLOCK_SIZE;
             float worldMaxZ = worldMinZ + CHUNK_BLOCK_SIZE;
 
-            // 从高度图获取 Y 范围（如果可用）
+            // 默认 Y 范围：从地面到区块高度
             float worldMinY = 0.0f;
             float worldMaxY = CHUNK_BLOCK_SIZE;
-
-            if (chunk.hasHeightMap()) {
-                short[] heightMap = chunk.getHeightMapCopy();
-                short minHeight = Short.MAX_VALUE;
-                short maxHeight = Short.MIN_VALUE;
-
-                for (short h : heightMap) {
-                    if (h < minHeight) minHeight = h;
-                    if (h > maxHeight) maxHeight = h;
-                }
-                worldMinY = minHeight;
-                worldMaxY = maxHeight + 1;  // 高度图存储的是方块 Y 坐标，+1 得到顶部
-            }
 
             // 写入 minBound vec4: [minX, minY, minZ, padding=0]
             this.chunkBoundsData[baseIdx + 0] = worldMinX;

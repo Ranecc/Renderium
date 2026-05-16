@@ -3,7 +3,7 @@
 
 package com.ranecc.renderium.feature.blaze3d;
 
-import com.ranecc.renderium.domain.enums.MemoryPressureLevel;
+import com.ranecc.renderium.feature.blaze3d.memory.MemoryPressureLevel;
 
 import com.ranecc.renderium.feature.blaze3d.memory.GradualMemoryManager;
 
@@ -11,7 +11,6 @@ import com.ranecc.renderium.domain.model.config.MemoryConfig;
 
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 
-import com.ranecc.renderium.None;
 import java.util.BitSet;
 import java.util.Deque;
 import java.util.ArrayDeque;

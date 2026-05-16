@@ -978,8 +978,8 @@ public final class PhaseTransitionDetector {
 
         // 最近的历史记录
         sb.append("\u3010最近检测历史（最新在前）\u3011%n");
-        sb.append("%-8s %-12s %-10s %-10s %-12s %-15s%n",
-            "帧号", "原始强度", "平滑强度", "差异均值", "方差", "检测类型");
+        sb.append(String.format("%-8s %-12s %-10s %-10s %-12s %-15s%n",
+            "帧号", "原始强度", "平滑强度", "差异均值", "方差", "检测类型"));
         sb.append("--------------------------------------------------------------------------------%n");
 
         List<DiagnosticRecord> records = diagnosticHistory.toList();

@@ -9,6 +9,7 @@ import com.ranecc.renderium.feature.culling.core.CullingContext;
 import com.ranecc.renderium.feature.intercept.base.InterceptionCallback;
 import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
+import com.ranecc.renderium.feature.intercept.handler.ModOutputContext;
 import com.ranecc.renderium.feature.intercept.handler.ModOutputHandler;
 import java.util.Map;
 import java.util.HashMap;
@@ -429,11 +430,12 @@ public final class DefaultPreInterceptor implements PreBlaze3DInterceptor {
      * @return 检测到的模组 ID 数组
      */
     private String[] detectAndProcessMods(RenderContext context) {
-        String[] loadedMods = context.getLoadedMods();
-        if (loadedMods == null || loadedMods.length == 0) {
+        java.util.List<String> loadedModsList = context.getLoadedMods();
+        if (loadedModsList == null || loadedModsList.isEmpty()) {
             return new String[0];
         }
 
+        String[] loadedMods = loadedModsList.toArray(new String[0]);
         StringBuilder detectedList = new StringBuilder();
 
         for (String modId : loadedMods) {
@@ -453,7 +455,8 @@ public final class DefaultPreInterceptor implements PreBlaze3DInterceptor {
                         .fboHandle(context.getFboHandle())
                         .colorTexture(context.getColorTexture())
                         .depthTexture(context.getDepthTexture())
-                        .resolution(context.getWidth(), context.getHeight())
+                        .width(1920)
+                        .height(1080)
                         .frameIndex(context.getFrameIndex())
                         .build();
 

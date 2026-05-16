@@ -3,7 +3,7 @@
 
 package com.ranecc.renderium.presentation.ui.widgets;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.presentation.ui.util.Dim2i;
 import net.minecraft.client.input.MouseButtonEvent;
 
 /**

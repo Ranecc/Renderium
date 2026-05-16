@@ -83,4 +83,68 @@ public final class DynamicPrecisionManager {
     public PrecisionLevel getOfflineAnalysisPrecision() { 
         return offlineAnalysisPrecision; 
     }
+
+    /**
+     * 设置全局精度等级
+     * @param precision 目标精度等级
+     */
+    public void setGlobalPrecision(PrecisionLevel precision) {
+        this.globalPrecision = precision;
+    }
+
+    /**
+     * 设置热路径精度等级
+     * @param precision 目标精度等级
+     */
+    public void setHotPathPrecision(PrecisionLevel precision) {
+        this.hotPathPrecision = precision;
+    }
+
+    /**
+     * 设置 Tile 统计精度等级
+     * @param precision 目标精度等级
+     */
+    public void setTileStatsPrecision(PrecisionLevel precision) {
+        this.tileStatsPrecision = precision;
+    }
+
+    /**
+     * 设置帧累积精度等级
+     * @param precision 目标精度等级
+     */
+    public void setFrameAccumulationPrecision(PrecisionLevel precision) {
+        this.frameAccumulationPrecision = precision;
+    }
+
+    /**
+     * 设置离线分析精度等级
+     * @param precision 目标精度等级
+     */
+    public void setOfflineAnalysisPrecision(PrecisionLevel precision) {
+        this.offlineAnalysisPrecision = precision;
+    }
+
+    /**
+     * 根据帧时间自动调整精度等级
+     *
+     * <p>当帧时间超出目标帧时间时降级精度以保证性能，
+     * 当帧时间低于目标帧时间时恢复默认精度以提升质量。
+     *
+     * @param frameTimeMs 当前帧时间（毫秒）
+     */
+    public void adjustForFrameTime(float frameTimeMs) {
+        if (frameTimeMs > DEFAULT_TARGET_FRAME_TIME_MS * 3) {
+            this.hotPathPrecision = PrecisionLevel.SKIP;
+            this.globalPrecision = PrecisionLevel.INT8_FAST;
+        } else if (frameTimeMs > DEFAULT_TARGET_FRAME_TIME_MS * 2) {
+            this.hotPathPrecision = PrecisionLevel.INT8_FAST;
+            this.globalPrecision = PrecisionLevel.FP16_MEDIUM;
+        } else if (frameTimeMs > DEFAULT_TARGET_FRAME_TIME_MS) {
+            this.hotPathPrecision = PrecisionLevel.FP16_MEDIUM;
+            this.globalPrecision = PrecisionLevel.FP32_FULL;
+        } else {
+            this.hotPathPrecision = PrecisionLevel.INT8_FAST;
+            this.globalPrecision = PrecisionLevel.FP16_MEDIUM;
+        }
+    }
 }

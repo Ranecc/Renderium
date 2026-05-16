@@ -19,6 +19,10 @@ package com.ranecc.renderium.feature.shader.factory;
 
 import com.ranecc.renderium.feature.shader.comp.ShaderCompDescriptor;
 import com.ranecc.renderium.feature.pipeline.parameter.*;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.BoolKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.EnumKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.FloatKnob;
+import com.ranecc.renderium.feature.pipeline.parameter.impl.IntKnob;
 import com.ranecc.renderium.None;
 
 import java.util.*;
@@ -196,19 +200,19 @@ public final class ShaderNodeFactory {
         Map<String, String> map = new LinkedHashMap<>();
 
         // ===== 预计算阶段 (PRE_RENDER) =====
-        map.put("skybox", "com.renderium.pipeline.node.builtin.SkyBoxNode");
-        map.put("shadow_style", "com.renderium.pipeline.node.builtin.ShadowStyleNode");
+        map.put("skybox", "com.ranecc.renderium.feature.pipeline.node.builtin.SkyBoxNode");
+        map.put("shadow_style", "com.ranecc.renderium.feature.pipeline.node.builtin.ShadowStyleNode");
 
         // ===== G-Buffer 阶段 (GBUFFER) =====
-        map.put("pbr_material", "com.renderium.pipeline.node.builtin.PBRMaterialNode");
+        map.put("pbr_material", "com.ranecc.renderium.feature.pipeline.node.builtin.PBRMaterialNode");
 
         // ===== 光照阶段 (LIGHTING) =====
-        map.put("lighting", "com.renderium.pipeline.node.builtin.LightingNode");
-        map.put("reflection", "com.renderium.pipeline.node.builtin.ReflectionNode");
-        map.put("ray_tracing", "com.renderium.pipeline.node.builtin.RayTracingNode");
+        map.put("lighting", "com.ranecc.renderium.feature.pipeline.node.builtin.LightingNode");
+        map.put("reflection", "com.ranecc.renderium.feature.pipeline.node.builtin.ReflectionNode");
+        map.put("ray_tracing", "com.ranecc.renderium.feature.pipeline.node.builtin.RayTracingNode");
 
         // ===== 后处理阶段 (POST_PROCESS) =====
-        map.put("exposure", "com.renderium.pipeline.node.builtin.ExposureNode");
+        map.put("exposure", "com.ranecc.renderium.feature.pipeline.node.builtin.ExposureNode");
 
         return Collections.unmodifiableMap(map);
     }
@@ -693,7 +697,10 @@ public final class ShaderNodeFactory {
         try {
             // 如果节点支持 SPIR-V 模块接口，进行关联
             if (instance instanceof SpirvCapable) {
-                SPIRVShaderModule module = SPIRVShaderModule.load(spirvRef);
+                SPIRVShaderModule.SpirvReference ref = new SPIRVShaderModule.SpirvReference();
+                ref.path = spirvRef.getPath();
+                ref.entryPoint = spirvRef.getEntryPoint();
+                SPIRVShaderModule module = SPIRVShaderModule.load(ref);
                 ((SpirvCapable) instance).setSpirvModule(module);
                 LOGGER.fine(String.format("SPIR-V 模块已加载并关联到节点 %s", instance.getId()));
             } else {

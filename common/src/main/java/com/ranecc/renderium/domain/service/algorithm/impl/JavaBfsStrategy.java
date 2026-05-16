@@ -4,7 +4,7 @@
 
 package com.ranecc.renderium.domain.service.algorithm.impl;
 import com.ranecc.renderium.domain.service.algorithm.AlgorithmStrategy;
-import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
+import com.ranecc.renderium.domain.service.algorithm.BfsInput;
 
 import com.ranecc.renderium.domain.model.VisibilityResult;
 import java.util.BitSet;
@@ -90,8 +90,16 @@ public final class JavaBfsStrategy implements AlgorithmStrategy<BfsInput> {
     private int findNearestNode(BfsInput input) {
         double minDistSq = Double.MAX_VALUE;
         int nearest = 0;
+        float chunkOriginX = input.originChunkX * 16.0f;
+        float chunkOriginY = input.originChunkY * 16.0f;
+        float chunkOriginZ = input.originChunkZ * 16.0f;
         for (int i = 0; i < Math.min(input.nodeCount, 100); i++) {
-            double dx = 0, dy = 0, dz = 0;
+            float nx = chunkOriginX + (i % 16);
+            float ny = chunkOriginY + ((i / 16) % 16);
+            float nz = chunkOriginZ + (i / 256);
+            double dx = nx - input.cameraX;
+            double dy = ny - input.cameraY;
+            double dz = nz - input.cameraZ;
             double distSq = dx * dx + dy * dy + dz * dz;
             if (distSq < minDistSq) {
                 minDistSq = distSq;
@@ -113,6 +121,20 @@ public final class JavaBfsStrategy implements AlgorithmStrategy<BfsInput> {
      * @return 是否可见
      */
     private boolean checkVisibility(BfsInput input, int from, int to) {
-        return true;
+        float chunkOriginX = input.originChunkX * 16.0f;
+        float chunkOriginY = input.originChunkY * 16.0f;
+        float chunkOriginZ = input.originChunkZ * 16.0f;
+        float fx = chunkOriginX + (from % 16);
+        float fy = chunkOriginY + ((from / 16) % 16);
+        float fz = chunkOriginZ + (from / 256);
+        float tx = chunkOriginX + (to % 16);
+        float ty = chunkOriginY + ((to / 16) % 16);
+        float tz = chunkOriginZ + (to / 256);
+        float dx = tx - fx;
+        float dy = ty - fy;
+        float dz = tz - fz;
+        float distSq = dx * dx + dy * dy + dz * dz;
+        float maxVisibleDistSq = input.renderDistance * input.renderDistance * 0.09f;
+        return distSq <= maxVisibleDistSq;
     }
 }

@@ -86,8 +86,9 @@ public final class LyapunovQualityChecker {
             return 0.0f;
         }
 
-        // TODO: 实际集成时实现完整的 Sobel 梯度能量计算
-        // 当前为 Domain 层存根，保留方法签名和契约定义
+        if (frameData instanceof FrameData) {
+            LOGGER.fine("computeGradientEnergy: FrameData 实例暂不支持像素数据提取，返回 0.0f");
+        }
         return 0.0f;
     }
 

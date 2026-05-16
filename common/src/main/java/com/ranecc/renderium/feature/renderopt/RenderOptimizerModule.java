@@ -8,10 +8,11 @@ import com.ranecc.renderium.None;
 import java.util.List;
 import java.util.logging.Logger;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
-import com.ranecc.renderium.feature.renderopt.CompactVertexFormatManager;
-import com.ranecc.renderium.feature.module.RenderiumModule;
+import com.ranecc.renderium.feature.module.ModuleCategory;
 import com.ranecc.renderium.feature.module.ModuleContext;
-import com.ranecc.renderium.infrastructure.metadata.ModuleMetadata;
+import com.ranecc.renderium.feature.module.ModuleMetadata;
+import com.ranecc.renderium.feature.module.RenderiumModule;
+import com.ranecc.renderium.feature.renderopt.CompactVertexFormatManager;
 /**
  * 渲染优化模块 ⚡
  * <p>
@@ -121,6 +122,12 @@ public class RenderOptimizerModule implements RenderiumModule {
 
         LOGGER.info("RenderOptimizerModule: ✓ 可以加载 (狂暴模式)");
         return true;
+    }
+
+    @Override
+    public boolean load(ModuleContext context) {
+        LOGGER.fine("RenderOptimizerModule: 加载中");
+        return initialize(context);
     }
 
     /**
@@ -277,7 +284,6 @@ public class RenderOptimizerModule implements RenderiumModule {
         batchRenderer.onFrameEnd();
     }
 
-    @Override
     public String getStatistics() {
         if (!enabled) return null;
 

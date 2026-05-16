@@ -45,6 +45,9 @@ public class ConfigureUseCase {
     /** 上次操作的错误消息（如果有） */
     private volatile String lastError;
 
+    /** 脏标记 — 当配置被修改但未保存时置为 true */
+    private volatile boolean dirty;
+
     /**
      * 默认构造函数
      */
@@ -87,6 +90,7 @@ public class ConfigureUseCase {
             if (loaded != null) {
                 this.currentConfig = loaded;
                 this.lastError = null;
+                this.dirty = false;
                 LOGGER.info("Configuration loaded successfully");
             } else {
                 this.lastError = "ConfigManager returned null";
@@ -128,6 +132,7 @@ public class ConfigureUseCase {
 
             ConfigManager.save(currentConfig, configPath);
             this.lastError = null;
+            this.dirty = false;
 
             LOGGER.info("Configuration saved successfully");
             return true;
@@ -185,6 +190,7 @@ public class ConfigureUseCase {
             // 验证通过，替换当前配置
             this.currentConfig = newConfig;
             this.lastError = null;
+            this.dirty = false;
 
             LOGGER.info("Configuration reloaded and validated successfully");
             return true;
@@ -238,13 +244,13 @@ public class ConfigureUseCase {
     /**
      * 检查是否有待保存的修改
      *
-     * <p>简单实现：始终返回 false（未来可添加脏标记机制）。
+     * <p>基于脏标记检测：配置加载/保存/重载后置为 false，
+     * 重置为默认值后置为 true。
      *
      * @return true 如果有待保存的修改
      */
     public boolean hasUnsavedChanges() {
-        // TODO: 实现脏标记检测
-        return false;
+        return this.dirty;
     }
 
     /**
@@ -256,6 +262,7 @@ public class ConfigureUseCase {
     public void resetToDefaults() {
         this.currentConfig = ConfigManager.getDefault();
         this.lastError = null;
+        this.dirty = true;
         LOGGER.info("Configuration reset to defaults");
     }
 

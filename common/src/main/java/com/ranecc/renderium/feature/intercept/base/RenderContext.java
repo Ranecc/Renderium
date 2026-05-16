@@ -25,6 +25,18 @@ public class RenderContext {
     /** 视口高度 */
     private int viewportHeight;
 
+    /** 已加载的 Mod 列表 */
+    private java.util.List<String> loadedMods = new java.util.ArrayList<>();
+
+    /** FBO 句柄 */
+    private long fboHandle;
+
+    /** 颜色纹理 */
+    private long colorTexture;
+
+    /** 深度纹理 */
+    private long depthTexture;
+
     /**
      * 默认构造方法
      */
@@ -42,6 +54,10 @@ public class RenderContext {
     public long getFrameId() {
         return frameId;
     }
+
+    public int getFrameIndex() { return (int) frameId; }
+    public int getWidth() { return viewportWidth; }
+    public int getHeight() { return viewportHeight; }
 
     /**
      * 设置帧编号
@@ -73,6 +89,46 @@ public class RenderContext {
      */
     public int getViewportHeight() {
         return viewportHeight;
+    }
+
+    /** @return 已加载的 Mod 列表 */
+    public java.util.List<String> getLoadedMods() {
+        return loadedMods;
+    }
+
+    /** @param mods 已加载的 Mod 列表 */
+    public void setLoadedMods(java.util.List<String> mods) {
+        this.loadedMods = mods;
+    }
+
+    /** @return FBO 句柄 */
+    public long getFboHandle() {
+        return fboHandle;
+    }
+
+    /** @param handle FBO 句柄 */
+    public void setFboHandle(long handle) {
+        this.fboHandle = handle;
+    }
+
+    /** @return 颜色纹理 */
+    public long getColorTexture() {
+        return colorTexture;
+    }
+
+    /** @param tex 颜色纹理 */
+    public void setColorTexture(long tex) {
+        this.colorTexture = tex;
+    }
+
+    /** @return 深度纹理 */
+    public long getDepthTexture() {
+        return depthTexture;
+    }
+
+    /** @param tex 深度纹理 */
+    public void setDepthTexture(long tex) {
+        this.depthTexture = tex;
     }
 
     @Override

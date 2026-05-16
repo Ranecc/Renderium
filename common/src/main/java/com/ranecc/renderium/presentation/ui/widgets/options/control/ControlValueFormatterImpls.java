@@ -7,7 +7,7 @@ package com.ranecc.renderium.presentation.ui.widgets.options.control;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
-import java.util.function;
+import java.util.function.Function;
 import java.util.function.IntFunction;
 import java.util.function.Supplier;
 import java.util.logging.Level;

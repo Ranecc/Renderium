@@ -1,6 +1,7 @@
 package com.ranecc.renderium.presentation.ui;
 
-import java.util.stream;
+import com.ranecc.renderium.presentation.ui.widgets.options.Colors;
+import java.util.stream.Stream;
 
 public class ColorTheme {
 

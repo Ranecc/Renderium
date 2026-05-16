@@ -13,9 +13,7 @@
 package com.ranecc.renderium.feature.pipeline.strategy;
 
 import com.ranecc.renderium.None;
-import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
 import com.ranecc.renderium.feature.pipeline.BfsOcclusionEngine;
-import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
 
 /**
  * BFS 遮挡剔除算法的输入参数
@@ -106,10 +104,12 @@ public final class BfsInput {
      * @return BfsOcclusionEngine.CameraView - 相机视锥体信息
      */
     public BfsOcclusionEngine.CameraView toCameraView() {
-        return new BfsOcclusionEngine.CameraView(
-            originChunkX, originChunkY, originChunkZ,
-            cameraX, cameraY, cameraZ,
-            renderDistance
-        );
+        BfsOcclusionEngine.CameraView cv = new BfsOcclusionEngine.CameraView();
+        cv.posX = cameraX;
+        cv.posY = cameraY;
+        cv.posZ = cameraZ;
+        cv.yaw = 0.0f;
+        cv.pitch = 0.0f;
+        return cv;
     }
 }

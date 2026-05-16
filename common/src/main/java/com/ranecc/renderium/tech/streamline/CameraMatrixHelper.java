@@ -1,9 +1,9 @@
 // Renderium - Camera Matrix Helper
-// High-performance: uses ObjectPool for zero-allocation matrix operations
+// High-performance: allocates temp arrays per operation for zero-contention matrix math
 
 package com.ranecc.renderium.tech.streamline;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.tech.streamline.FrameEvaluator.ConstantsData;
 
 /**
  * 相机矩阵工具
@@ -81,7 +81,7 @@ public final class CameraMatrixHelper {
         int index = frameIndex % jitterPhaseCount;
 
         // Use pooled array to avoid allocation (called every frame)
-        float[] result = ObjectPool.acquireFloat2();
+        float[] result = new float[2];
 
         if (jitterMode == JITTER_MODE_8X8) {
             result[0] = HALTON_X[index % 64] - 0.5f;
@@ -112,7 +112,7 @@ public final class CameraMatrixHelper {
     public float[] applyJitterToProjection(float[] projectionMatrix, int frameIndex,
                                             int renderWidth, int renderHeight) {
         // Use pooled array to avoid allocation (called every frame)
-        float[] jittered = ObjectPool.acquireMatrix4x4();
+        float[] jittered = new float[16];
         System.arraycopy(projectionMatrix, 0, jittered, 0, 16);
 
         float[] jitter = calculateJitterOffset(frameIndex);
@@ -198,7 +198,7 @@ public final class CameraMatrixHelper {
      */
     private float[] extract3x4(float[] matrix4x4) {
         // Use pooled array to avoid allocation (called 2-4 times per frame)
-        float[] result = ObjectPool.acquireMatrix3x4();
+        float[] result = new float[12];
 
         // 列主序 → 行主序转换，去掉第 4 行
         // 行 0: m[0], m[4], m[8],  m[12]
@@ -220,7 +220,7 @@ public final class CameraMatrixHelper {
      */
     private float[] invertProjection(float[] proj) {
         // Use pooled array to avoid allocation (called 2 times per frame)
-        float[] inv = ObjectPool.acquireMatrix4x4();
+        float[] inv = new float[16];
 
         // 透视投影逆矩阵
         // 假设标准透视投影矩阵格式

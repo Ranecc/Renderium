@@ -5,6 +5,7 @@
 package com.ranecc.renderium.infrastructure.vulkan.command;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.feature.pipeline.core.RenderPipeline;
 
 /**
  * 渲染命令基类接口

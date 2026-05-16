@@ -214,7 +214,7 @@ public class LifecycleOrchestrator {
             shutdownAccelerator();
 
             // Step 5: 保存配置
-            saveConfiguration();
+            saveConfig();
 
             setState(LifecycleState.SHUTDOWN);
 
@@ -327,15 +327,33 @@ public class LifecycleOrchestrator {
 
     /**
      * 保存配置到文件
+     *
+     * @return true 表示保存成功
      */
-    private void saveConfiguration() {
+    public boolean saveConfig() {
         if (configureUseCase != null && config != null) {
             try {
                 configureUseCase.save();
                 LOGGER.info("Configuration saved");
+                return true;
             } catch (Exception e) {
                 LOGGER.warning("Error saving configuration: " + e.getMessage());
             }
+        }
+        return false;
+    }
+
+    /**
+     * 重置配置为默认值
+     *
+     * <p>将当前配置替换为全新的默认配置实例。
+     * 注意：这不会自动保存到文件。
+     */
+    public void resetConfig() {
+        if (configureUseCase != null) {
+            configureUseCase.resetToDefaults();
+            this.config = configureUseCase.get();
+            LOGGER.info("Configuration reset to defaults");
         }
     }
 

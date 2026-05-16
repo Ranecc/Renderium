@@ -267,6 +267,24 @@ public final class RenderiumCore {
     }
 
     /**
+     * 检查系统是否已完成初始化
+     *
+     * <p>当系统处于 READY 或 RUNNING 状态时返回 true。
+     * 用于外部组件（如 ShaderWorkbench）判断核心是否可用。
+     *
+     * <h4>方法签名</h4>
+     * <ul>
+     *   <li><b>参数：</b>无</li>
+     *   <li><b>返回值：</b>boolean - 系统是否已初始化就绪</li>
+     * </ul>
+     *
+     * @return true 如果系统已初始化（READY 或 RUNNING 状态）
+     */
+    public boolean isInitialized() {
+        return state == CoreState.READY || state == CoreState.RUNNING;
+    }
+
+    /**
      * 获取当前配置快照
      *
      * <p>返回不可变的配置副本，用于 UI 显示和调试。
@@ -278,6 +296,48 @@ public final class RenderiumCore {
             return null;
         }
         return orchestrator.getConfig();
+    }
+
+    /**
+     * 保存当前配置到文件
+     *
+     * <p>委托给 {@link ConfigureUseCase#save()} 执行持久化。
+     *
+     * <h4>方法签名</h4>
+     * <ul>
+     *   <li><b>参数：</b>无</li>
+     *   <li><b>返回值：</b>boolean - true 表示保存成功</li>
+     * </ul>
+     *
+     * @return true 如果配置保存成功，false 表示失败
+     */
+    public boolean saveConfig() {
+        if (orchestrator != null) {
+            return orchestrator.saveConfig();
+        }
+        LOGGER.warning("Cannot save config: orchestrator not initialized");
+        return false;
+    }
+
+    /**
+     * 重置配置为默认值
+     *
+     * <p>将当前配置替换为全新的默认配置实例。
+     * 注意：这不会自动保存到文件，需要显式调用 {@link #saveConfig()}。
+     *
+     * <h4>方法签名</h4>
+     * <ul>
+     *   <li><b>参数：</b>无</li>
+     *   <li><b>返回值：</b>void</li>
+     * </ul>
+     */
+    public void resetConfig() {
+        if (orchestrator != null) {
+            orchestrator.resetConfig();
+            LOGGER.info("Configuration reset to defaults");
+        } else {
+            LOGGER.warning("Cannot reset config: orchestrator not initialized");
+        }
     }
 
     // ==================== 内部辅助方法 ====================

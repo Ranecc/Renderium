@@ -50,6 +50,18 @@ public final class BfsInput {
     /** 最大搜索深度 */
     public final int maxDepth;
 
+    /** 相机所在区块 X 坐标（16 格单位） */
+    public final int originChunkX;
+
+    /** 相机所在区块 Y 坐标 */
+    public final int originChunkY;
+
+    /** 相机所在区块 Z 坐标 */
+    public final int originChunkZ;
+
+    /** 渲染距离（方块数） */
+    public final float renderDistance;
+
     /**
      * 私有构造函数（通过 Builder 创建）
      */
@@ -60,6 +72,10 @@ public final class BfsInput {
         this.cameraY = builder.cameraY;
         this.cameraZ = builder.cameraZ;
         this.maxDepth = builder.maxDepth;
+        this.originChunkX = builder.originChunkX;
+        this.originChunkY = builder.originChunkY;
+        this.originChunkZ = builder.originChunkZ;
+        this.renderDistance = builder.renderDistance;
     }
 
     /**
@@ -85,6 +101,10 @@ public final class BfsInput {
         private float cameraY = 0.0f;
         private float cameraZ = 0.0f;
         private int maxDepth = 64;
+        private int originChunkX = 0;
+        private int originChunkY = 0;
+        private int originChunkZ = 0;
+        private float renderDistance = 256.0f;
 
         public Builder nodeCount(int count) { this.nodeCount = count; return this; }
 
@@ -95,6 +115,14 @@ public final class BfsInput {
         }
 
         public Builder maxDepth(int depth) { this.maxDepth = depth; return this; }
+
+        public Builder originChunkX(int x) { this.originChunkX = x; return this; }
+
+        public Builder originChunkY(int y) { this.originChunkY = y; return this; }
+
+        public Builder originChunkZ(int z) { this.originChunkZ = z; return this; }
+
+        public Builder renderDistance(float distance) { this.renderDistance = distance; return this; }
 
         /**
          * 构建 BfsInput 实例

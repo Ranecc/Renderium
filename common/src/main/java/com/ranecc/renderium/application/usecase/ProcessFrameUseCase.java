@@ -283,48 +283,88 @@ public class ProcessFrameUseCase {
      * @param bridge MCRenderBridge 实例
      */
     private void collectCameraData(Object bridge) {
-        // TODO: 实现相机数据收集逻辑
-        // 通过反射或接口调用 bridge.getCurrentFrameData()
-        // 然后提取 cameraX/Y/Z, yaw, pitch, fov 等
+        try {
+            Object snapshot = bridge.getClass().getMethod("getCurrentFrameData").invoke(bridge);
+            if (snapshot == null) return;
+            frameDataSnapshot.setCameraPosition(
+                (float) snapshot.getClass().getMethod("getCameraX").invoke(snapshot),
+                (float) snapshot.getClass().getMethod("getCameraY").invoke(snapshot),
+                (float) snapshot.getClass().getMethod("getCameraZ").invoke(snapshot)
+            );
+            frameDataSnapshot.setCameraRotation(
+                (float) snapshot.getClass().getMethod("getYaw").invoke(snapshot),
+                (float) snapshot.getClass().getMethod("getPitch").invoke(snapshot)
+            );
+            frameDataSnapshot.setFov((float) snapshot.getClass().getMethod("getFov").invoke(snapshot));
+            frameDataSnapshot.setNearPlane((float) snapshot.getClass().getMethod("getNearPlane").invoke(snapshot));
+            frameDataSnapshot.setFarPlane((float) snapshot.getClass().getMethod("getFarPlane").invoke(snapshot));
+        } catch (Exception e) {
+            LOGGER.warning("collectCameraData failed: " + e.getMessage());
+        }
     }
 
-    /**
-     * 收集矩阵数据
-     *
-     * @param bridge MCRenderBridge 实例
-     */
     private void collectMatrixData(Object bridge) {
-        // TODO: 实现矩阵数据收集逻辑
-        // 提取 projectionMatrix, viewMatrix, viewProjectionMatrix 等
+        try {
+            Object snapshot = bridge.getClass().getMethod("getCurrentFrameData").invoke(bridge);
+            if (snapshot == null) return;
+            frameDataSnapshot.setProjectionMatrix(
+                (float[]) snapshot.getClass().getMethod("getProjectionMatrix").invoke(snapshot));
+            frameDataSnapshot.setViewMatrix(
+                (float[]) snapshot.getClass().getMethod("getViewMatrix").invoke(snapshot));
+            frameDataSnapshot.setInvViewMatrix(
+                (float[]) snapshot.getClass().getMethod("getInvViewMatrix").invoke(snapshot));
+            frameDataSnapshot.recomputeVPMatrix();
+        } catch (Exception e) {
+            LOGGER.warning("collectMatrixData failed: " + e.getMessage());
+        }
     }
 
-    /**
-     * 收集可见性数据
-     *
-     * @param bridge MCRenderBridge 实例
-     */
     private void collectVisibilityData(Object bridge) {
-        // TODO: 实现可见性数据收集逻辑
-        // 提取 visibleSectionCount, totalSectionCount, drawCallCounts 等
+        try {
+            Object snapshot = bridge.getClass().getMethod("getCurrentFrameData").invoke(bridge);
+            if (snapshot == null) return;
+            frameDataSnapshot.setChunkVisibility(
+                (int) snapshot.getClass().getMethod("getVisibleSectionCount").invoke(snapshot),
+                (int) snapshot.getClass().getMethod("getTotalSectionCount").invoke(snapshot),
+                (int) snapshot.getClass().getMethod("getOpaqueDrawCallCount").invoke(snapshot),
+                (int) snapshot.getClass().getMethod("getTranslucentDrawCallCount").invoke(snapshot),
+                (boolean) snapshot.getClass().getMethod("isViewAreaChanged").invoke(snapshot)
+            );
+        } catch (Exception e) {
+            LOGGER.warning("collectVisibilityData failed: " + e.getMessage());
+        }
     }
 
-    /**
-     * 收集雾效数据
-     *
-     * @param bridge MCRenderBridge 实例
-     */
     private void collectFogData(Object bridge) {
-        // TODO: 实现雾效数据收集逻辑
-        // 提取 fogColor, fogStart, fogEnd, fogDensity 等
+        try {
+            Object snapshot = bridge.getClass().getMethod("getCurrentFrameData").invoke(bridge);
+            if (snapshot == null) return;
+            float[] fogColor = (float[]) snapshot.getClass().getMethod("getFogColor").invoke(snapshot);
+            frameDataSnapshot.setFogData(
+                fogColor[0], fogColor[1], fogColor[2], fogColor.length > 3 ? fogColor[3] : 1.0f,
+                (float) snapshot.getClass().getMethod("getFogStart").invoke(snapshot),
+                (float) snapshot.getClass().getMethod("getFogEnd").invoke(snapshot),
+                (float) snapshot.getClass().getMethod("getFogDensity").invoke(snapshot),
+                (int) snapshot.getClass().getMethod("getFogType").invoke(snapshot),
+                (boolean) snapshot.getClass().getMethod("isFogEnabled").invoke(snapshot)
+            );
+        } catch (Exception e) {
+            LOGGER.warning("collectFogData failed: " + e.getMessage());
+        }
     }
 
-    /**
-     * 收集窗口数据
-     *
-     * @param bridge MCRenderBridge 实例
-     */
     private void collectWindowData(Object bridge) {
-        // TODO: 实现窗口数据收集逻辑
-        // 提取 windowWidth, windowHeight 等
+        try {
+            Object snapshot = bridge.getClass().getMethod("getCurrentFrameData").invoke(bridge);
+            if (snapshot == null) return;
+            frameDataSnapshot.setWindowSize(
+                (int) snapshot.getClass().getMethod("getWindowWidth").invoke(snapshot),
+                (int) snapshot.getClass().getMethod("getWindowHeight").invoke(snapshot)
+            );
+            frameDataSnapshot.setGameTick(
+                (long) snapshot.getClass().getMethod("getGameTick").invoke(snapshot));
+        } catch (Exception e) {
+            LOGGER.warning("collectWindowData failed: " + e.getMessage());
+        }
     }
 }

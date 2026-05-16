@@ -19,9 +19,7 @@
 
 package com.ranecc.renderium.feature.shader.comp;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.None;  // 导入 PipelineNode 接口（包含 Category 枚举）
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,6 +30,9 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import com.ranecc.renderium.feature.shader.settings.ShaderGraphicsConfig;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
+import com.ranecc.renderium.platform.bridge.mc.CommandBatcher;
+import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
 /**
  * Compute Shader 管线节点
  * <p>
@@ -367,13 +368,11 @@ public class CompShaderNode extends AbstractPipelineNode {
             VulkanGPUResourceManager mgr = VulkanGPUResourceManager.getInstance();
             if (mgr.isInitialized()) {
                 // 通过 CommandBatcher 提交 Compute Dispatch 命令
-                // 工作组数量来自 CompShaderMeta 的声明（通常基于屏幕分辨率 / 局部大小）
                 int wgX = meta.getWorkgroupX();
                 int wgY = meta.getWorkgroupY();
                 int wgZ = meta.getWorkgroupZ();
 
-                com.renderium.bridge.batch.CommandBatcher batcher =
-                        com.renderium.bridge.batch.CommandBatcher.getInstance();
+                CommandBatcher batcher = MCRenderBridge.getCommandBatcher();
                 if (batcher != null) {
                     batcher.enqueueComputeDispatch(
                             0L,  // pipeline handle（由 Shader 系统在 initialize() 阶段创建并缓存）

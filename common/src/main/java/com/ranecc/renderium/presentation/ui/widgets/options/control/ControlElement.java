@@ -3,8 +3,13 @@
 
 package com.ranecc.renderium.presentation.ui.widgets.options.control;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.infrastructure.config.structure.RendererOption;
+import com.ranecc.renderium.presentation.ui.widgets.options.ColorTheme;
+import com.ranecc.renderium.presentation.ui.Layout;
+import com.ranecc.renderium.presentation.ui.util.Dim2i;
+import com.ranecc.renderium.presentation.ui.widgets.options.Colors;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;

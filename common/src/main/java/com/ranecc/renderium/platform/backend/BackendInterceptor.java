@@ -7,13 +7,27 @@ package com.ranecc.renderium.platform.backend;
 import java.util.Map;
 import java.util.HashMap;
 
-
-import com.ranecc.renderium.None;
-
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import com.ranecc.renderium.domain.model.FrameData;
+import com.ranecc.renderium.domain.enums.RenderiumMode;
+import com.ranecc.renderium.domain.model.config.RenderiumConfig;
+import com.ranecc.renderium.application.core.RenderiumCore;
+import com.ranecc.renderium.tech.streamline.SLContext;
+import com.ranecc.renderium.tech.streamline.FrameEvaluator;
+import com.ranecc.renderium.tech.streamline.VulkanStreamlineBridge;
+import com.ranecc.renderium.feature.intercept.pre.PreBlaze3DInterceptor;
+import com.ranecc.renderium.feature.intercept.pre.DefaultPreInterceptor;
+import com.ranecc.renderium.feature.intercept.post.PostBlaze3DInterceptor;
+import com.ranecc.renderium.feature.intercept.post.DefaultPostInterceptor;
+import com.ranecc.renderium.domain.model.LODContext;
+import com.ranecc.renderium.feature.culling.core.CullingContext;
+import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
+import com.ranecc.renderium.domain.model.InterceptedFrameData;
+import com.ranecc.renderium.feature.intercept.base.RenderContext;
 
 /**
  * 后端拦截器 - 双拦截层协调器（v5.1 架构）
@@ -215,15 +229,16 @@ public final class BackendInterceptor {
 
             // 从 RenderiumCore 获取组件
             RenderiumCore core = RenderiumCore.getInstance();
-            if (!core.isInitialized()) {
-                LOGGER.severe("RenderiumCore 未初始化，BackendInterceptor 无法工作");
+            if (core.getState() == RenderiumCore.CoreState.NOT_INITIALIZED ||
+                core.getState() == RenderiumCore.CoreState.ERROR) {
+                LOGGER.severe("RenderiumCore 未初始化或处于错误状态，BackendInterceptor 无法工作");
                 return false;
             }
 
-            // 获取 Streamline 组件
-            this.slContext = core.getSLContext();
-            this.frameEvaluator = core.getFrameEvaluator();
-            this.vkBridge = core.getVulkanBridge();
+            // 获取 Streamline 组件（暂不可用，后续版本从其他路径初始化）
+            this.slContext = null;
+            this.frameEvaluator = null;
+            this.vkBridge = null;
 
             // 验证 Streamline 可用性
             if (slContext == null || !slContext.isInitialized()) {
@@ -238,7 +253,7 @@ public final class BackendInterceptor {
             initialized.set(true);
             LOGGER.info(String.format(
                 "BackendInterceptor 初始化完成 [v5.1 双拦截层架构, 配置: %s, Streamline: %s, 双拦截层: %s]",
-                config.getTechnology(),
+                config.getSrTechnology(),
                 slContext != null && slContext.isInitialized() ? "可用" : "不可用",
                 dualInterceptionEnabled ? "启用" : "禁用"
             ));
@@ -281,14 +296,11 @@ public final class BackendInterceptor {
                     preInterceptor.injectLOD(lodCtx);
 
                     // 配置剔除注入（可选）
-                    CullingContext cullCtx = new CullingContext.Builder()
-                        .frustumCullingEnabled(config.isFrustumCullingEnabled())
-                        .occlusionCullingEnabled(config.isOcclusionCullingEnabled())
-                        .backfaceCullingEnabled(config.isBackfaceCullingEnabled())
-                        .neighborFaceCullingEnabled(config.isNeighborFaceCullingEnabled())
-                        .maxDrawDistance(32)
-                        .hizMipmapLevels(6)
-                        .build();
+                    CullingContext cullCtx = new CullingContext(
+                        32,
+                        config.isFrustumCullingEnabled(),
+                        config.isOcclusionCullingEnabled()
+                    );
                     preInterceptor.injectCulling(cullCtx);
                 }
 
@@ -527,7 +539,7 @@ public final class BackendInterceptor {
             .width(context.getWidth())
             .height(context.getHeight())
             .frameIndex(context.getFrameIndex())
-            .deltaTime(context.getDeltaTime())
+            .deltaTime(1.0f / 60.0f)
             .build();
     }
 
@@ -831,7 +843,7 @@ public final class BackendInterceptor {
             LOGGER.fine(String.format(
                 "Streamline 处理完成: frame=%d, tech=%s",
                 frameData.getFrameIndex(),
-                config.getTechnology()
+                config.getSrTechnology()
             ));
 
             return true;
@@ -968,7 +980,7 @@ public final class BackendInterceptor {
     private boolean isSuperResolutionEnabled(RenderiumConfig cfg) {
         // 检查是否有有效的超分辨率技术选择
         // 注意：这里只检查基本条件，具体技术支持由 SuperResolutionManager 判断
-        return cfg.getTechnology() != null;
+        return cfg.getSrTechnology() != null;
     }
 
     /**

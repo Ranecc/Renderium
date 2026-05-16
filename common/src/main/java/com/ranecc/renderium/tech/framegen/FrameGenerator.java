@@ -85,6 +85,6 @@ public interface FrameGenerator {
         long motionVectorImageView,
         int textureWidth,
         int textureHeight,
-        com.renderium.dlss.DLSSManager.CameraData cameraData
+        com.ranecc.renderium.tech.dlss.DLSSManager.CameraData cameraData
     ) {}
 }

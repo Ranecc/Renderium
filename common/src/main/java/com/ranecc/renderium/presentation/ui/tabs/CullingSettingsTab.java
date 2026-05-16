@@ -4,8 +4,8 @@
 
 package com.ranecc.renderium.presentation.ui.tabs;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
+import com.ranecc.renderium.presentation.ui.MCAbstract;
 
-import com.ranecc.renderium.None;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 
@@ -28,7 +28,7 @@ public class CullingSettingsTab extends Screen {
     private final RenderiumConfig config;
     private Button occlusionButton;
     private Button frustumButton;
-    private Button neighborButton;
+    private Button backfaceButton;
 
     public CullingSettingsTab(Screen parent, RenderiumConfig config) {
         super(MCAbstract.text("Culling Settings"));
@@ -58,12 +58,12 @@ public class CullingSettingsTab extends Screen {
                 .build();
         addRenderableWidget(frustumButton);
 
-        // 邻居面剔除开关
-        neighborButton = MCAbstract.buttonBuilder(centerX - 100, startY + spacing * 2, 200, 20)
-                .text(config.isNeighborFaceCullingEnabled() ? "Neighbor Face: ON" : "Neighbor Face: OFF")
-                .onClick(btn -> toggleNeighbor())
+        // 背面剔除开关
+        backfaceButton = MCAbstract.buttonBuilder(centerX - 100, startY + spacing * 2, 200, 20)
+                .text(config.isBackfaceCullingEnabled() ? "Backface: ON" : "Backface: OFF")
+                .onClick(btn -> toggleBackface())
                 .build();
-        addRenderableWidget(neighborButton);
+        addRenderableWidget(backfaceButton);
     }
 
     private void toggleOcclusion() {
@@ -78,9 +78,9 @@ public class CullingSettingsTab extends Screen {
         frustumButton.setMessage(MCAbstract.text(newState ? "Frustum: ON" : "Frustum: OFF"));
     }
 
-    private void toggleNeighbor() {
-        boolean newState = !config.isNeighborFaceCullingEnabled();
-        config.setNeighborFaceCullingEnabled(newState);
-        neighborButton.setMessage(MCAbstract.text(newState ? "Neighbor Face: ON" : "Neighbor Face: OFF"));
+    private void toggleBackface() {
+        boolean newState = !config.isBackfaceCullingEnabled();
+        config.setBackfaceCullingEnabled(newState);
+        backfaceButton.setMessage(MCAbstract.text(newState ? "Backface: ON" : "Backface: OFF"));
     }
 }

@@ -10,7 +10,9 @@
 package com.ranecc.renderium.infrastructure.gpu;
 
 import com.ranecc.renderium.None;
-import com.renderium.module.impl.blaze3d.memory.VmaMemoryPools;
+import com.ranecc.renderium.domain.constant.VulkanConst;
+import com.ranecc.renderium.feature.blaze3d.memory.VmaDeferredDeallocation;
+import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VkImageCreateInfo;
 import org.lwjgl.vulkan.VkImageViewCreateInfo;

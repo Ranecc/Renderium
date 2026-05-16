@@ -7,6 +7,8 @@
 package com.ranecc.renderium.feature.shader.factory;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
+import com.ranecc.renderium.infrastructure.vulkan.adapter.VulkanConst;
 
 import org.lwjgl.vulkan.VK10;
 
@@ -17,8 +19,10 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob;
-import com.ranecc.renderium.feature.shader.descriptor.ShaderCompDescriptor;
+import com.ranecc.renderium.feature.shader.comp.ShaderCompDescriptor;
 import com.ranecc.renderium.feature.shader.spirv.SPIRVShaderModule;
+import com.ranecc.renderium.platform.bridge.mc.CommandBatcher;
+import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
 /**
  * 通用着色器节点
  * <p>
@@ -164,7 +168,7 @@ public class GenericShaderNode extends AbstractPipelineNode
 
         try {
             // Step 1: SPIR-V 反射（提取 Uniform 布局信息）
-            List<SPIRVShaderModule.UniformEntry> uniforms = List.of();
+            List<String> uniforms = List.of();
             if (spirvModule != null && spirvModule.isValid()) {
                 uniforms = spirvModule.getUniforms();
             }
@@ -174,7 +178,7 @@ public class GenericShaderNode extends AbstractPipelineNode
             boolean gpuAvailable = mgr.isInitialized();
 
             if (!gpuAvailable) {
-                LOGGER.warning("GPU not available for shader node: {}", getName());
+                LOGGER.warning(String.format("GPU not available for shader node: %s", getName()));
                 return inputResources.length > 0 ? inputResources[0] : 0L;
             }
 
@@ -189,7 +193,7 @@ public class GenericShaderNode extends AbstractPipelineNode
                         outW, outH,
                         VK10.VK_FORMAT_R16G16B16A16_SFLOAT,  // 默认 HDR 格式
                         VulkanConst.IMAGE_USAGE_STORAGE_BIT | VulkanConst.IMAGE_USAGE_SAMPLED_BIT,
-                        com.renderium.module.impl.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET
+                        com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET
                 );
 
                 if (outputRes.isValid()) {
@@ -202,8 +206,7 @@ public class GenericShaderNode extends AbstractPipelineNode
             int workGroupX = Math.max(1, (context.getWidth() + 7) / 8);
             int workGroupY = Math.max(1, (context.getHeight() + 7) / 8);
 
-            com.renderium.bridge.batch.CommandBatcher batcher =
-                    com.renderium.bridge.batch.CommandBatcher.getInstance();
+            CommandBatcher batcher = MCRenderBridge.getCommandBatcher();
             if (batcher != null) {
                 batcher.enqueueComputeDispatch(
                         0L,  // pipeline handle（由 Shader 系统在绑定阶段填充）

@@ -203,7 +203,7 @@ public final class RenderiumController {
      *
      * @return CoreState 当前系统状态（NOT_INITIALIZED/INITIALIZING/READY/RUNNING/ERROR/SHUTDOWN）
      */
-    public CoreState getState() {
+    public RenderiumCore.CoreState getState() {
         return core.getState();
     }
 }

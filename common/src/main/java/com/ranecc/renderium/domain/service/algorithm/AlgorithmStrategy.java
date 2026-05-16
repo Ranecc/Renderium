@@ -3,8 +3,6 @@
 // 迁移规则: 优先使用 snapshot 1.1.0 版本，修改 package/import，保持业务逻辑不变
 
 package com.ranecc.renderium.domain.service.algorithm;
-import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
-import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
 
 /**
  * 算法策略泛型接口

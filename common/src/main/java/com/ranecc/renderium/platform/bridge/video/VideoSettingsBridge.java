@@ -1,5 +1,6 @@
 package com.ranecc.renderium.platform.bridge.video;
 
+import com.ranecc.renderium.infrastructure.config.RendererConfigBuilder;
 import net.minecraft.client.gui.screens.Screen;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -146,7 +147,7 @@ public final class VideoSettingsBridge {
         }
 
         // 创建选项注册表
-        optionsRegistry = new VideoOptionsRegistry();
+        optionsRegistry = null;
 
         LOGGER.info("Video settings system initialized successfully. " +
                 "Provider={}, CompatibleMode={}",

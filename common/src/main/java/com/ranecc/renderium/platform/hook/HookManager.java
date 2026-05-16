@@ -103,16 +103,16 @@ public final class HookManager {
     private static volatile RenderPassCloseHook renderPassCloseHook;
 
     public static SetPipelineHook getSetPipelineHook() { return setPipelineHook; }
-    public static void SetSetPipelineHook(SetPipelineHook hook) { setPipelineHook = hook; }
+    public static void setSetPipelineHook(SetPipelineHook hook) { setPipelineHook = hook; }
 
     public static BindTextureHook getBindTextureHook() { return bindTextureHook; }
-    public static void SetBindTextureHook(BindTextureHook hook) { bindTextureHook = hook; }
+    public static void setBindTextureHook(BindTextureHook hook) { bindTextureHook = hook; }
 
     public static DrawIndexedHook getDrawIndexedHook() { return drawIndexedHook; }
-    public static void SetDrawIndexedHook(DrawIndexedHook hook) { drawIndexedHook = hook; }
+    public static void setDrawIndexedHook(DrawIndexedHook hook) { drawIndexedHook = hook; }
 
     public static RenderPassCloseHook getRenderPassCloseHook() { return renderPassCloseHook; }
-    public static void SetRenderPassCloseHook(RenderPassCloseHook hook) { renderPassCloseHook = hook; }
+    public static void setRenderPassCloseHook(RenderPassCloseHook hook) { renderPassCloseHook = hook; }
 
     // ==================== LevelRenderer Hooks ====================
 
@@ -121,13 +121,13 @@ public final class HookManager {
     private static volatile PostChainHook postChainHook;
 
     public static RenderLevelHook getRenderLevelHook() { return renderLevelHook; }
-    public static void SetRenderLevelHook(RenderLevelHook hook) { renderLevelHook = hook; }
+    public static void setRenderLevelHook(RenderLevelHook hook) { renderLevelHook = hook; }
 
     public static RenderChunkSectionHook getRenderChunkSectionHook() { return renderChunkSectionHook; }
-    public static void SetRenderChunkSectionHook(RenderChunkSectionHook hook) { renderChunkSectionHook = hook; }
+    public static void setRenderChunkSectionHook(RenderChunkSectionHook hook) { renderChunkSectionHook = hook; }
 
     public static PostChainHook getPostChainHook() { return postChainHook; }
-    public static void SetPostChainHook(PostChainHook hook) { postChainHook = hook; }
+    public static void setPostChainHook(PostChainHook hook) { postChainHook = hook; }
 
     // ==================== ChunkRenderDispatcher Hook (P1-5: MC 数据源接入) ====================
 
@@ -159,7 +159,7 @@ public final class HookManager {
     private static volatile FrameGraphExecuteHook frameGraphExecuteHook;
 
     public static FrameGraphExecuteHook getFrameGraphExecuteHook() { return frameGraphExecuteHook; }
-    public static void SetFrameGraphExecuteHook(FrameGraphExecuteHook hook) { frameGraphExecuteHook = hook; }
+    public static void setFrameGraphExecuteHook(FrameGraphExecuteHook hook) { frameGraphExecuteHook = hook; }
 
     // ==================== Aggressive Mode Hooks (Optional) ====================
 
@@ -167,10 +167,10 @@ public final class HookManager {
     private static volatile VertexFormatCompressionHook vertexFormatCompressionHook;
 
     public static AsyncUploadHook getAsyncUploadHook() { return asyncUploadHook; }
-    public static void SetAsyncUploadHook(AsyncUploadHook hook) { asyncUploadHook = hook; }
+    public static void setAsyncUploadHook(AsyncUploadHook hook) { asyncUploadHook = hook; }
 
     public static VertexFormatCompressionHook getVertexFormatCompressionHook() { return vertexFormatCompressionHook; }
-    public static void SetVertexFormatCompressionHook(VertexFormatCompressionHook hook) { vertexFormatCompressionHook = hook; }
+    public static void setVertexFormatCompressionHook(VertexFormatCompressionHook hook) { vertexFormatCompressionHook = hook; }
 
     // ==================== Lifecycle Management ====================
 

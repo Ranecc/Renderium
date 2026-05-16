@@ -58,7 +58,6 @@ public final class ConfigBindings {
 
         return value -> {
             originalSetter.accept(value);
-            config.commitSnapshot();
         };
     }
 
@@ -75,7 +74,6 @@ public final class ConfigBindings {
 
         return value -> {
             originalSetter.accept(value);
-            config.commitSnapshot();
         };
     }
 
@@ -92,7 +90,6 @@ public final class ConfigBindings {
 
         return value -> {
             originalSetter.accept(value);
-            config.commitSnapshot();
         };
     }
 
@@ -110,7 +107,6 @@ public final class ConfigBindings {
 
         return value -> {
             originalSetter.accept(value);
-            config.commitSnapshot();
         };
     }
 

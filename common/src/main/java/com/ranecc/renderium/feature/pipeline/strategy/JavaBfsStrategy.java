@@ -14,11 +14,7 @@ package com.ranecc.renderium.feature.pipeline.strategy;
 
 import com.ranecc.renderium.None;
 import java.util.logging.Logger;
-import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
-import com.ranecc.renderium.feature.pipeline.strategy.AlgorithmStrategy;
 import com.ranecc.renderium.feature.pipeline.BfsOcclusionEngine;
-import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
-import com.ranecc.renderium.feature.pipeline.strategy.AlgorithmStrategy;
 
 /**
  * Java 实现 BFS 遮挡剔除策略
@@ -112,7 +108,6 @@ public final class JavaBfsStrategy implements AlgorithmStrategy<BfsInput, BfsOcc
      */
     @Override
     public long getEstimatedCostNanos() {
-        double avgMs = engine.getAverageTraverseTimeMs();
-        return avgMs > 0 ? (long) (avgMs * 1_000_000) : -1;
+        return -1;
     }
 }

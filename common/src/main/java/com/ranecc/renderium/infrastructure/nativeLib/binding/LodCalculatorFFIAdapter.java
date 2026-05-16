@@ -5,6 +5,7 @@ package com.ranecc.renderium.infrastructure.nativeLib.binding;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import com.ranecc.renderium.infrastructure.gpu.NativeLibraryLoader;
 
 /**
  * LOD距离计算器 FFI适配器 - 批量计算区块LOD等级

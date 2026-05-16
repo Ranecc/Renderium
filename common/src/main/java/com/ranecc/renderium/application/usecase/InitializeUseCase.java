@@ -1,6 +1,4 @@
 package com.ranecc.renderium.application.usecase;
-import com.ranecc.renderium.infrastructure.nativeLib.RenderiumAccelerator;
-
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 import com.ranecc.renderium.domain.service.scheduling.AdaptivePathSelector;
 import com.ranecc.renderium.infrastructure.config.ConfigManager;

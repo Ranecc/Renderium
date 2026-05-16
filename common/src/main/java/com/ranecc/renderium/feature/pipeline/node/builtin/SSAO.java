@@ -22,6 +22,10 @@ import java.util.logging.Logger;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
+import com.ranecc.renderium.infrastructure.vulkan.adapter.VulkanConst;
+import com.ranecc.renderium.platform.bridge.mc.CommandBatcher;
+import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
 
 /**
  * 屏幕空间环境光遮蔽 (Screen Space Ambient Occlusion) 节点
@@ -503,7 +507,7 @@ public class SSAO extends AbstractPipelineNode {
                                       float bias,
                                       float intensity) {
         if (positionHandle == 0L || normalHandle == 0L) {
-            logger.warn("position/normal handle 为 0: {} {}", positionHandle, normalHandle);
+            LOGGER.warning(String.format("position/normal handle 为 0: %d %d", positionHandle, normalHandle));
             return 0L;
         }
 
@@ -521,11 +525,11 @@ public class SSAO extends AbstractPipelineNode {
                     screenWidth, screenHeight,
                     VK10.VK_FORMAT_R8_UNORM,
                     VulkanConst.IMAGE_USAGE_STORAGE_BIT | VulkanConst.IMAGE_USAGE_SAMPLED_BIT,
-                    com.renderium.module.impl.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET
+                    com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET
             );
 
             if (!aoOutput.isValid()) {
-                LOGGER.warning("SSAO output texture invalid: {}x{}", screenWidth, screenHeight);
+                LOGGER.warning(String.format("SSAO output texture invalid: %dx%d", screenWidth, screenHeight));
                 return 0L;
             }
 
@@ -535,11 +539,8 @@ public class SSAO extends AbstractPipelineNode {
             int workGroupCountY = (screenHeight + 7) / 8;
 
             // 通过 CommandBatcher 提交 Compute Dispatch 命令
-            // （CommandBatcher 内部会处理命令缓冲区记录和队列提交）
-            // 注意：实际的 DescriptorSet 绑定和 Pipeline 选择由上层 Shader 系统管理
-            // 这里仅负责资源创建和 Dispatch 参数传递
-            com.renderium.bridge.batch.CommandBatcher batcher =
-                    com.renderium.bridge.batch.CommandBatcher.getInstance();
+
+            CommandBatcher batcher = MCRenderBridge.getCommandBatcher();
             if (batcher != null) {
                 batcher.enqueueComputeDispatch(
                         0L,  // pipeline handle（由 Shader 系统填充）
@@ -547,8 +548,7 @@ public class SSAO extends AbstractPipelineNode {
                 );
             }
 
-            LOGGER.fine(String.format(
-                    "[SSAO] compute dispatch 'ssao_main' (%dx%d, samples=%d, radius=%.2f) " +
+            LOGGER.fine(String.format("[SSAO] dispatch 'ssao_main' (%dx%d, samples=%d, radius=%.2f) " +
                     "→ aoOutput=0x%X, workgroups=(%d,%d)",
                     screenWidth, screenHeight, sampleCount, radius,
                     aoOutput.handle, workGroupCountX, workGroupCountY));
@@ -616,7 +616,7 @@ public class SSAO extends AbstractPipelineNode {
                     screenWidth, screenHeight,
                     VK10.VK_FORMAT_R8_UNORM,
                     VulkanConst.IMAGE_USAGE_STORAGE_BIT | VulkanConst.IMAGE_USAGE_SAMPLED_BIT,
-                    com.renderium.module.impl.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET
+                    com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET
             );
 
             if (!blurOutput.isValid()) {
@@ -629,8 +629,7 @@ public class SSAO extends AbstractPipelineNode {
             int workGroupCountY = (screenHeight + 7) / 8;
 
             // 通过 CommandBatcher 提交 Compute Dispatch
-            com.renderium.bridge.batch.CommandBatcher batcher =
-                    com.renderium.bridge.batch.CommandBatcher.getInstance();
+            CommandBatcher batcher = MCRenderBridge.getCommandBatcher();
             if (batcher != null) {
                 batcher.enqueueComputeDispatch(
                         0L,  // pipeline handle（由 Shader 系统填充）
@@ -639,7 +638,7 @@ public class SSAO extends AbstractPipelineNode {
             }
 
             LOGGER.fine(String.format(
-                    "[SSAO] compute dispatch 'ssao_blur' (%dx%d) → blurOutput=0x%X",
+                    "[SSAO] dispatch 'ssao_blur' (%dx%d) → blurOutput=0x%X",
                     screenWidth, screenHeight, blurOutput.handle));
 
             return blurOutput.handle;

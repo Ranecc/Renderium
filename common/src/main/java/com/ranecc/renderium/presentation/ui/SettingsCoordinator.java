@@ -1,6 +1,7 @@
 package com.ranecc.renderium.presentation.ui;
 
 import com.ranecc.renderium.platform.bridge.video.VideoSettingsBridge;
+import net.minecraft.client.gui.screens.Screen;
 
 import java.util.logging.Logger;
 
@@ -67,21 +68,21 @@ public final class SettingsCoordinator {
     /**
      * 打开设置界面
      *
-     * <p>通过 {@link VideoSettingsBridge#openSettings(Object)} 协调打开设置界面。
+     * <p>通过 {@link VideoSettingsBridge#openSettings(Screen)} 协调打开设置界面。
      * 支持原版 Minecraft 视频设置页面或 Sodium 的自定义设置页面。
      *
      * <h4>方法签名</h4>
      * <ul>
-     *   <li><b>参数：</b>parentScreen - 父屏幕对象（Object 类型）</li>
-     *   <li><b>返回值：</b>Object - 打开的设置屏幕对象（可能为 null）</li>
+     *   <li><b>参数：</b>parentScreen - 父屏幕对象（Screen 类型）</li>
+     *   <li><b>返回值：</b>Screen - 打开的设置屏幕对象（可能为 null）</li>
      *   <li><b>异常：</b>IllegalStateException - 如果 VideoSettingsBridge 未初始化</li>
      * </ul>
      *
-     * @param parentScreen 父屏幕对象（Minecraft Screen 实例或其他 GUI 容器）
-     * @return Object 打开的设置屏幕对象，失败返回 null
+     * @param parentScreen 父屏幕对象（Minecraft Screen 实例）
+     * @return Screen 打开的设置屏幕对象，失败返回 null
      * @throws IllegalStateException 如果 VideoSettingsBridge 未初始化
      */
-    public Object openSettings(Object parentScreen) {
+    public Screen openSettings(Screen parentScreen) {
         if (!isAvailable()) {
             throw new IllegalStateException(
                 "VideoSettingsBridge is not initialized. Call VideoSettingsBridge.initialize() first."
@@ -91,7 +92,7 @@ public final class SettingsCoordinator {
         try {
             LOGGER.info("Opening Renderium settings screen...");
 
-            Object settingsScreen = VideoSettingsBridge.openSettings(parentScreen);
+            Screen settingsScreen = VideoSettingsBridge.openSettings(parentScreen);
 
             if (settingsScreen != null) {
                 LOGGER.info("Settings screen opened successfully");

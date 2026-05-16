@@ -5,7 +5,8 @@
 package com.ranecc.renderium.feature.renderopt.mesh;
 
 import com.ranecc.renderium.None;
-import com.ranecc.renderium.feature.blaze3d.modern.MeshData;
+import com.ranecc.renderium.domain.model.MeshData;
+import com.ranecc.renderium.domain.constant.ConfigConstants;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import com.ranecc.renderium.feature.renderopt.mesh.NeighborFaceCuller;
+import com.ranecc.renderium.feature.culling.optimization.NeighborFaceCuller;
 /**
  * 异步网格构建器。
  *

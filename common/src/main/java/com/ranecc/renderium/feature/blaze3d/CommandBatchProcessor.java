@@ -3,12 +3,11 @@
 
 package com.ranecc.renderium.feature.blaze3d;
 
+import com.ranecc.renderium.tech.stub.renderbackendproxy.RenderBackendProxy;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
-
-import com.ranecc.renderium.None;
 
 /**
  * 命令批处理器。

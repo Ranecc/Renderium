@@ -534,7 +534,7 @@ public final class RenderiumLODSystem {
         // Step 1: 批量更新数据管理器中的 LOD 缓存
         int updatedCount = dataManager.updateLODs(
             context.cameraX(), context.cameraY(), context.cameraZ(),
-            context.fov(), context.updateUrl()
+            context.fov(), context.updateRadius()
         );
 
 

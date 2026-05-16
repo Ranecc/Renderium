@@ -5,6 +5,7 @@ package com.ranecc.renderium.infrastructure.nativeLib.binding;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import com.ranecc.renderium.infrastructure.gpu.NativeLibraryLoader;
 
 /**
  * Kahan/Neumaier高精度累加器 FFI适配器 - 数值精度接近f80

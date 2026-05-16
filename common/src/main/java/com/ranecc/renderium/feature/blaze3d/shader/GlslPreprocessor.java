@@ -175,6 +175,7 @@ public final class GlslPreprocessor {
         StringBuilder output = new StringBuilder();
         output.append("\n");
 
+        String[] lines = content.split("\n", -1);
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
             String trimmed = line.trim();

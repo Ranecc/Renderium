@@ -4,14 +4,19 @@
 
 package com.ranecc.renderium.presentation.ui.widgets.options.control;
 
-import com.mojang.blaze3d.platform.cursor.CursorTypes;
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.infrastructure.config.structure.IntegerOption;
+import com.ranecc.renderium.infrastructure.config.structure.Range;
+import com.ranecc.renderium.infrastructure.config.structure.RendererOption;
+import com.ranecc.renderium.presentation.ui.Layout;
+import com.ranecc.renderium.presentation.ui.util.Dim2i;
+import com.ranecc.renderium.presentation.ui.widgets.options.Colors;
+import com.ranecc.renderium.presentation.ui.widgets.options.ColorTheme;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 
-import java.util.function;
+import java.util.function.Function;
 
 /**
  * 滑块控件。

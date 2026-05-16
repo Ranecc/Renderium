@@ -2,10 +2,8 @@
 // NVIDIA DLSS 4.5 超分辨率适配器
 
 package com.ranecc.renderium.tech.superres;
-import com.ranecc.renderium.domain.model.FrameData;
 
-import com.ranecc.renderium.None;
-
+import com.ranecc.renderium.tech.dlss.DLSSManager;
 import java.util.logging.Logger;
 
 /**

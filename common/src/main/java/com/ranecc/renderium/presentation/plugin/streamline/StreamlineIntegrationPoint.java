@@ -2,9 +2,8 @@
 // Streamline 集成点接口 - 定义具体的注入逻辑
 
 package com.ranecc.renderium.presentation.plugin.streamline;
-import com.ranecc.renderium.domain.model.FrameData;
-
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.presentation.plugin.Blaze3DOptimization;
+import com.ranecc.renderium.presentation.plugin.PluginContext;
 
 /**
  * Streamline 集成点接口

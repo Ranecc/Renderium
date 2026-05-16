@@ -3,20 +3,18 @@
 // 支持兼容模式（追加到 Sodium）和狂暴模式（独立界面）
 
 package com.ranecc.renderium.presentation.ui;
+import com.ranecc.renderium.application.core.RenderiumCore;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
+import com.ranecc.renderium.presentation.ui.tabs.CullingSettingsTab;
+import com.ranecc.renderium.presentation.ui.tabs.FrameGenerationSettingsTab;
+import com.ranecc.renderium.presentation.ui.tabs.GeneralSettingsTab;
+import com.ranecc.renderium.presentation.ui.tabs.InterceptionSettingsTab;
+import com.ranecc.renderium.presentation.ui.tabs.PerformanceSettingsTab;
+import com.ranecc.renderium.presentation.ui.tabs.ReflexSettingsTab;
+import com.ranecc.renderium.presentation.ui.tabs.SuperResolutionSettingsTab;
 
-import com.ranecc.renderium.None;
-
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.CycleButton;
-import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.StringWidget;
-import net.minecraft.client.gui.components.Tooltip;
-import net.minecraft.client.gui.components.events.GuiEventListener;
-import net.minecraft.client.gui.layouts.FrameLayout;
-import net.minecraft.client.gui.layouts.GridLayout;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
@@ -25,7 +23,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Supplier;
 
 /**
  * Renderium 设置界面基类

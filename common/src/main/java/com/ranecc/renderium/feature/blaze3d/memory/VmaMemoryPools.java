@@ -21,7 +21,6 @@ import org.lwjgl.vulkan.VkBufferCreateInfo;
 import org.lwjgl.vulkan.VK10;
 
 // snapshot-3 新增导入：Vulkan 常量和销毁队列
-import com.ranecc.renderium.None;
 
 import java.nio.LongBuffer;
 import java.util.EnumMap;
@@ -29,6 +28,8 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
+
+import com.ranecc.renderium.infrastructure.vulkan.adapter.VulkanConst;
 /**
  * VMA 专用内存池管理器 🏊
  * <p>

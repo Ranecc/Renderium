@@ -3,14 +3,14 @@ package com.ranecc.renderium.platform.mixin;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
-import com.ranecc.renderium.None;
-import org.spongepowered.asm.mixin;
+import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.ranecc.renderium.feature.blaze3d.stylizedrt.StreamlineIntegration;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 
 /**

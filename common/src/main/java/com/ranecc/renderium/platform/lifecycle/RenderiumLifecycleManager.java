@@ -5,7 +5,14 @@ package com.ranecc.renderium.platform.lifecycle;
 
 import java.util.Arrays;
 import java.util.logging.Logger;
-import com.ranecc.renderium.domain.model.FrameData;
+import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
+import com.ranecc.renderium.platform.bridge.mc.FrameDataSnapshot;
+import com.ranecc.renderium.platform.bridge.mc.GameRendererContext;
+import com.ranecc.renderium.platform.bridge.mc.ProjectionContext;
+import com.ranecc.renderium.platform.bridge.mc.FogContext;
+import com.ranecc.renderium.platform.bridge.mc.CameraContext;
+import com.ranecc.renderium.platform.bridge.mc.MatrixContext;
+import com.ranecc.renderium.platform.bridge.mc.ChunkContext;
 
 /**
  * 渲染生命周期管理器

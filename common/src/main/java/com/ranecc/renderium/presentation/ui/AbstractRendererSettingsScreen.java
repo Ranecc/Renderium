@@ -3,11 +3,17 @@
 
 package com.ranecc.renderium.presentation.ui;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.presentation.ui.util.Dim2i;
+import com.ranecc.renderium.presentation.ui.widgets.OptionListWidget;
+import com.ranecc.renderium.presentation.ui.widgets.PageListWidget;
+import com.ranecc.renderium.presentation.ui.widgets.SearchWidget;
+import com.ranecc.renderium.infrastructure.config.structure.RendererOptionPage;
+import com.ranecc.renderium.platform.bridge.video.VideoOptionsRegistry;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.narration.NarratableEntry;
 import net.minecraft.client.gui.screens.Screen;

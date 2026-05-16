@@ -3,7 +3,15 @@
 
 package com.ranecc.renderium.presentation.ui.widgets;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.infrastructure.config.structure.RendererOptionGroup;
+import com.ranecc.renderium.infrastructure.config.structure.RendererOptionPage;
+import com.ranecc.renderium.presentation.ui.AbstractRendererSettingsScreen;
+import com.ranecc.renderium.presentation.ui.ColorTheme;
+import com.ranecc.renderium.presentation.ui.Layout;
+import com.ranecc.renderium.presentation.ui.util.Dim2i;
+import com.ranecc.renderium.presentation.ui.widgets.ControlElement;
+import com.ranecc.renderium.presentation.ui.widgets.options.Colors;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.Minecraft;  // 导入 Minecraft 类（用于反射访问 font 字段）

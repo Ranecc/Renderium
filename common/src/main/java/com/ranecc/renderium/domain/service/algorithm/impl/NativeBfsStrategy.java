@@ -5,7 +5,7 @@
 
 package com.ranecc.renderium.domain.service.algorithm.impl;
 import com.ranecc.renderium.domain.service.algorithm.AlgorithmStrategy;
-import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
+import com.ranecc.renderium.domain.service.algorithm.BfsInput;
 
 import com.ranecc.renderium.domain.service.algorithm.BfsFFIAdapter;
 import java.util.logging.Logger;

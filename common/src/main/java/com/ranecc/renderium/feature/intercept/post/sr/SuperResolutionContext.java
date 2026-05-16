@@ -1,14 +1,17 @@
 package com.ranecc.renderium.feature.intercept.post.sr;
 
 /**
- * TODO [REVIEW] 桩类 - 超分辨率处理上下文
- * 包含超分辨率处理所需的输入输出尺寸和配置信息
+ * 超分辨率处理上下文
+ * 包含超分辨率处理所需的输入输出尺寸、纹理和配置信息
  */
 public class SuperResolutionContext {
     private final int inputWidth;
     private final int inputHeight;
     private final int outputWidth;
     private final int outputHeight;
+
+    /** 输入颜色纹理 */
+    private long inputColorTexture = 0L;
 
     public SuperResolutionContext(int inputWidth, int inputHeight, int outputWidth, int outputHeight) {
         this.inputWidth = inputWidth;
@@ -28,4 +31,14 @@ public class SuperResolutionContext {
 
     /** 输出图像高度 */
     public int getOutputHeight() { return outputHeight; }
+
+    /** @return 输入颜色纹理 */
+    public long getInputColorTexture() {
+        return inputColorTexture;
+    }
+
+    /** @param tex 输入颜色纹理 */
+    public void setInputColorTexture(long tex) {
+        this.inputColorTexture = tex;
+    }
 }

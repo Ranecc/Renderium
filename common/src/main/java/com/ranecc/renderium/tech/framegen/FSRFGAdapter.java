@@ -3,7 +3,11 @@
 
 package com.ranecc.renderium.tech.framegen;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.tech.streamline.SLContext;
+import com.ranecc.renderium.tech.streamline.VulkanStreamlineBridge;
+import com.ranecc.renderium.tech.streamline.FrameEvaluator;
+import com.ranecc.renderium.tech.streamline.ResourceTagData;
+import com.ranecc.renderium.tech.streamline.ffm.SLFFMBindings;
 
 import java.lang.foreign.MemorySegment;
 import java.util.logging.Logger;
@@ -116,14 +120,14 @@ public final class FSRFGAdapter implements FrameGenerator {
      */
     private void tagResourcesForFrameGeneration(FrameGenData frame) {
         if (bridge != null && bridge.isAvailable()) {
-            VulkanStreamlineBridge.ResourceTagData[] resources = {
-                new VulkanStreamlineBridge.ResourceTagData(
+            ResourceTagData[] resources = {
+                new ResourceTagData(
                     SLFFMBindings.BUFFER_TYPE_HUDLESS_COLOR, frame.colorImageView(),
                     frame.textureWidth(), frame.textureHeight()),
-                new VulkanStreamlineBridge.ResourceTagData(
+                new ResourceTagData(
                     SLFFMBindings.BUFFER_TYPE_DEPTH, frame.depthImageView(),
                     frame.textureWidth(), frame.textureHeight()),
-                new VulkanStreamlineBridge.ResourceTagData(
+                new ResourceTagData(
                     SLFFMBindings.BUFFER_TYPE_MOTION_VECTORS, frame.motionVectorImageView(),
                     frame.textureWidth(), frame.textureHeight())
             };

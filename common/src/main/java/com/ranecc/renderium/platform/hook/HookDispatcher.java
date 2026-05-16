@@ -1,6 +1,7 @@
 package com.ranecc.renderium.platform.hook;
 
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 import com.ranecc.renderium.platform.lifecycle.LifecycleManager;
@@ -530,7 +531,7 @@ public final class HookDispatcher {
         long start = System.nanoTime();
         try {
             CommandEncoderSubmitHook hook = (CommandEncoderSubmitHook) entry.getInstance();
-            hook.onSubmit();
+            hook.onSubmit(null);
             entry.recordCall(System.nanoTime() - start);
             return true;
         } catch (Exception e) {
@@ -562,7 +563,7 @@ public final class HookDispatcher {
         long start = System.nanoTime();
         try {
             PostChainHook hook = (PostChainHook) entry.getInstance();
-            hook.onPostChain(null, null);  // chain/target 参数简化
+            hook.onAddToFrame(null, null);
             entry.recordCall(System.nanoTime() - start);
             return true;
         } catch (Exception e) {
@@ -594,7 +595,7 @@ public final class HookDispatcher {
         long start = System.nanoTime();
         try {
             FrameGraphExecuteHook hook = (FrameGraphExecuteHook) entry.getInstance();
-            hook.onFrameGraphExecute(null, passName);  // frameGraph 参数简化
+            hook.onExecute(null, passName);
             entry.recordCall(System.nanoTime() - start);
             return true;
         } catch (Exception e) {
@@ -626,7 +627,7 @@ public final class HookDispatcher {
         long start = System.nanoTime();
         try {
             RenderPassCloseHook hook = (RenderPassCloseHook) entry.getInstance();
-            hook.onRenderPassClose(null);  // renderPass 参数简化
+            hook.onRenderPassClose(null, System.nanoTime());
             entry.recordCall(System.nanoTime() - start);
             return true;
         } catch (Exception e) {
@@ -661,7 +662,7 @@ public final class HookDispatcher {
             GpuDeviceBufferHook hook = (GpuDeviceBufferHook) entry.getInstance();
             // 将 int operation 转换为字符串描述
             String opStr = decodeBufferOperation(operation);
-            hook.onBufferOperation(opStr, null, null);
+            hook.onCreateBuffer(() -> opStr, operation, size);
             entry.recordCall(System.nanoTime() - start);
             return true;
         } catch (Exception e) {

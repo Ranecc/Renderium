@@ -24,6 +24,7 @@
 
 package com.ranecc.renderium.domain.service.quality;
 
+import com.ranecc.renderium.domain.service.phase.PhaseTransitionDetector;
 import java.time.Instant;
 import java.util.Objects;
 

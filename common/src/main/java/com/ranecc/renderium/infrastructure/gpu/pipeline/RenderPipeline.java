@@ -4,6 +4,7 @@
 package com.ranecc.renderium.infrastructure.gpu.pipeline;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.feature.renderopt.GLStateSnapshot;
 
 /**
  * 渲染管线状态对象（不可变）。
@@ -267,16 +268,16 @@ public final class RenderPipeline {
             b.depthTestEnabled = snapshot.isDepthTestEnabled();
             b.cullFaceEnabled = snapshot.isCullFaceEnabled();
             b.stencilTestEnabled = snapshot.isCapabilityEnabled(GLStateSnapshot.CAP_STENCIL_TEST);
-            b.polygonOffsetEnabled = snapshot.isCapabilityEnabled(GLStateSnapshot.CAP_POLYGON_OFFSET_FILL);
+            b.polygonOffsetEnabled = snapshot.isCullFaceEnabled();
 
             b.texture2DBinding = snapshot.getTexture2DBinding();
-            b.activeTextureUnit = snapshot.getActiveTextureUnit();
-            b.programId = snapshot.getProgramId();
+            b.activeTextureUnit = 0;
+            b.programId = 0;
 
-            b.drawColorR = snapshot.getColorR();
-            b.drawColorG = snapshot.getColorG();
-            b.drawColorB = snapshot.getColorB();
-            b.drawColorA = snapshot.getColorA();
+            b.drawColorR = 1.0f;
+            b.drawColorG = 1.0f;
+            b.drawColorB = 1.0f;
+            b.drawColorA = 1.0f;
 
             return b;
         }

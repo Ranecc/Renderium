@@ -5,6 +5,7 @@ import com.ranecc.renderium.domain.constant.ConfigConstants;
 import com.ranecc.renderium.domain.enums.QualityLevel;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
 import com.ranecc.renderium.domain.enums.SRTechnology;
+import com.ranecc.renderium.tech.framegen.FrameGenMode;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -96,6 +97,18 @@ public final class RenderiumConfig {
     /** 是否启用超分辨率 */
     private boolean superResolutionEnabled = false;
 
+    /** 是否启用帧生成 */
+    private boolean frameGenerationEnabled = false;
+
+    /** 帧生成模式 */
+    private FrameGenMode frameGenMode = FrameGenMode.OFF;
+
+    /** 是否启用 Reflex 低延迟 */
+    private boolean reflexEnabled = false;
+
+    /** Reflex 低延迟模式 */
+    private ReflexMode reflexMode = ReflexMode.OFF;
+
     // ==================== 剔除优化配置 ====================
 
     /** 是否启用遮挡剔除 */
@@ -124,6 +137,40 @@ public final class RenderiumConfig {
      * 默认构造函数 - 使用所有默认值
      */
     public RenderiumConfig() {}
+
+    // ==================== 拦截层配置 ====================
+
+    private InterceptionConfig interceptionConfig = new InterceptionConfig();
+
+    public InterceptionConfig getInterceptionConfig() { return interceptionConfig; }
+
+    // ==================== 子模块配置（Blaze3D 优化模块使用） ====================
+
+    private ShaderPipelineConfig shaderPipelineConfig = new ShaderPipelineConfig();
+    private VmaConfig vmaConfig = new VmaConfig();
+    private AggressiveConfig aggressiveConfig = new AggressiveConfig();
+    private ModernConfig modernConfig = new ModernConfig();
+    private TransformConfig transformConfig = new TransformConfig();
+    private FrameGraphConfig frameGraphConfig = new FrameGraphConfig();
+    private VulkanCommandConfig vulkanCommandConfig = new VulkanCommandConfig();
+    private MemoryConfig memoryConfig = new MemoryConfig();
+
+    public ShaderPipelineConfig getShaderPipelineConfig() { return shaderPipelineConfig; }
+    public VmaConfig getVmaConfig() { return vmaConfig; }
+    public AggressiveConfig getAggressiveConfig() { return aggressiveConfig; }
+    public ModernConfig getModernConfig() { return modernConfig; }
+    public TransformConfig getTransformConfig() { return transformConfig; }
+    public FrameGraphConfig getFrameGraphConfig() { return frameGraphConfig; }
+    public VulkanCommandConfig getVulkanCommandConfig() { return vulkanCommandConfig; }
+    public MemoryConfig getMemoryConfig() { return memoryConfig; }
+
+    public boolean isVmaEnhancementEnabled() { return vmaConfig != null; }
+    public boolean isFrameGraphOptimizationEnabled() { return frameGraphConfig != null; }
+    public boolean isVulkanCommandOptimizationEnabled() { return vulkanCommandConfig != null; }
+    public boolean isMemoryOptimizationEnabled() { return memoryConfig != null; }
+    public boolean isShaderPipelineOptimizationEnabled() { return shaderPipelineConfig != null; }
+
+    public String getProperty(String key, String defaultValue) { return defaultValue; }
 
     // ==================== 验证不变式 ====================
 
@@ -461,6 +508,42 @@ public final class RenderiumConfig {
     /** 设置超分辨率启用状态 */
     public void setSuperResolutionEnabled(boolean superResolutionEnabled) {
         this.superResolutionEnabled = superResolutionEnabled;
+    }
+
+    // ==================== Getter/Setter: 帧生成 ====================
+
+    /** 是否启用帧生成 */
+    public boolean isFrameGenerationEnabled() { return frameGenerationEnabled; }
+
+    /** 设置帧生成启用状态 */
+    public void setFrameGenerationEnabled(boolean frameGenerationEnabled) {
+        this.frameGenerationEnabled = frameGenerationEnabled;
+    }
+
+    /** 获取帧生成模式 */
+    public FrameGenMode getFrameGenMode() { return frameGenMode; }
+
+    /** 设置帧生成模式 */
+    public void setFrameGenMode(FrameGenMode frameGenMode) {
+        this.frameGenMode = frameGenMode;
+    }
+
+    // ==================== Getter/Setter: Reflex 低延迟 ====================
+
+    /** 是否启用 Reflex 低延迟 */
+    public boolean isReflexEnabled() { return reflexEnabled; }
+
+    /** 设置 Reflex 启用状态 */
+    public void setReflexEnabled(boolean reflexEnabled) {
+        this.reflexEnabled = reflexEnabled;
+    }
+
+    /** 获取 Reflex 模式 */
+    public ReflexMode getReflexMode() { return reflexMode; }
+
+    /** 设置 Reflex 模式 */
+    public void setReflexMode(ReflexMode reflexMode) {
+        this.reflexMode = reflexMode;
     }
 
     // ==================== Getter/Setter: 剔除优化 ====================
@@ -1011,7 +1094,7 @@ public final class RenderiumConfig {
          * @return 验证结果（OK 级别）
          */
         public static ValidationResult ok() {
-            return new ValidationResult(Level.OK, "");
+            return new ValidationResult(Level.OK, "", "");
         }
 
         /**
@@ -1021,7 +1104,7 @@ public final class RenderiumConfig {
          * @return 验证结果（WARNING 级别）
          */
         public static ValidationResult warning(String message) {
-            return new ValidationResult(Level.WARNING, message);
+            return new ValidationResult(Level.WARNING, "", message);
         }
 
         /**
@@ -1090,5 +1173,14 @@ public final class RenderiumConfig {
                 case ERROR -> "ValidationResult{ERROR: " + errorMessage + "}";
             };
         }
+    }
+
+    /**
+     * Reflex 低延迟模式枚举
+     */
+    public enum ReflexMode {
+        OFF,
+        LOW_LATENCY,
+        LOW_LATENCY_BOOST
     }
 }

@@ -138,7 +138,7 @@ public class RayTracingNode extends AbstractPipelineNode {
         this.rtAvailable = detectRayTracingSupport(context);
 
         if (!rtAvailable) {
-            logger.warn("光线追踪不可用");
+            LOGGER.warning("光线追踪不可用");
             return true;  // 仍返回 true，execute() 中会自动回退
         }
 
@@ -151,8 +151,8 @@ public class RayTracingNode extends AbstractPipelineNode {
         // 创建加速结构
         buildAccelerationStructures(context);
 
-        LOGGER.debug("RT Node: available={}, enabled={}, rays={}, cache={}x{}",
-                rtAvailable, rtEnabled, rayCount, cachedWidth, cachedHeight);
+        LOGGER.fine(String.format("RT Node: available=%b, enabled=%b, rays=%d, cache=%dx%d",
+                rtAvailable, rtEnabled, rayCount, cachedWidth, cachedHeight));
         return true;
     }
 
@@ -312,13 +312,7 @@ public class RayTracingNode extends AbstractPipelineNode {
         extensionChecked = true;
 
         try {
-            String modeName = context.getModeName();
-            LOGGER.fine("[RayTracingNode] 检测 RT 扩展支持，当前模式: %s".formatted(modeName));
-
-            if (!"AGGRESSIVE".equals(modeName)) {
-                LOGGER.info("[RayTracingNode] 非 Vulkan AGGRESSIVE 模式 (%s)，RT 不可用".formatted(modeName));
-                return false;
-            }
+            LOGGER.fine("[RayTracingNode] 检测 RT 扩展支持");
 
             boolean allSupported = checkVulkanRTExtensions(context);
 

@@ -3,7 +3,9 @@
 
 package com.ranecc.renderium.presentation.ui.widgets.options.control;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.infrastructure.config.structure.RendererOption;
+import com.ranecc.renderium.presentation.ui.util.Dim2i;
+import com.ranecc.renderium.presentation.ui.widgets.options.ColorTheme;
 
 /**
  * 选项控件工厂接口。

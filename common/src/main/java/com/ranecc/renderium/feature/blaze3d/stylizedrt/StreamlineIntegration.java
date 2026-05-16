@@ -7,6 +7,7 @@
 package com.ranecc.renderium.feature.blaze3d.stylizedrt;
 import com.ranecc.renderium.tech.streamline.VulkanStreamlineBridge;
 import com.ranecc.renderium.tech.streamline.SLContext;
+import com.ranecc.renderium.tech.streamline.ffm.SLFFMBindings;
 
 import com.ranecc.renderium.None;
 

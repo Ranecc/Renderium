@@ -2,10 +2,12 @@
 // Intel XeSS 超分辨率适配器（通过 Streamline SDK）
 
 package com.ranecc.renderium.tech.superres;
-import com.ranecc.renderium.domain.model.FrameData;
 
-import com.ranecc.renderium.None;
-
+import com.ranecc.renderium.tech.streamline.SLContext;
+import com.ranecc.renderium.tech.streamline.VulkanStreamlineBridge;
+import com.ranecc.renderium.tech.streamline.FrameEvaluator;
+import com.ranecc.renderium.tech.streamline.ResourceTagData;
+import com.ranecc.renderium.tech.streamline.ffm.SLFFMBindings;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -146,14 +148,14 @@ public final class XeSSAdapter implements SuperResolutionAdapter {
      */
     private void tagResourcesForSuperResolution(FrameData frameData) {
         if (bridge != null && bridge.isAvailable()) {
-            VulkanStreamlineBridge.ResourceTagData[] resources = {
-                new VulkanStreamlineBridge.ResourceTagData(
+            ResourceTagData[] resources = {
+                new ResourceTagData(
                     SLFFMBindings.BUFFER_TYPE_HUDLESS_COLOR, frameData.colorImageView(),
                     frameData.textureWidth(), frameData.textureHeight()),
-                new VulkanStreamlineBridge.ResourceTagData(
+                new ResourceTagData(
                     SLFFMBindings.BUFFER_TYPE_DEPTH, frameData.depthImageView(),
                     frameData.textureWidth(), frameData.textureHeight()),
-                new VulkanStreamlineBridge.ResourceTagData(
+                new ResourceTagData(
                     SLFFMBindings.BUFFER_TYPE_SCALING_OUTPUT_COLOR, frameData.outputImageView(),
                     frameData.displayWidth(), frameData.displayHeight())
             };

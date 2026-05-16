@@ -7,7 +7,7 @@ import com.ranecc.renderium.feature.culling.optimization.NeighborFaceCuller;
 import com.ranecc.renderium.feature.culling.optimization.HeightmapOcclusionCuller;
 import com.ranecc.renderium.feature.culling.optimization.AsyncComputeCuller;
 
-import com.ranecc.renderium.None;
+import com.ranecc.renderium.feature.culling.intercept.InterceptionCullingContext;
 
 import java.util.BitSet;
 import java.util.LinkedHashMap;
@@ -492,7 +492,7 @@ public final class CullingAdapter {
             } else {
                 // ======== 无方块状态数据：基于历史统计返回估算结果 ========
                 // 邻居面剔除通常是离线/预计算的，此处使用历史剔除率进行估算
-                float historicalCullRate = culler.getCullRate();
+                float historicalCullRate = (float) culler.getCullRate();
                 int estimatedCulledCount = (int) (objectCount * historicalCullRate);
 
                 // 创建估算的可见性掩码（随机分布，仅用于统计）

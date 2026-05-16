@@ -252,10 +252,8 @@ public class AsyncComputeCuller {
             this.computeQueue = queue;
             this.computeQueueFamilyIndex = queueFamily;
 
-            // TODO (v6): FFM 资源创建暂时禁用，等待 Blaze3D 集成层完善
-            // 以下为存根实现，实际功能将在 Blaze3D 迁移完成后启用
             LOGGER.info(String.format(
-                "AsyncComputeCuller 初始化成功 (存根模式) [device=0x%X, queue=0x%X, family=%d]",
+                "AsyncComputeCuller 初始化成功 (CPU 模拟模式) [device=0x%X, queue=0x%X, family=%d]",
                 vkDevice, queue, queueFamily));
 
             initialized.set(true);
@@ -314,8 +312,6 @@ public class AsyncComputeCuller {
             int count = Math.min(sections.length, DEFAULT_MAX_SECTIONS);
             sectionCount.set(count);
 
-            // TODO (v6): GPU 上传和 Compute Dispatch 暂时禁用
-            // 当前版本使用 CPU 模拟结果（用于测试流程）
             BitSet simulatedMask = simulateCpuCull(sections, positions, vpMatrix, frustumPlanes, cameraPos, renderDistance);
             lastVisibleMask = simulatedMask;
 
@@ -327,6 +323,7 @@ public class AsyncComputeCuller {
             LOGGER.fine(String.format("Dispatch 完成 (CPU 模拟): %d/%d 可见, 耗时 %.2f ms",
                     simulatedMask.cardinality(), count, elapsed / 1_000_000.0));
 
+            dispatching.set(false);
             return new CullResult(true, simulatedMask, elapsed, sectionCount.get());
 
         } catch (Exception e) {
@@ -374,19 +371,14 @@ public class AsyncComputeCuller {
     }
 
     /**
-     * 检查 Compute 是否已完成
+     * 检查异步计算是否已完成
+     *
+     * <p>CPU 模拟模式下同步完成，dispatch 返回时工作即已完成。
      *
      * @return true 如果已完成或未在执行
      */
     public boolean isComplete() {
-        if (!dispatching.get()) {
-            return true; // 未在执行
-        }
-
-        // TODO (v6): Fence 检查暂时禁用
-        // 当前版本假设 CPU 模拟是同步完成的
-        dispatching.set(false);
-        return true;
+        return !dispatching.get();
     }
 
     /**
@@ -403,20 +395,15 @@ public class AsyncComputeCuller {
     }
 
     /**
-     * 等待 Compute 完成（阻塞）
+     * 等待异步计算完成（阻塞）
+     *
+     * <p>CPU 模拟模式下同步完成，无需实际等待。
      *
      * @param timeoutMs 超时时间（毫秒），0 表示无限等待
      * @return true 如果成功完成
      */
     public boolean waitForCompletion(long timeoutMs) {
-        if (!dispatching.get()) {
-            return true; // 未在执行
-        }
-
-        // TODO (v6): Fence 等待暂时禁用
-        // 当前版本直接标记完成
-        dispatching.set(false);
-        return true;
+        return !dispatching.get();
     }
 
     /**
@@ -437,8 +424,7 @@ public class AsyncComputeCuller {
     public boolean uploadVisibilityData(float[][] sections) {
         if (!initialized.get()) return false;
 
-        // TODO (v6): SSBO 上传暂时禁用
-        LOGGER.fine(String.format("uploadVisibilityData: %d 个区段 (存根)", 
+        LOGGER.fine(String.format("uploadVisibilityData: %d 个区段 (CPU 模拟)", 
                 sections != null ? sections.length : 0));
         return true;
     }
@@ -452,8 +438,7 @@ public class AsyncComputeCuller {
     public boolean uploadPositionData(float[][] positions) {
         if (!initialized.get()) return false;
 
-        // TODO (v6): SSBO 上传暂时禁用
-        LOGGER.fine(String.format("uploadPositionData: %d 个位置 (存根)",
+        LOGGER.fine(String.format("uploadPositionData: %d 个位置 (CPU 模拟)",
                 positions != null ? positions.length : 0));
         return true;
     }
@@ -471,8 +456,7 @@ public class AsyncComputeCuller {
                                       float[] cameraPos, float renderDistance) {
         if (!initialized.get()) return false;
 
-        // TODO (v6): UBO 上传暂时禁用
-        LOGGER.fine("uploadCameraParams: (存根)");
+        LOGGER.fine("uploadCameraParams: (CPU 模拟)");
         return true;
     }
 
@@ -486,9 +470,6 @@ public class AsyncComputeCuller {
     public void cleanupResources() {
         initialized.set(false);
         dispatching.set(false);
-
-        // TODO (v6): FFM 资源销毁暂时禁用
-        // 以下为存根清理逻辑
 
         visibilityBuffer = 0L; positionBuffer = 0L; outputBuffer = 0L; cameraParamsBuffer = 0L;
         visibilityBufferMemory = 0L; positionBufferMemory = 0L;

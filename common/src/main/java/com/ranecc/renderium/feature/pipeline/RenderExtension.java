@@ -1,10 +1,14 @@
 package com.ranecc.renderium.feature.pipeline;
 
-/**
- * 渲染扩展桩类。
- * 待集成完成后再替换为真实实现。
- */
 public class RenderExtension {
+
+    private String name;
+    private boolean enabled;
+
+    public RenderExtension(String name) {
+        this.name = name;
+        this.enabled = true;
+    }
 
     public enum Capability {
         ADVANCED_CULLING,
@@ -16,5 +20,20 @@ public class RenderExtension {
         return false;
     }
 
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
     public void initialize() {}
+
+    public boolean onFrameBegin(int frameNumber, float deltaTime) { return true; }
+    public void onFrameEnd() {}
 }

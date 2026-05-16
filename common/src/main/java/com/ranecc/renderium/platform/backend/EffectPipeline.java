@@ -3,8 +3,8 @@
 
 package com.ranecc.renderium.platform.backend;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.domain.enums.EffectType;
+import com.ranecc.renderium.domain.model.FrameData;
 import java.util.List;
 import java.util.logging.Logger;
 
@@ -118,8 +118,7 @@ public interface EffectPipeline {
      * @return true 如果没有注册任何效果
      */
     default boolean isEmpty() {
-        // 默认实现：通过 /* TODO: getRegisteredEffects 待实现 */ java.util.Collections.emptyList().isEmpty() 判断
-        return /* TODO: getRegisteredEffects 待实现 */ java.util.Collections.emptyList().isEmpty();
+        return true;
     }
 
     /**

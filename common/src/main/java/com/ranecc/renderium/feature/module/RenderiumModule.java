@@ -74,4 +74,12 @@ public interface RenderiumModule {
      * @return true 表示初始化成功，false 表示初始化失败（应该禁用模块）
      */
     boolean initialize(ModuleContext context);
+
+    default boolean enable() { return true; }
+    default void disable() {}
+    default void dispose() {}
+    default String getStatusString() { return "未知"; }
+
+    default void onFrameBegin(float deltaTime) {}
+    default void onFrameEnd() {}
 }

@@ -4,6 +4,7 @@
 package com.ranecc.renderium.support.compat;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.tech.stub.renderbackendproxy.RenderBackendProxy;
 
 import java.util.logging.Logger;
 
@@ -125,11 +126,10 @@ public final class FBOInteropHandler {
 
         LOGGER.warning("FBO 拦截器进入最小监视器模式，等待 Vulkan 激活...");
 
-        VulkanActivationEvent.addListener((wasActive, isActive) -> {
-            if (!wasActive && isActive) {
-                performInitialization();
-            }
-        });
+        // 立即检查一次 Vulkan 是否已激活，若已激活则执行初始化
+        if (RenderBackendProxy.getInstance().isVulkanActive()) {
+            performInitialization();
+        }
     }
 
     private void performInitialization() {

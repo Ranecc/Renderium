@@ -7,7 +7,6 @@ import com.ranecc.renderium.domain.model.config.VulkanCommandConfig;
 
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 
-import com.ranecc.renderium.None;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
@@ -498,6 +497,28 @@ public class VulkanCommandOptimizer implements AutoCloseable {
      * 是否已初始化
      */
     public boolean isInitialized() { return initialized; }
+
+    /**
+     * 尝试合并一次 Draw Call 到当前批次
+     * <p>
+     * 如果当前批次可合并此调用，返回 true 表示已处理。
+     * 返回 false 表示合并失败，调用方应直接执行此绘制调用。
+     *
+     * @param indexCount    索引数量
+     * @param instanceCount 实例数量
+     * @param firstIndex    起始索引偏移
+     * @param vertexOffset  顶点偏移
+     * @param firstInstance 起始实例 ID
+     * @return true 表示已成功合并，false 表示需要直接执行
+     */
+    public boolean tryMergeDrawCall(int indexCount, int instanceCount,
+                                     int firstIndex, int vertexOffset, int firstInstance) {
+        if (!enabled || !initialized) {
+            return false;
+        }
+        // 默认不合并，由具体策略覆盖
+        return false;
+    }
 
     /**
      * 获取当前缓存命中率

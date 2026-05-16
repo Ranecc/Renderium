@@ -5,5 +5,5 @@ package com.ranecc.renderium.domain.enums;
  * [TODO] 完整实现待补充
  */
 public enum SRTechnology {
-    DLSS, FSR, CAS, IESMGU, NATIVE
+    DLSS, FSR, CAS, IESMGU, NATIVE, AUTO
 }

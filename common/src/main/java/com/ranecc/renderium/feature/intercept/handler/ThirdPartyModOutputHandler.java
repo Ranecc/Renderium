@@ -4,8 +4,6 @@
 package com.ranecc.renderium.feature.intercept.handler;
 import com.ranecc.renderium.feature.intercept.handler.ModOutputHandler;
 
-import com.ranecc.renderium.None;
-
 import java.lang.reflect.Field;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -178,10 +176,10 @@ public class ThirdPartyModOutputHandler implements ModOutputHandler {
      * @see #updateRenderContext(ModOutputContext)
      */
     @Override
-    public void handleOutput(ModOutputContext context) {
-        // ======== 参数校验 ========
-        if (context == null) {
-            throw new IllegalArgumentException("ModOutputContext 不能为 null");
+    public void handleOutput(Object output) {
+        if (!(output instanceof ModOutputContext context)) {
+            LOGGER.warning("不支持的输出类型: " + (output != null ? output.getClass().getName() : "null"));
+            return;
         }
 
         LOGGER.fine(String.format(
@@ -265,9 +263,13 @@ public class ThirdPartyModOutputHandler implements ModOutputHandler {
      *
      * @return 模组标识符字符串（小写格式）
      */
-    @Override
     public String getSupportedModId() {
         return supportedModId;
+    }
+
+    @Override
+    public boolean supportsType(Class<?> type) {
+        return type == ModOutputContext.class || type == ThirdPartyModOutputHandler.class;
     }
 
     // ==================== 私有方法：FBO 拦截 ====================

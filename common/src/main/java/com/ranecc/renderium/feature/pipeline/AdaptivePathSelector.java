@@ -20,10 +20,9 @@ import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.nativeLib.RenderiumAccelerator;
 import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
 import com.ranecc.renderium.feature.pipeline.strategy.AlgorithmStrategy;
+import com.ranecc.renderium.feature.pipeline.strategy.JavaBfsStrategy;
+import com.ranecc.renderium.feature.pipeline.strategy.NativeBfsStrategy;
 import com.ranecc.renderium.feature.pipeline.BfsOcclusionEngine;
-import com.ranecc.renderium.infrastructure.nativeLib.RenderiumAccelerator;
-import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
-import com.ranecc.renderium.feature.pipeline.strategy.AlgorithmStrategy;
 
 /**
  * 自适应路径选择器（增强版）

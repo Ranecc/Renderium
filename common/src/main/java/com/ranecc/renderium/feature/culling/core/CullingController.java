@@ -3,8 +3,6 @@
 
 package com.ranecc.renderium.feature.culling.core;
 
-import com.ranecc.renderium.None;
-
 import java.util.*;
 
 /**

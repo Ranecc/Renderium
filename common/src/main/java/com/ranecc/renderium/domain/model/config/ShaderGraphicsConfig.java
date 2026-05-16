@@ -86,15 +86,24 @@ public final class ShaderGraphicsConfig {
      */
     public enum ShadowQuality {
         /** 关闭阴影 */
-        OFF,
+        OFF(0),
         /** 低质量 */
-        LOW,
+        LOW(1),
         /** 中等质量（默认） */
-        MEDIUM,
+        MEDIUM(2),
         /** 高质量 */
-        HIGH,
+        HIGH(4),
         /** 极致质量 */
-        ULTRA
+        ULTRA(6);
+
+        private final int cascadeCount;
+
+        ShadowQuality(int cascadeCount) {
+            this.cascadeCount = cascadeCount;
+        }
+
+        /** 获取阴影级联数 */
+        public int getCascadeCount() { return cascadeCount; }
     }
 
     /**

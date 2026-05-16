@@ -1,4 +1,5 @@
 package com.ranecc.renderium.infrastructure.config;
+import com.ranecc.renderium.domain.model.config.InterceptionConfig;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 
 /**
@@ -215,33 +216,33 @@ public final class RenderiumConfigSnapshot {
          */
         public Builder fromConfig(RenderiumConfig config) {
             this.superResolutionEnabled = config.isSuperResolutionEnabled();
-            this.technology = config.getTechnology().ordinal();
-            this.quality = config.getQuality().ordinal();
+            this.technology = config.getSrTechnology().ordinal();
+            this.quality = config.getQualityLevel().ordinal();
             this.frameGenerationEnabled = config.isFrameGenerationEnabled();
             this.frameGenMode = config.getFrameGenMode().ordinal();
             this.reflexEnabled = config.isReflexEnabled();
             this.reflexMode = config.getReflexMode().ordinal();
-            this.neighborFaceCullingEnabled = config.isNeighborFaceCullingEnabled();
+            this.neighborFaceCullingEnabled = false;
             this.backfaceCullingEnabled = config.isBackfaceCullingEnabled();
             this.frustumCullingEnabled = config.isFrustumCullingEnabled();
             this.occlusionCullingEnabled = config.isOcclusionCullingEnabled();
             this.batchingEnabled = config.isBatchingEnabled();
             this.instancingEnabled = config.isInstancingEnabled();
-            this.effectsEnabled = config.isEffectsEnabled();
-            this.sharpening = config.getSharpening();
-            this.dynamicResolution = config.isDynamicResolution();
+            this.effectsEnabled = false;
+            this.sharpening = 0.0f;
+            this.dynamicResolution = false;
 
             // 拦截层配置（安全访问）
-            RenderiumConfig.InterceptionConfig interception = config.getInterceptionConfig();
+            InterceptionConfig interception = config.getInterceptionConfig();
             if (interception != null) {
                 // 通过 PreInterceptorConfig 获取 LOD 和剔除配置
                 var preInterceptor = interception.getPreInterceptor();
                 if (preInterceptor != null) {
-                    RenderiumConfig.LODConfig lod = preInterceptor.getLodInjection();
+                    InterceptionConfig.LODConfig lod = preInterceptor.getLodInjection();
                     if (lod != null) {
                         this.lodInjectionEnabled = lod.isEnabled();
                     }
-                    RenderiumConfig.CullingInjectionConfig culling = preInterceptor.getCullingInjection();
+                    InterceptionConfig.CullingInjectionConfig culling = preInterceptor.getCullingInjection();
                     if (culling != null) {
                         this.cullingInjectionEnabled = culling.isEnabled();
                     }

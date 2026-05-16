@@ -5,6 +5,13 @@
 package com.ranecc.renderium.platform.hook;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.feature.blaze3d.MemoryOptimizer;
+import com.ranecc.renderium.feature.blaze3d.ShaderPipelineOptimizer;
+import com.ranecc.renderium.feature.blaze3d.VulkanCommandOptimizer;
+import com.ranecc.renderium.feature.blaze3d.FrameGraphOptimizer;
+import com.ranecc.renderium.tech.streamline.StreamlineSharedMemoryManager;
+import com.ranecc.renderium.feature.renderopt.MultiLevelCuller;
+import com.ranecc.renderium.feature.renderopt.ObjectPoolManager;
 
 /**
  * Central registry for all optimizer instances used by Mixin hooks.
@@ -154,5 +161,41 @@ public final class OptimizerRegistry {
             multiLevelCuller != null ? "✓" : "✗",
             objectPoolManager != null ? "✓" : "✗"
         );
+    }
+
+    // ==================== Default Hook Implementations ====================
+
+    /**
+     * 默认 DrawIndexed 批处理优化器
+     * <p>
+     * 尝试通过 OptimizerRegistry 中的 CommandOptimizer 进行 Draw Call 合并。
+     * 如果优化器不可用或合并失败，返回 false 回退到默认执行路径。
+     */
+    public static final class BatchDrawOptimizer implements DrawIndexedHook {
+        @Override
+        public boolean onDrawIndexed(int indexCount, int instanceCount,
+                                      int firstIndex, int vertexOffset, int firstInstance) {
+            var optimizer = getCommandOptimizer();
+            if (optimizer == null || !optimizer.isEnabled()) {
+                return false;
+            }
+            return optimizer.tryMergeDrawCall(indexCount, instanceCount,
+                    firstIndex, vertexOffset, firstInstance);
+        }
+    }
+
+    /**
+     * 默认 GpuDevice 遮挡剔除优化器
+     * <p>
+     * 通过 MemoryOptimizer 的 Arena 分配优化缓冲区创建。
+     * 委托给 {@link GpuDeviceBufferHook.Default} 实现。
+     */
+    public static final class OcclusionCullOptimizer implements GpuDeviceBufferHook {
+        private final GpuDeviceBufferHook.Default delegate = new GpuDeviceBufferHook.Default();
+
+        @Override
+        public Object onCreateBuffer(java.util.function.Supplier<String> label, int usage, long size) {
+            return delegate.onCreateBuffer(label, usage, size);
+        }
     }
 }

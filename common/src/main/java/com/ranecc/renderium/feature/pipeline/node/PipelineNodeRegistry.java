@@ -194,32 +194,32 @@ public final class PipelineNodeRegistry {
         LOGGER.info("开始注册内置渲染节点...");
 
         // ===== 预计算阶段 (PRE_RENDER) =====
-        // 使用反射创建 builtin 包中的节点实例（避免包级私有类访问限制）
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.ShadowMapNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.ShadowFilterNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.CascadeSplitNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.HiZBuildNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.OcclusionCullNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.LodCullingNode");
+        // 使用反射创建 builtin 包中的节点实例
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.ShadowMapNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.ShadowFilterNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.CascadeSplitNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.HiZBuildNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.OcclusionCullNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.LodCullingNode");
 
         // ===== G-Buffer 阶段 (GBUFFER) =====
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.GBufferGeometryNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.MaterialNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.GBufferGeometryNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.MaterialNode");
 
         // ===== 光照阶段 (LIGHTING) =====
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.DirectLightNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.IndirectLightNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.SSAONode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.VolumetricLightNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.DirectLightNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.IndirectLightNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.SSAONode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.VolumetricLightNode");
 
         // ===== 后处理阶段 (POST_PROCESS) =====
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.BloomNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.TonemapNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.ColorCorrectionNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.MotionBlurNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.DepthOfFieldNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.FilmGrainNode");
-        registerBuiltinNode("com.renderium.pipeline.node.builtin.FXAANode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.BloomNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.TonemapNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.ColorCorrectionNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.MotionBlurNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.DepthOfFieldNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.FilmGrainNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.FXAANode");
 
         builtinNodesRegistered = true;
         LOGGER.info(String.format("✓ 内置节点注册完成 (共 %d 个)", nodes.size()));
@@ -231,7 +231,7 @@ public final class PipelineNodeRegistry {
      * 用于从 builtin 子包中加载包级私有的节点类。
      * 如果类不存在或创建失败，记录警告但不中断注册流程。
      *
-     * @param className 完整类名（如 "com.renderium.pipeline.node.builtin.ShadowMapNode"）
+     * @param className 完整类名（如 "com.ranecc.renderium.feature.pipeline.node.builtin.ShadowMapNode"）
      */
     private void registerBuiltinNode(String className) {
         try {

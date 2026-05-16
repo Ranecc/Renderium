@@ -156,7 +156,7 @@ public final class ShaderPreprocessor {
         StringBuilder result = new StringBuilder();
         result.append("\n");
 
-        for (String line : lines) {
+        for (String line : source.split("\n")) {
             String trimmed = line.trim();
 
             // 匹配 #include "file" 或 #include <file>

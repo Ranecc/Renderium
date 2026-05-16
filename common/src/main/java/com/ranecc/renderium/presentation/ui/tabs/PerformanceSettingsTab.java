@@ -4,8 +4,9 @@
 
 package com.ranecc.renderium.presentation.ui.tabs;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
+import com.ranecc.renderium.domain.service.scheduling.AdaptivePathSelector;
+import com.ranecc.renderium.presentation.ui.MCAbstract;
 
-import com.ranecc.renderium.None;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -85,43 +86,43 @@ public class PerformanceSettingsTab extends Screen {
 
         // 帧图优化
         addButton(centerX, startY, buttonWidth, buttonHeight,
-                config.isFrameGraphOptimizationEnabled(), "Frame Graph",
-                enabled -> config.setFrameGraphOptimizationEnabled(enabled));
+                config.getFrameGraphConfig().isPassMergingEnabled(), "Frame Graph",
+                enabled -> config.getFrameGraphConfig().setPassMergingEnabled(enabled));
 
         // Vulkan 命令优化
         addButton(centerX, startY + spacing, buttonWidth, buttonHeight,
-                config.isVulkanCommandOptimizationEnabled(), "Vulkan Cmd Opt",
-                enabled -> config.setVulkanCommandOptimizationEnabled(enabled));
+                config.getVulkanCommandConfig().isBatchMergingEnabled(), "Vulkan Cmd Opt",
+                enabled -> config.getVulkanCommandConfig().setBatchMergingEnabled(enabled));
 
         // 内存优化
         addButton(centerX, startY + spacing * 2, buttonWidth, buttonHeight,
-                config.isMemoryOptimizationEnabled(), "Memory Opt",
-                enabled -> config.setMemoryOptimizationEnabled(enabled));
+                config.getMemoryConfig().isOffHeapStorageEnabled(), "Memory Opt",
+                enabled -> config.getMemoryConfig().setOffHeapStorageEnabled(enabled));
 
         // 着色器管线优化
         addButton(centerX, startY + spacing * 3, buttonWidth, buttonHeight,
-                config.isShaderPipelineOptimizationEnabled(), "Shader Pipeline",
-                enabled -> config.setShaderPipelineOptimizationEnabled(enabled));
+                config.getShaderPipelineConfig().isSpirvCacheEnabled(), "Shader Pipeline",
+                enabled -> config.getShaderPipelineConfig().setSpirvCacheEnabled(enabled));
 
         // VMA 增强
         addButton(centerX, startY + spacing * 4, buttonWidth, buttonHeight,
-                config.isVmaEnhancementEnabled(), "VMA Enhanced",
-                enabled -> config.setVmaEnhancementEnabled(enabled));
+                config.getVmaConfig().isAliasingEnabled(), "VMA Enhanced",
+                enabled -> config.getVmaConfig().setAliasingEnabled(enabled));
 
         // 激进优化
         addButton(centerX, startY + spacing * 5, buttonWidth, buttonHeight,
-                config.isAggressiveOptimizationEnabled(), "Aggressive Opt",
-                enabled -> config.setAggressiveOptimizationEnabled(enabled));
+                config.getAggressiveConfig().isVertexCompressionEnabled(), "Aggressive Opt",
+                enabled -> config.getAggressiveConfig().setVertexCompressionEnabled(enabled));
 
         // 现代渲染架构
         addButton(centerX, startY + spacing * 6, buttonWidth, buttonHeight,
-                config.isModernRenderArchitectureEnabled(), "Modern Arch",
-                enabled -> config.setModernRenderArchitectureEnabled(enabled));
+                config.getModernConfig().isEcsSceneGraphEnabled(), "Modern Arch",
+                enabled -> config.getModernConfig().setEcsSceneGraphEnabled(enabled));
 
         // GPU 变换合并
         addButton(centerX, startY + spacing * 7, buttonWidth, buttonHeight,
-                config.isGpuTransformMergingEnabled(), "GPU Transform Merge",
-                enabled -> config.setGpuTransformMergingEnabled(enabled));
+                config.getTransformConfig().isStaticGeometryCacheEnabled(), "GPU Transform Merge",
+                enabled -> config.getTransformConfig().setStaticGeometryCacheEnabled(enabled));
 
         // ==================== v5.4 新增: 算法加速路径配置 ====================
 
@@ -327,7 +328,7 @@ public class PerformanceSettingsTab extends Screen {
     private void addStatsLabel(int centerX, int y) {
         if (pathSelector == null) return;
 
-        String statsText = pathSelector.getSchedulingStatistics();
+        String statsText = pathSelector.getStatistics();
         Component statsComponent = MCAbstract.text("§7" + statsText);  // §7 = 灰色
 
         // MC 26.2: Label 类可能已移除，使用反射降级处理

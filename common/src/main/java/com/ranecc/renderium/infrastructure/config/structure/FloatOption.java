@@ -11,7 +11,6 @@ import java.util.function.Supplier;
 
 import com.ranecc.renderium.None;
 import java.util.function.Function;
-import net.minecraft.network.chat.Component;
 import com.ranecc.renderium.infrastructure.config.structure.OptionImpact;
 public final class FloatOption implements SearchableOption {
 
@@ -60,6 +59,9 @@ public final class FloatOption implements SearchableOption {
 
     @Override
     public Identifier getId() { return id; }
+
+    @Override
+    public String id() { return id.toString(); }
 
     @Override
     public Component getName() { return name; }

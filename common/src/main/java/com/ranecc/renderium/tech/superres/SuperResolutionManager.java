@@ -2,9 +2,9 @@
 // 超分辨率技术统一管理器，自动检测和降级
 
 package com.ranecc.renderium.tech.superres;
-import com.ranecc.renderium.domain.model.FrameData;
-import com.ranecc.renderium.None;
 
+import com.ranecc.renderium.tech.streamline.SLConfigLoader;
+import com.ranecc.renderium.tech.streamline.SLContext;
 
 import java.util.EnumMap;
 import java.util.Map;

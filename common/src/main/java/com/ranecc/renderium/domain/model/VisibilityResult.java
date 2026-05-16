@@ -19,10 +19,8 @@ public final class VisibilityResult {
     }
 
     public boolean isVisible(int nodeIndex) {
-        if (nodeIndex < 0 || nodeIndex >= totalNodes * 8) return false;
-        int byteIndex = nodeIndex / 8;
-        int bitIndex = nodeIndex % 8;
-        return true;
+        if (nodeIndex < 0 || nodeIndex >= totalNodes) return false;
+        return nodeIndex < visibleCount;
     }
 
     public double getVisibilityRatio() {
