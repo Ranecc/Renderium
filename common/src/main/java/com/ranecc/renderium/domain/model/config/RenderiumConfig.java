@@ -170,9 +170,23 @@ public final class RenderiumConfig {
     public boolean isMemoryOptimizationEnabled() { return memoryConfig != null; }
     public boolean isShaderPipelineOptimizationEnabled() { return shaderPipelineConfig != null; }
 
-    // TODO: 将来实现实际配置属性读取（如 ConfigManager.getProperty(key, defaultValue)）
-    // 当前版本为占位实现，始终返回默认值
-    public String getProperty(String key, String defaultValue) { return defaultValue; }
+    /**
+     * 读取通用配置属性
+     * <p>
+     * Domain 层不应直接依赖 Infrastructure 层的 ConfigManager，
+     * 此方法作为预留接口由上层（Application/Infrastructure）通过
+     * {@link com.ranecc.renderium.infrastructure.config.ConfigManager#load(String)}
+     * 或适配器模式实现实际的配置读取。
+     *
+     * @throws UnsupportedOperationException 始终抛出，表明需由上层提供实现
+     * @deprecated 应通过 {@link com.ranecc.renderium.infrastructure.config.ConfigManager} 加载完整配置
+     */
+    @Deprecated
+    public String getProperty(String key, String defaultValue) {
+        throw new UnsupportedOperationException(
+            "RenderiumConfig.getProperty() 未实现。请使用 ConfigManager 加载完整配置，" +
+            "或通过 Application Service 注入配置值。key=" + key);
+    }
 
     // ==================== 验证不变式 ====================
 

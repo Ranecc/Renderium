@@ -27,57 +27,32 @@ Modern Minecraft rendering extension with Vulkan, DLSS, and advanced optimizatio
 ```
 Renderium/
 ├── common/                          # Platform-independent core
-│   └── src/main/java/com/renderium/
-│       ├── api/                     # Extension interfaces
-│       │   ├── RenderExtension.java # Main extension point
-│       │   ├── FrustumCuller.java   # Custom culling interface
-│       │   └── PostProcessor.java   # Post-processing interface
-│       ├── core/                    # Core manager
-│       │   ├── RenderiumCore.java   # Central manager
-│       │   ├── RenderiumDualModeManager.java
-│       │   └── RenderiumMode.java
-│       ├── config/                  # Configuration system
-│       │   ├── RenderiumConfig.java
-│       │   └── structure/           # Option types
-│       ├── dlss/                    # DLSS integration
-│       │   └── DLSSManager.java
-│       ├── superres/                # Super resolution adapters
-│       │   ├── SuperResolutionManager.java
-│       │   ├── DLSSAdapter.java
-│       │   ├── FSRAdapter.java
-│       │   └── XeSSAdapter.java
-│       ├── framegen/                # Frame generation
-│       │   ├── FrameGeneratorManager.java
-│       │   ├── DLSSFGAdapter.java
-│       │   └── FSRFGAdapter.java
-│       ├── culling/                 # Culling system
-│       │   └── CullingController.java
-│       ├── streamline/              # NVIDIA Streamline SDK integration
-│       │   ├── SLContext.java
-│       │   └── VulkanStreamlineBridge.java
-│       ├── reflex/                  # NVIDIA Reflex
-│       │   └── ReflexManager.java
-│       ├── accel/                   # C++ accelerator
-│       │   └── RenderiumAccelerator.java
-│       ├── pipeline/                # Async render pipeline
-│       │   └── AsyncRenderPipeline.java
-│       ├── optimization/            # Performance optimizations
-│       ├── interception/            # Render interception layer
-│       ├── graphics/                # Graphics backend
-│       ├── shader/                  # Shader system
-│       ├── bridge/                  # Minecraft bridge
-│       ├── mixin/                   # Mixin hooks
-│       └── ui/                      # Settings UI
+│   └── src/main/java/com/ranecc/renderium/
+│       ├── application/             # Application Layer (DDD)
+│       │   ├── controller/          # Entry controller
+│       │   ├── core/               # Core manager (RenderiumCore, CoreState)
+│       │   ├── orchestrator/       # Frame processor & lifecycle orchestration
+│       │   └── usecase/            # Use cases
+│       ├── domain/                  # Domain Layer (DDD)
+│       │   ├── constant/           # Config/Vulkan/FFI constants
+│       │   ├── enums/              # 35+ enums
+│       │   ├── model/              # Domain models
+│       │   │   └── config/         # Configuration aggregate root
+│       │   └── service/            # Domain services (BFS, LOD, Kahan, convergence)
+│       └── feature/                 # Feature module layer
+│           ├── blaze3d/            # Blaze3D optimizer (VMA memory, GPU culling, shader pipeline)
+│           ├── culling/            # Culling system (BFS occlusion, frustum, HiZ)
+│           ├── intercept/          # Render interception (mod detection, pre/post handlers)
+│           ├── lod/                # LOD system (GPU-driven, Voxy-style, transition)
+│           ├── module/             # Module system (ModuleMetadata, RenderiumModule)
+│           ├── pipeline/           # Render pipeline (PipelineNode, registry, strategies, parameter knobs)
+│           ├── raytracing/         # Ray tracing module
+│           ├── renderopt/          # Render optimization (batching, mesh building, vertex compression)
+│           └── shader/             # Shader system (CompShader, SPIR-V, factory, workbench)
 ├── fabric/                          # Fabric-specific implementation
-│   └── src/main/java/com/renderium/fabric/
-│       ├── RenderiumMod.java
-│       ├── mixin/
-│       └── platform/
+│   └── src/main/java/com/ranecc/renderium/fabric/
 └── neoforge/                        # NeoForge-specific implementation
-    └── src/main/java/com/renderium/neoforge/
-        ├── RenderiumMod.java
-        ├── mixin/
-        └── platform/
+    └── src/main/java/com/ranecc/renderium/neoforge/
 ```
 
 ## Setup
@@ -294,6 +269,12 @@ Enable debug logging with JVM arguments:
 # Verbose tracing
 -Drenderium.debug.verbose=true
 ```
+
+## AI Assistance Disclaimer
+
+This project is developed with significant AI assistance. Some code may contain errors, inconsistencies, or disorganized logic. Issues and Pull Requests for corrections are warmly welcome.
+
+Compatibility-related issues (mod compatibility, Minecraft version compatibility, GPU/driver compatibility, etc.) are especially appreciated — we will address them as time permits.
 
 ## License & Compliance
 

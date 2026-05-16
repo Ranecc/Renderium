@@ -60,3 +60,4 @@ __pycache__/
 /output/
 cmake/
 .trae/
+local.properties

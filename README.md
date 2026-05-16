@@ -27,57 +27,32 @@
 ```
 Renderium/
 ├── common/                          # 平台无关核心
-│   └── src/main/java/com/renderium/
-│       ├── api/                     # 扩展接口
-│       │   ├── RenderExtension.java # 主扩展点接口
-│       │   ├── FrustumCuller.java   # 自定义剔除接口
-│       │   └── PostProcessor.java   # 后处理接口
-│       ├── core/                    # 核心管理器
-│       │   ├── RenderiumCore.java   # 中心管理器
-│       │   ├── RenderiumDualModeManager.java
-│       │   └── RenderiumMode.java
-│       ├── config/                  # 配置系统
-│       │   ├── RenderiumConfig.java
-│       │   └── structure/           # 选项类型
-│       ├── dlss/                    # DLSS 集成
-│       │   └── DLSSManager.java
-│       ├── superres/                # 超分辨率适配器
-│       │   ├── SuperResolutionManager.java
-│       │   ├── DLSSAdapter.java
-│       │   ├── FSRAdapter.java
-│       │   └── XeSSAdapter.java
-│       ├── framegen/                # 帧生成
-│       │   ├── FrameGeneratorManager.java
-│       │   ├── DLSSFGAdapter.java
-│       │   └── FSRFGAdapter.java
-│       ├── culling/                 # 剔除系统
-│       │   └── CullingController.java
-│       ├── streamline/              # NVIDIA Streamline SDK 集成
-│       │   ├── SLContext.java
-│       │   └── VulkanStreamlineBridge.java
-│       ├── reflex/                  # NVIDIA Reflex
-│       │   └── ReflexManager.java
-│       ├── accel/                   # C++ 加速器
-│       │   └── RenderiumAccelerator.java
-│       ├── pipeline/                # 异步渲染管线
-│       │   └── AsyncRenderPipeline.java
-│       ├── optimization/            # 性能优化
-│       ├── interception/            # 渲染拦截层
-│       ├── graphics/                # 图形后端
-│       ├── shader/                  # 着色器系统
-│       ├── bridge/                  # Minecraft 桥接
-│       ├── mixin/                   # Mixin 钩子
-│       └── ui/                      # 设置界面
+│   └── src/main/java/com/ranecc/renderium/
+│       ├── application/             # 应用层 (DDD Application Layer)
+│       │   ├── controller/          # 入口控制器
+│       │   ├── core/               # 核心管理器 (RenderiumCore, CoreState)
+│       │   ├── orchestrator/       # 帧处理器与生命周期编排
+│       │   └── usecase/            # 用例 (Configure/Initialize/ProcessFrame)
+│       ├── domain/                  # 领域层 (DDD Domain Layer)
+│       │   ├── constant/           # 配置/Vulkan/FFI 常量
+│       │   ├── enums/              # 35+ 枚举 (QualityLevel, SRTechnology, ShaderPreset 等)
+│       │   ├── model/              # 领域模型 (RenderContext, CullingContext, VisibilityResult 等)
+│       │   │   └── config/         # 配置聚合根 (RenderiumConfig) 与子配置
+│       │   └── service/            # 领域服务 (BFS算法, LOD计算, Kahan累加, 收敛监控)
+│       └── feature/                 # 功能模块层
+│           ├── blaze3d/            # Blaze3D 优化器 (VMA内存, GPU剔除, 着色器管线)
+│           ├── culling/            # 剔除系统 (BFS遮挡剔除, 视锥剔除, HiZ剔除)
+│           ├── intercept/          # 渲染拦截层 (模组检测, 预/后拦截, 处理器)
+│           ├── lod/                # LOD系统 (GPU驱动LOD, Voxy风格, 过渡处理)
+│           ├── module/             # 模块系统 (ModuleMetadata, RenderiumModule)
+│           ├── pipeline/           # 渲染管线 (PipelineNode, 节点注册表, 策略, 参数旋钮)
+│           ├── raytracing/         # 光线追踪模块
+│           ├── renderopt/          # 渲染优化 (批处理, 网格构建, 顶点压缩)
+│           └── shader/             # 着色器系统 (CompShader, SPIR-V, 工厂, 注册表, 工作台)
 ├── fabric/                          # Fabric 专属实现
-│   └── src/main/java/com/renderium/fabric/
-│       ├── RenderiumMod.java
-│       ├── mixin/
-│       └── platform/
+│   └── src/main/java/com/ranecc/renderium/fabric/
 └── neoforge/                        # NeoForge 专属实现
-    └── src/main/java/com/renderium/neoforge/
-        ├── RenderiumMod.java
-        ├── mixin/
-        └── platform/
+    └── src/main/java/com/ranecc/renderium/neoforge/
 ```
 
 ## 环境搭建
@@ -294,6 +269,12 @@ Minecraft 26.2+ 包含官方 Vulkan 支持。Renderium 通过以下方式扩展�
 # 详细跟踪
 -Drenderium.debug.verbose=true
 ```
+
+## AI 辅助声明
+
+本项目大量使用 AI 辅助开发，部分代码可能存在错漏、混乱或与其他模块不一致的情况。如发现问题，欢迎提交 Issue 或 Pull Request 指正。
+
+特别欢迎关于兼容性的 Issue（模组兼容、Minecraft 版本兼容、显卡/驱动兼容等），只要有余力就会跟进适配。
 
 ## 许可证与合规
 
