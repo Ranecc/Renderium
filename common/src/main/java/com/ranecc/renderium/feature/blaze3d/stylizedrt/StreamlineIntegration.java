@@ -311,7 +311,7 @@ public class StreamlineIntegration implements AutoCloseable {
     }
 
     /**
-     * TODO #1: 加载 Streamline DLL ✅ 已实现
+     * Step 1: 加载 Streamline DLL
      * <p>
      * 使用 Java 22+ Panama FFM API 加载 sl.interposer.dll。
      * 通过 {@link SLFFMBindings#load(String)} 执行实际的 DLL 加载和符号解析。
@@ -378,7 +378,7 @@ public class StreamlineIntegration implements AutoCloseable {
     }
 
     /**
-     * TODO #2: 初始化 Streamline 核心 ✅ 已实现
+     * Step 2: 初始化 Streamline 核心
      * <p>
      * 执行 slInit 和 slSetVulkanInfo 调用，完成 Streamline SDK 的核心初始化。
      *
@@ -468,7 +468,7 @@ public class StreamlineIntegration implements AutoCloseable {
     }
 
     /**
-     * TODO #3: 检测可用特性 ✅ 已实现
+     * Step 3: 检测可用特性
      * <p>
      * 通过 slIsFeatureSupported 查询当前 GPU 支持的 Streamline 特性。
      * 检测结果会设置对应的可用性标志。
@@ -528,7 +528,7 @@ public class StreamlineIntegration implements AutoCloseable {
     }
 
     /**
-     * TODO #4: 初始化 Nsight Perf SDK ✅ 已实现
+     * Step 4: 初始化 Nsight Perf SDK
      * <p>
      * 初始化 Nsight Performance SDK，启用 GPU 性能计数器采集功能。
      * 仅在 NVPerf 特性被检测为可用时才执行此方法。

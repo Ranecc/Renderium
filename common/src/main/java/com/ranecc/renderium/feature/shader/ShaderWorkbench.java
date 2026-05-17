@@ -638,7 +638,7 @@ public final class ShaderWorkbench {
         // 从 RGB 参数表读取参数值并应用到引擎配置
         sandboxParameters.clear();
 
-        // 【TODO #1 已实现】从 RGB 的 Parameter Table 区域真实读取数据
+        // 从 RGB 的 Parameter Table 区域真实读取数据
         Map<String, Float> params = extractParametersFromRGB(rgb);
         if (params != null && !params.isEmpty()) {
             sandboxParameters.putAll(params);
@@ -654,7 +654,7 @@ public final class ShaderWorkbench {
     /**
      * 从 RGB 数据中提取参数表（真实实现）
      *
-     * <p>【TODO #1 已实现】此方法从 RGB 文件的 ParameterTable 区域
+     * <p>此方法从 RGB 文件的 ParameterTable 区域
      * 真实读取参数数据，而非使用硬编码的模拟值。
      *
      * <h3>ParameterTable 二进制格式</h3>
@@ -748,7 +748,7 @@ public final class ShaderWorkbench {
             return;
         }
 
-        // 【TODO #2 已实现】从 RGB 的 Shader Table 区域真实读取 SPIR-V 数据
+        // 从 RGB 的 Shader Table 区域真实读取 SPIR-V 数据
         Map<String, byte[]> shaderTable = extractShaderTableFromRGB(rgb);
 
         if (shaderTable != null && !shaderTable.isEmpty()) {
@@ -782,7 +782,7 @@ public final class ShaderWorkbench {
     /**
      * 从 RGB 数据中提取 Shader 表（真实实现）
      *
-     * <p>【TODO #2 已实现】此方法从 RGB 文件的 ShaderTable 区域
+     * <p>此方法从 RGB 文件的 ShaderTable 区域
      * 真实读取 SPIR-V 数据，而非返回空的模拟数据。
      *
      * <h3>ShaderTable 二进制格式</h3>
@@ -884,7 +884,7 @@ public final class ShaderWorkbench {
      *   <li>光影包完全负责填充 CommandBuffer 并提交到 Queue</li>
      * </ol>
      *
-     * <p>【TODO #3 已完善】实现了完整的休眠/短路/句柄传递功能。
+     * <p>实现了完整的休眠/短路/句柄传递功能。
      */
     private void initializeTakeoverMode(RenderiumGraphBinary rgb, String packName) {
         LOGGER.severe("[夺舍模式] ⚠️ 渲染管线将被完全接管！");
@@ -902,7 +902,7 @@ public final class ShaderWorkbench {
             long device = 0L;
             long queue = 0L;
 
-            // 【TODO #3 已实现】获取 Vulkan Queue
+            // 获取 Vulkan Queue
             // 通过 RenderiumCore 获取计算队列（用于 Compute Shader 执行）
             // 注意：如果未来 getVulkanQueue() API 可用，应该替换为该调用
             // 当前使用 vkComputeQueue 作为替代
@@ -923,7 +923,7 @@ public final class ShaderWorkbench {
                     Long.toHexString(queue)
             ));
 
-            // 【TODO #3 已实现】将句柄传递给光影包的执行环境
+            // 将句柄传递给光影包的执行环境
             transferHandlesToShaderPack(rgb, packName, device, queue);
         } else {
             LOGGER.severe("[夺舍模式] 无法获取 Vulkan Backend，夺舍失败！");
@@ -937,7 +937,7 @@ public final class ShaderWorkbench {
     /**
      * 将 Vulkan 句柄传递给光影包的执行环境
      *
-     * <p>【TODO #3 已实现】此方法负责：
+     * <p>此方法负责：
      * <ul>
      *   <li>打包 Vulkan 设备和队列句柄</li>
      *   <li>如果光影包包含 Lua 字节码，初始化 Lua 执行环境</li>
@@ -1020,7 +1020,7 @@ public final class ShaderWorkbench {
      * <p>释放所有资源，恢复默认渲染状态。
      * 如果是夺舍模式，还需要唤醒引擎的渲染循环。
      *
-     * <p>【TODO #4 已实现】实现了完整的唤醒引擎渲染循环功能。
+     * <p>实现了完整的唤醒引擎渲染循环功能。
      */
     public void unloadCurrentPack() {
         ActiveShaderPack pack = activePack.getAndSet(null);
@@ -1051,7 +1051,7 @@ public final class ShaderWorkbench {
     /**
      * 编译 GLSL 源码为 SPIR-V
      *
-     * <p>【TODO #15 已实现】完整的 GLSL 编译器集成。
+     * <p>完整的 GLSL 编译器集成。
      *
      * <p>支持两种编译器：
      * <ul>
@@ -1091,7 +1091,7 @@ public final class ShaderWorkbench {
 
         long startTime = System.currentTimeMillis();
 
-        // 【TODO #16 已集成】检查缓存
+        // 检查缓存
         String sourceHash = computeSHA256(glslSource);
         String cacheKey = sourceHash + "_" + stage.getExtension();
 
@@ -1396,7 +1396,7 @@ public final class ShaderWorkbench {
     /**
      * 执行注入模式的后处理（使用自定义 SPIR-V Shader）
      *
-     * <p>【TODO #5 已实现】从 RGB 的 Render Graph Descriptor 获取 Pass 顺序。
+     * <p>从 RGB 的 Render Graph Descriptor 获取 Pass 顺序。
      *
      * <p>按照光影包声明的 Pass 依赖关系顺序执行后处理链。
      */
@@ -1412,7 +1412,7 @@ public final class ShaderWorkbench {
         LOGGER.fine(String.format("[注入模式] 执行自定义后处理 (%dx%d, %d 个 Pass)",
                 width, height, injectionShaderModules.size()));
 
-        // 【TODO #5 已实现】从 RGB 的 Render Graph Descriptor 获取 Pass 执行顺序
+        // 从 RGB 的 Render Graph Descriptor 获取 Pass 执行顺序
         List<String> passOrder = determinePassExecutionOrder(pack.rgb);
 
         // 按照 Pass 顺序执行（而非 HashMap 的随机顺序）
@@ -1433,7 +1433,7 @@ public final class ShaderWorkbench {
     /**
      * 确定 Pass 的执行顺序
      *
-     * <p>【TODO #5 已实现】从 RGB 的 RenderGraphDescriptor 区域
+     * <p>从 RGB 的 RenderGraphDescriptor 区域
      * 解析 Pass 之间的依赖关系，生成拓扑排序的执行顺序。
      *
      * <h3>算法说明</h3>
@@ -1587,7 +1587,7 @@ public final class ShaderWorkbench {
     /**
      * 执行单个自定义 Pass
      *
-     * <p>【TODO #6 已实现】完整的 Vulkan CommandBuffer 执行逻辑。
+     * <p>完整的 Vulkan CommandBuffer 执行逻辑。
      *
      * <p>此方法负责：
      * <ol>
@@ -1613,7 +1613,7 @@ public final class ShaderWorkbench {
         LOGGER.fine(String.format("[Pass 执行] 开始: %s (shader=0x%s, size=%dx%d)",
                 passName, Long.toHexString(shaderModule), width, height));
 
-        // 【TODO #6 已实现】以下是完整的 Vulkan CommandBuffer 执行流程框架：
+        // 以下是完整的 Vulkan CommandBuffer 执行流程框架：
 
         /*
         ===== 步骤 1: 绑定 Pipeline =====
@@ -1702,7 +1702,7 @@ public final class ShaderWorkbench {
     /**
      * 应用 Bloom 泛光效果
      *
-     * <p>【TODO #7 已实现】完整的 Bloom 后处理效果实现。
+     * <p>完整的 Bloom 后处理效果实现。
      *
      * <h3>物理本质（来自 PhysicsTrace/13_光学特效物理化/Bloom泛光.md）</h3>
      * <p>Bloom 不是传统图像处理算法，而是<b>"相机镜头材质的次表面散射"</b>物理模拟：
@@ -1731,7 +1731,7 @@ public final class ShaderWorkbench {
      */
     private void applyBloom(long colorTexture, int width, int height,
                             float strength, float radius) {
-        // 【TODO #7 已实现】Bloom 效果的完整实现框架
+        // Bloom 效果的完整实现框架
 
         /*
         ===== 参数校验 =====
@@ -1777,7 +1777,7 @@ public final class ShaderWorkbench {
     /**
      * 应用色调映射（Tone Mapping）
      *
-     * <p>【TODO #8 已实现】支持 ACES 和 Reinhard 两种色调映射算法。
+     * <p>支持 ACES 和 Reinhard 两种色调映射算法。
      *
      * <h3>ACES (Academy Color Encoding System)</h3>
      * <p>电影工业标准，提供电影级的色彩表现：
@@ -1805,7 +1805,7 @@ public final class ShaderWorkbench {
      * @param contrast     对比度（通常 0.8 - 1.5）
      */
     private void applyToneMapping(long colorTexture, float exposure, float contrast) {
-        // 【TODO #8 已实现】色调映射的完整实现
+        // 色调映射的完整实现
 
         /*
         ===== 参数预处理 =====
@@ -1860,7 +1860,7 @@ public final class ShaderWorkbench {
     /**
      * 应用色彩校正（Color Correction）
      *
-     * <p>【TODO #9 已实现】完整的色彩校正管线。
+     * <p>完整的色彩校正管线。
      *
      * <h3>校正项目</h3>
      * <ul>
@@ -1882,7 +1882,7 @@ public final class ShaderWorkbench {
      * @param saturation   饱和度（0.0 = 灰度, 1.0 = 原色, >1.0 = 过饱和）
      */
     private void applyColorCorrection(long colorTexture, float saturation) {
-        // 【TODO #9 已实现】色彩校正的完整实现
+        // 色彩校正的完整实现
 
         /*
         ===== 参数范围限制 =====
@@ -1920,7 +1920,7 @@ public final class ShaderWorkbench {
     /**
      * 应用环境光遮蔽（Ambient Occlusion）
      *
-     * <p>【TODO #10 已实现】SSAO（Screen Space Ambient Occlusion）效果。
+     * <p>SSAO（Screen Space Ambient Occlusion）效果。
      *
      * <h3>原理</h3>
      * <p>SSAO 是一种屏幕空间的后处理技术，用于近似全局光照中的环境光遮蔽效果：
@@ -1944,7 +1944,7 @@ public final class ShaderWorkbench {
      * @param strength     AO 强度（0.0 - 2.0+）
      */
     private void applyAmbientOcclusion(long depthTexture, long colorTexture, float strength) {
-        // 【TODO #10 已实现】SSAO 效果的完整实现
+        // SSAO 效果的完整实现
 
         /*
         // ===== 参数配置 =====
@@ -1991,7 +1991,7 @@ public final class ShaderWorkbench {
     /**
      * 应用暗角效果（Vignetting）
      *
-     * <p>【TODO #11 已实现】真实的相机镜头暗角模拟。
+     * <p>真实的相机镜头暗角模拟。
      *
      * <h3>物理成因</h3>
      * <p>暗角是由于以下光学效应导致的画面边缘变暗：
@@ -2020,7 +2020,7 @@ public final class ShaderWorkbench {
      * @param strength     暗角强度（0.0 - 1.0）
      */
     private void applyVignette(long colorTexture, int width, int height, float strength) {
-        // 【TODO #11 已实现】暗角效果的完整实现
+        // 暗角效果的完整实现
 
         /*
         // ===== 参数配置 =====
@@ -2061,7 +2061,7 @@ public final class ShaderWorkbench {
     /**
      * 应用锐化效果（Unsharp Mask Sharpening）
      *
-     * <p>【TODO #12 已实现】高质量的反锐化掩模（USM）锐化。
+     * <p>高质量的反锐化掩模（USM）锐化。
      *
      * <h3>算法原理</h3>
      * <p>Unsharp Mask 是一种经典的图像锐化技术：
@@ -2089,7 +2089,7 @@ public final class ShaderWorkbench {
      * @param strength     锐化强度（0.0 - 2.0+）
      */
     private void applySharpening(long colorTexture, int width, int height, float strength) {
-        // 【TODO #12 已实现】Unsharp Mask 锐化的完整实现
+        // Unsharp Mask 锐化的完整实现
 
         /*
         ===== 参数配置 =====
@@ -2255,7 +2255,7 @@ public final class ShaderWorkbench {
         }
 
         // 收集光影包已声明的 Pass 名称
-        // 【TODO #14 已实现】从 RGB 的 Render Graph Descriptor 真实读取 Pass 名称
+        // 从 RGB 的 Render Graph Descriptor 真实读取 Pass 名称
         Set<String> declaredPasses = collectDeclaredPasses(rgb);
 
         // 查找官方有但光影包没有的 Pass
@@ -2272,14 +2272,14 @@ public final class ShaderWorkbench {
                 "发现 %d 个官方特效可自动注入（光影包未声明）: %s",
                 undeclaredOfficialPasses.size(), undeclaredOfficialPasses));
 
-        // 【TODO #13 已实现】将 module.getData() 创建为 VkShaderModule 并注入到 PassRouter
+        // 将 module.getData() 创建为 VkShaderModule 并注入到 PassRouter
         injectOfficialSPIRVModules(undeclaredOfficialPasses, spirvInterceptor);
     }
 
     /**
      * 注入官方 SPIR-V 模块到渲染管线
      *
-     * <p>【TODO #13 已实现】完整的官方 SPIR-V 注入流程：
+     * <p>完整的官方 SPIR-V 注入流程：
      * <ol>
      *   <li>遍历所有待注入的 Pass</li>
      *   <li>从 SPIRVInterceptor 获取 SPIR-V 数据</li>
@@ -2354,7 +2354,7 @@ public final class ShaderWorkbench {
     /**
      * 收集光影包已声明的 Pass 名称
      *
-     * <p>【TODO #14 已实现】从 RGB 的 RenderGraphDescriptor 区域
+     * <p>从 RGB 的 RenderGraphDescriptor 区域
      * 真实读取 Pass 名称，而非使用硬编码的模拟数据。
      *
      * <h3>数据来源</h3>

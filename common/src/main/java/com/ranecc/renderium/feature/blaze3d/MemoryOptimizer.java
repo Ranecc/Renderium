@@ -578,7 +578,9 @@ public class MemoryOptimizer implements AutoCloseable {
 
     private void safeDispose(AutoCloseable obj) {
         if (obj != null) {
-            try { obj.close(); } catch (Exception ignored) {}
+            try { obj.close(); } catch (Exception e) {
+                LOGGER.fine("Failed to close resource: " + e);
+            }
         }
     }
 

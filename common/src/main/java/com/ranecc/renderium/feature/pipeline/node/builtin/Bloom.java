@@ -549,7 +549,9 @@ public class Bloom extends AbstractPipelineNode {
                     mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
                             mipTextures[i], mipAllocations[i], 0, 0, 0,
                             VulkanGPUResourceManager.ResourceType.IMAGE));
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    LOGGER.warning("Failed to release mipmap texture during dispose: " + e);
+                }
                 mipTextures[i] = 0L;
                 mipAllocations[i] = 0L;
             }
@@ -561,7 +563,9 @@ public class Bloom extends AbstractPipelineNode {
                 mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
                         blurHorizontalTexture, blurHAllocation, 0, 0, 0,
                         VulkanGPUResourceManager.ResourceType.IMAGE));
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                LOGGER.warning("Failed to release blur horizontal texture during dispose: " + e);
+            }
             blurHorizontalTexture = 0L;
             blurHAllocation = 0L;
         }
@@ -570,7 +574,9 @@ public class Bloom extends AbstractPipelineNode {
                 mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
                         blurVerticalTexture, blurVAllocation, 0, 0, 0,
                         VulkanGPUResourceManager.ResourceType.IMAGE));
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                LOGGER.warning("Failed to release blur vertical texture during dispose: " + e);
+            }
             blurVerticalTexture = 0L;
             blurVAllocation = 0L;
         }
@@ -931,7 +937,9 @@ public class Bloom extends AbstractPipelineNode {
                     mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
                             mipTextures[i], mipAllocations[i], 0, 0, 0,
                             VulkanGPUResourceManager.ResourceType.IMAGE));
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    LOGGER.warning("Failed to release mipmap texture during rebuild: " + e);
+                }
                 mipTextures[i] = 0L;
                 mipAllocations[i] = 0L;
             }
@@ -1005,7 +1013,9 @@ public class Bloom extends AbstractPipelineNode {
                 mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
                         blurHorizontalTexture, blurHAllocation, 0, 0, 0,
                         VulkanGPUResourceManager.ResourceType.IMAGE));
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                LOGGER.warning("Failed to release blur horizontal texture during resize: " + e);
+            }
             blurHorizontalTexture = 0L;
             blurHAllocation = 0L;
         }
@@ -1014,7 +1024,9 @@ public class Bloom extends AbstractPipelineNode {
                 mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
                         blurVerticalTexture, blurVAllocation, 0, 0, 0,
                         VulkanGPUResourceManager.ResourceType.IMAGE));
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                LOGGER.warning("Failed to release blur vertical texture during resize: " + e);
+            }
             blurVerticalTexture = 0L;
             blurVAllocation = 0L;
         }
@@ -1055,7 +1067,9 @@ public class Bloom extends AbstractPipelineNode {
                 mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
                         existingHandle, 0L, 0, 0, 0,
                         VulkanGPUResourceManager.ResourceType.IMAGE));
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                LOGGER.warning("Failed to release existing texture during acquireOrCreateTexture: " + e);
+            }
         }
         long[] result = allocateTextureRaw(width, height);
         return result[0];

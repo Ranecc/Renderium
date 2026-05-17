@@ -5,6 +5,8 @@ package com.ranecc.renderium.infrastructure.nativeLib.binding;
 
 import java.lang.foreign.*;
 import java.lang.invoke.MethodHandle;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.NativeLibraryLoader;
 
 /**
@@ -14,6 +16,8 @@ import com.ranecc.renderium.infrastructure.gpu.NativeLibraryLoader;
  * <p>GPU亲和度: 中 (批量可并行，单次CPU更优)</p>
  */
 public final class KahanAccumulatorFFIAdapter {
+
+    private static final Logger LOGGER = Logger.getLogger(KahanAccumulatorFFIAdapter.class.getName());
 
     private final NativeLibraryLoader loader;
 
@@ -73,7 +77,9 @@ public final class KahanAccumulatorFFIAdapter {
             MethodHandle mh = loader.get("accel_kahan_reset",
                 FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.JAVA_DOUBLE));
             mh.invokeExact(context, newInitialSum);
-        } catch (Throwable e) {}
+        } catch (Throwable e) {
+            LOGGER.log(Level.SEVERE, "FFI reset call failed: " + e, e);
+        }
     }
 
     public void destroyContext(long context) {
@@ -81,6 +87,8 @@ public final class KahanAccumulatorFFIAdapter {
             MethodHandle mh = loader.get("accel_kahan_destroyContext",
                 FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
             mh.invokeExact(context);
-        } catch (Throwable e) {}
+        } catch (Throwable e) {
+            LOGGER.log(Level.SEVERE, "FFI destroyContext call failed: " + e, e);
+        }
     }
 }

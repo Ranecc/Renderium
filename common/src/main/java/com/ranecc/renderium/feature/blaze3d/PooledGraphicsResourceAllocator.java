@@ -295,7 +295,9 @@ public final class PooledGraphicsResourceAllocator implements GraphicsResourceAl
                     try {
                         // [编译修复] 同上：接口 release() 现为单参数
                         backingAllocator.release(resource);
-                    } catch (Exception ignored) {}
+                    } catch (Exception e) {
+                        LOGGER.warning("Failed to release pooled resource: " + e);
+                    }
                 }
             }
         }

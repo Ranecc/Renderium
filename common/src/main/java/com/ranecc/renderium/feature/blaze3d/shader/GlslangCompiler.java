@@ -442,7 +442,9 @@ public final class GlslangCompiler {
         if (initialized) {
             try {
                 callVoid("glslang_finalize_process");
-            } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {
+                LOGGER.fine("Compilation cleanup ignored: " + ignored);
+            }
             initialized = false;
             LOGGER.info("libglslang 已关闭");
         }

@@ -341,7 +341,9 @@ public class RenderOptimizerModule implements RenderiumModule {
 
     private void safeDispose(AutoCloseable component) {
         if (component != null) {
-            try { component.close(); } catch (Exception ignored) {}
+            try { component.close(); } catch (Exception e) {
+                LOGGER.fine("Failed to close component: " + e);
+            }
         }
     }
 

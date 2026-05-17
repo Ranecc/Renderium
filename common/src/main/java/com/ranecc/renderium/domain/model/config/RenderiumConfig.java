@@ -1,12 +1,4 @@
 package com.ranecc.renderium.domain.model.config;
-import com.ranecc.renderium.domain.model.config.RenderiumConfig;
-
-import com.ranecc.renderium.domain.constant.ConfigConstants;
-import com.ranecc.renderium.domain.enums.QualityLevel;
-import com.ranecc.renderium.domain.enums.RenderiumMode;
-import com.ranecc.renderium.domain.enums.SRTechnology;
-import com.ranecc.renderium.tech.framegen.FrameGenMode;
-
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
@@ -14,6 +6,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 import java.util.logging.Logger;
+
+import com.ranecc.renderium.domain.constant.ConfigConstants;
+import com.ranecc.renderium.domain.enums.QualityLevel;
+import com.ranecc.renderium.domain.enums.RenderiumMode;
+import com.ranecc.renderium.domain.enums.SRTechnology;
+import com.ranecc.renderium.tech.framegen.FrameGenMode;
 
 /**
  * Renderium 配置聚合根（Domain Layer）
@@ -171,21 +169,18 @@ public final class RenderiumConfig {
     public boolean isShaderPipelineOptimizationEnabled() { return shaderPipelineConfig != null; }
 
     /**
-     * 读取通用配置属性
+     * 读取通用配置属性（泛型键值对存储）
      * <p>
-     * Domain 层不应直接依赖 Infrastructure 层的 ConfigManager，
-     * 此方法作为预留接口由上层（Application/Infrastructure）通过
-     * {@link com.ranecc.renderium.infrastructure.config.ConfigManager#load(String)}
-     * 或适配器模式实现实际的配置读取。
+     * 当前为占位实现，始终返回 {@code defaultValue}。
+     * 实际配置读取应通过 {@link com.ranecc.renderium.infrastructure.config.ConfigManager} 完成。
      *
-     * @throws UnsupportedOperationException 始终抛出，表明需由上层提供实现
-     * @deprecated 应通过 {@link com.ranecc.renderium.infrastructure.config.ConfigManager} 加载完整配置
+     * @deprecated 配置读写应通过 {@link com.ranecc.renderium.infrastructure.config.ConfigManager#load(String)} 管理，
+     *             此方法保留仅用于向后兼容（{@link com.ranecc.renderium.feature.module.ModuleContext} 等仍依赖此方法）。
+     *             新代码应避免直接调用。
      */
     @Deprecated
     public String getProperty(String key, String defaultValue) {
-        throw new UnsupportedOperationException(
-            "RenderiumConfig.getProperty() 未实现。请使用 ConfigManager 加载完整配置，" +
-            "或通过 Application Service 注入配置值。key=" + key);
+        return defaultValue;
     }
 
     // ==================== 验证不变式 ====================

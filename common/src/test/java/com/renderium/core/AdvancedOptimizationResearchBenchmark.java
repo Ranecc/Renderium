@@ -26,7 +26,6 @@ import com.renderium.core.render.CoarseToFineRenderer;
 
 import java.util.Random;
 
-"deprecation"
 @SuppressWarnings("deprecation")
 public class AdvancedOptimizationResearchBenchmark {
 
@@ -43,26 +42,19 @@ public class AdvancedOptimizationResearchBenchmark {
     private static final long RANDOM_SEED = 42;
 
     public static void main(String[] args) {
-"+--------------------------------------------------+"
         System.out.println("+--------------------------------------------------+");
-"=  Renderium Phase 3 Advanced Optimization Research  ="
         System.out.println("=  Renderium Phase 3 Advanced Optimization Research  =");
-"=       Coarse-to-Fine + Multi-Stream Benchmark      ="
         System.out.println("=       Coarse-to-Fine + Multi-Stream Benchmark      =");
-"+--------------------------------------------------+ "
         System.out.println("+--------------------------------------------------+ ");
 
         boolean allPassed = true;
 
         // ===== 实验1: Coarse-to-Fine 两阶段渲染 =====
-"▶ [Experiment 1/2] Coarse-to-Fine Two-Stage Rendering"
         System.out.println("▶ [Experiment 1/2] Coarse-to-Fine Two-Stage Rendering");
-"   -----------------------------------------------"
         System.out.println("   -----------------------------------------------");
         try {
             allPassed &= runCoarseToFineExperiment();
         } catch (Exception e) {
-"  ❌ EXPERIMENT FAILED: "
             System.out.println("  ❌ EXPERIMENT FAILED: " + e.getMessage());
             e.printStackTrace();
             allPassed = false;
@@ -70,14 +62,11 @@ public class AdvancedOptimizationResearchBenchmark {
         System.out.println();
 
         // ===== 实验2: Multi-Stream 多流并行 =====
-"▶ [Experiment 2/2] Multi-Stream Parallel Dispatch"
         System.out.println("▶ [Experiment 2/2] Multi-Stream Parallel Dispatch");
-"   -----------------------------------------------"
         System.out.println("   -----------------------------------------------");
         try {
             allPassed &= runMultiStreamExperiment();
         } catch (Exception e) {
-"  ❌ EXPERIMENT FAILED: "
             System.out.println("  ❌ EXPERIMENT FAILED: " + e.getMessage());
             e.printStackTrace();
             allPassed = false;
@@ -85,18 +74,13 @@ public class AdvancedOptimizationResearchBenchmark {
         System.out.println();
 
         // ===== 最终报告 =====
-"--------------------------------------------------"
         System.out.println("--------------------------------------------------");
         if (allPassed) {
-"✅ ALL RESEARCH EXPERIMENTS PASSED"
             System.out.println("✅ ALL RESEARCH EXPERIMENTS PASSED");
-"   Both optimizations exceed target metrics!"
             System.out.println("   Both optimizations exceed target metrics!");
         } else {
-"[WARN]️  SOME EXPERIMETS NEED INVESTIGATION"
             System.out.println("[WARN]️  SOME EXPERIMETS NEED INVESTIGATION");
         }
-"--------------------------------------------------"
         System.out.println("--------------------------------------------------");
     }
 
@@ -121,8 +105,6 @@ public class AdvancedOptimizationResearchBenchmark {
 
         Random random = new Random(RANDOM_SEED);
 
-"  Running "
-" iterations..."
         System.out.println("  Running " + BENCHMARK_ITERATIONS + " iterations...");
 
         long benchmarkStart = System.nanoTime();
@@ -158,33 +140,19 @@ public class AdvancedOptimizationResearchBenchmark {
         double speedup = avgTimeBaseline / Math.max(avgTimeC2F, 0.001);  // 避免除零
 
         // 输出详细结果
-"   📊 Coarse-to-Fine Results:"
-  📊 Coarse-to-Fine Results:");
-"     计算节省率: %.1f%% (目标 >20%%) %s"
+        System.out.println("   📊 Coarse-to-Fine Results:");
         System.out.println(String.format("     计算节省率: %.1f%% (目标 >20%%) %s",
-"✅"
-"❌"
             avgSavings, avgSavings > 20 ? "✅" : "❌"));
-"计算节省>20%"
-"%"
         ok &= checkMetric("计算节省>20%", avgSavings > 20, avgSavings + "%");
 
-"     质量损失: %.4f dB (目标 <0.5dB) %s"
         System.out.println(String.format("     质量损失: %.4f dB (目标 <0.5dB) %s",
-"✅"
-"❌"
             avgQualityLoss, avgQualityLoss < 0.5 ? "✅" : "❌"));
-"质量损失<0.5dB"
-" dB"
         ok &= checkMetric("质量损失<0.5dB", avgQualityLoss < 0.5, avgQualityLoss + " dB");
 
-"     加速比: %.2fx (C2F vs Baseline)"
         System.out.println(String.format("     加速比: %.2fx (C2F vs Baseline)", speedup));
-"     平均耗时: Baseline=%.0fμs, C2F=%.0fμs"
         System.out.println(String.format("     平均耗时: Baseline=%.0fμs, C2F=%.0fμs",
             avgTimeBaseline, avgTimeC2F));
 
-"     Tile分布(平均): SIMPLE=%d, MEDIUM=%d, COMPLEX=%d"
         System.out.println(String.format("     Tile分布(平均): SIMPLE=%d, MEDIUM=%d, COMPLEX=%d",
             totalDistribution[0] / BENCHMARK_ITERATIONS,
             totalDistribution[1] / BENCHMARK_ITERATIONS,
@@ -195,21 +163,14 @@ public class AdvancedOptimizationResearchBenchmark {
         if (avgTotalTiles > 0) {
             float fp32Ratio = (float)(totalDistribution[2] / BENCHMARK_ITERATIONS) / avgTotalTiles;
             float fp16Ratio = (float)(totalDistribution[1] / BENCHMARK_ITERATIONS) / avgTotalTiles;
-"     配额检查: FP32=%.1f%% (<=10%%), FP16=%.1f%% (<=30%%)"
             System.out.println(String.format("     配额检查: FP32=%.1f%% (<=10%%), FP16=%.1f%% (<=30%%)",
                 fp32Ratio * 100, fp16Ratio * 100));
-"FP32配额<=10%"
-"%"
             ok &= checkMetric("FP32配额<=10%", fp32Ratio <= 0.15, (fp32Ratio * 100) + "%");  // 允许小误差
         }
 
         // 引擎状态摘要
-"   📈 Engine Status:"
-  📈 Engine Status:");
-"     "
-" "
-"      "
-     "));
+        System.out.println("   📈 Engine Status:");
+        System.out.println(renderer.getStatusSummary());
 
         return ok;
     }
@@ -225,28 +186,22 @@ public class AdvancedOptimizationResearchBenchmark {
         try {
             // 尝试加载MultiStreamTaskDispatcher（可能在不同的包路径）
             Class<?> dispatcherClass = Class.forName(
-"com.renderium.gpu.multistream.MultiStreamTaskDispatcher"
                 "com.renderium.gpu.multistream.MultiStreamTaskDispatcher"
             );
 
             // 使用反射调用benchmark
-"main"
             java.lang.reflect.Method mainMethod = dispatcherClass.getMethod("main", String[].class);
             mainMethod.invoke(null, (Object) new String[]{});
 
-"  ✅ Multi-Stream Benchmark executed successfully"
             System.out.println("  ✅ Multi-Stream Benchmark executed successfully");
             return true;
 
         } catch (ClassNotFoundException e) {
             // MultiStreamTaskDispatcher 不在classpath中，运行简化版测试
-"  [WARN]️  MultiStreamTaskDispatcher not in classpath"
             System.out.println("  [WARN]️  MultiStreamTaskDispatcher not in classpath");
-"  Running simplified validation... "
             System.out.println("  Running simplified validation... ");
             return runSimplifiedMultiStreamTest();
         } catch (Exception e) {
-"  [WARN]️  Error loading MultiStream: "
             System.out.println("  [WARN]️  Error loading MultiStream: " + e.getMessage());
             return runSimplifiedMultiStreamTest();
         }
@@ -266,7 +221,6 @@ public class AdvancedOptimizationResearchBenchmark {
         // 模拟各流的任务执行时间（毫秒）
         float[] streamBaseTimes = {10.0f, 6.0f, 4.0f, 8.0f};  // Main, Lookahead, Monitor, Encode
 
-"  📊 Simplified Multi-Stream Simulation:"
         System.out.println("  📊 Simplified Multi-Stream Simulation:");
 
         // 串行执行总时间
@@ -290,30 +244,18 @@ public class AdvancedOptimizationResearchBenchmark {
 
         double speedup = serialTime / parallelTime;
 
-"     串行总时间: %.1f ms"
         System.out.println(String.format("     串行总时间: %.1f ms", serialTime));
-"     并行总时间: %.1f ms (含%.1fms同步开销)"
         System.out.println(String.format("     并行总时间: %.1f ms (含%.1fms同步开销)", parallelTime, syncOverhead));
-"     加速比: %.2fx (目标 >4x) %s"
         System.out.println(String.format("     加速比: %.2fx (目标 >4x) %s",
-"✅"
-"[WARN]️"
             speedup, speedup > 4.0 ? "✅" : "[WARN]️"));
-"加速比>4x"
-"x"
         ok &= checkMetric("加速比>4x", speedup > 4.0, speedup + "x");
 
         // 利用率计算
         double totalWork = serialTime;
         double utilizedTime = parallelTime * streamCount;
         double utilization = totalWork / utilizedTime * 100.0;
-"     GPU利用率: %.1f%% (目标 >40%%提升) %s"
         System.out.println(String.format("     GPU利用率: %.1f%% (目标 >40%%提升) %s",
-"✅"
-"❌"
             utilization, utilization > 40 ? "✅" : "❌"));
-"利用率>40%"
-"%"
         ok &= checkMetric("利用率>40%", utilization > 40, utilization + "%");
 
         // 一致性验证（模拟强一致性任务链）
@@ -327,12 +269,8 @@ public class AdvancedOptimizationResearchBenchmark {
                 orderPreserved = false;
             }
         }
-"     强一致性验证: ChainLen=%d, OrderPreserved=%s %s"
         System.out.println(String.format("     强一致性验证: ChainLen=%d, OrderPreserved=%s %s",
-"✅"
-"❌"
             chainLength, orderPreserved, orderPreserved ? "✅" : "❌"));
-"顺序一致性"
         ok &= checkMetric("顺序一致性", orderPreserved, String.valueOf(orderPreserved));
 
         return ok;
@@ -414,12 +352,7 @@ public class AdvancedOptimizationResearchBenchmark {
      * 检查指标是否达标
      */
     private static boolean checkMetric(String name, boolean condition, Object actual) {
-"✅"
-"❌"
         String icon = condition ? "✅" : "❌";
-"     "
-" "
-": "
         System.out.println("     " + icon + " " + name + ": " + actual);
         return condition;
     }

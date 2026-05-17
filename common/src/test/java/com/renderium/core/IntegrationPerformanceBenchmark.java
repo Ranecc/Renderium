@@ -211,15 +211,10 @@ public final class IntegrationPerformanceBenchmark {
          */
         String formatReport() {
             double eqFps = getEquivalentFps();
-"INF"
-"%.0f"
             String fpsStr = eqFps == Double.POSITIVE_INFINITY ? "INF" : String.format("%.0f", eqFps);
-"PASS"
-"FAIL"
             String status = isTargetMet() ? "PASS" : "FAIL";
 
             return String.format(
-"  %-35s | %8.1f | %8.1f | %8.1f | %7s | %s"
                 "  %-35s | %8.1f | %8.1f | %8.1f | %7s | %s",
                 componentName,
                 p50Ns / NS_TO_US,
@@ -254,37 +249,30 @@ public final class IntegrationPerformanceBenchmark {
         int statIndex = 0;
 
         // ===== 测试1: onFrameBegin 热路径循环 =====
-"[1/7] 测试 onFrameBegin 热路径循环..."
         System.out.println("[1/7] 测试 onFrameBegin 热路径循环...");
         allStats[statIndex++] = benchmarkOnFrameBeginLoop();
 
         // ===== 测试2: DynamicPrecisionManager.decidePrecision =====
-"[2/7] 测试 DynamicPrecisionManager.decidePrecision..."
         System.out.println("[2/7] 测试 DynamicPrecisionManager.decidePrecision...");
         allStats[statIndex++] = benchmarkDecidePrecision();
 
         // ===== 测试3: PhaseTransitionDetector.detectTransition =====
-"[3/7] 测试 PhaseTransitionDetector.detectTransition..."
         System.out.println("[3/7] 测试 PhaseTransitionDetector.detectTransition...");
         allStats[statIndex++] = benchmarkDetectTransition();
 
         // ===== 测试4: BfsOcclusionEngine.findVisibleSections =====
-"[4/7] 测试 BfsOcclusionEngine.findVisibleSections..."
         System.out.println("[4/7] 测试 BfsOcclusionEngine.findVisibleSections...");
         allStats[statIndex++] = benchmarkBfsOcclusion();
 
         // ===== 测试5: KahanAccumulator.add =====
-"[5/7] 测试 KahanAccumulator.add..."
         System.out.println("[5/7] 测试 KahanAccumulator.add...");
         allStats[statIndex++] = benchmarkKahanAdd();
 
         // ===== 测试6: ConvergenceMonitor.updateEnergy =====
-"[6/7] 测试 ConvergenceMonitor.updateEnergy..."
         System.out.println("[6/7] 测试 ConvergenceMonitor.updateEnergy...");
         allStats[statIndex++] = benchmarkConvergenceUpdate();
 
         // ===== 测试7: Lyapunov 冷路径不阻塞验证 =====
-"[7/7] 测试 Lyapunov 冷路径不阻塞热路径..."
         System.out.println("[7/7] 测试 Lyapunov 冷路径不阻塞热路径...");
         allStats[statIndex++] = benchmarkLyapunovNonBlocking();
 
@@ -334,7 +322,6 @@ public final class IntegrationPerformanceBenchmark {
             latencies[i] = System.nanoTime() - start;
         }
 
-"onFrameBegin 循环(组合)"
         return new LatencyStats("onFrameBegin 循环(组合)", latencies);
     }
 
@@ -420,7 +407,6 @@ public final class IntegrationPerformanceBenchmark {
             latencies[i] = System.nanoTime() - start;
         }
 
-"decidePrecision 决策"
         return new LatencyStats("decidePrecision 决策", latencies);
     }
 
@@ -463,7 +449,6 @@ public final class IntegrationPerformanceBenchmark {
             latencies[i] = System.nanoTime() - start;
         }
 
-"detectTransition 检测"
         return new LatencyStats("detectTransition 检测", latencies);
     }
 
@@ -514,7 +499,6 @@ public final class IntegrationPerformanceBenchmark {
             latencies[i] = System.nanoTime() - start;
         }
 
-"findVisibleSections BFS"
         return new LatencyStats("findVisibleSections BFS", latencies);
     }
 
@@ -625,7 +609,6 @@ public final class IntegrationPerformanceBenchmark {
             latencies[i] = System.nanoTime() - start;
         }
 
-"KahanAccumulator.add"
         return new LatencyStats("KahanAccumulator.add", latencies);
     }
 
@@ -666,7 +649,6 @@ public final class IntegrationPerformanceBenchmark {
             latencies[i] = System.nanoTime() - start;
         }
 
-"updateEnergy 收敛更新"
         return new LatencyStats("updateEnergy 收敛更新", latencies);
     }
 
@@ -712,7 +694,6 @@ public final class IntegrationPerformanceBenchmark {
             baselineLatencies[i] = System.nanoTime() - start;
         }
 
-"热路径基准(无Lyapunov)"
         LatencyStats baselineStats = new LatencyStats("热路径基准(无Lyapunov)", baselineLatencies);
 
         // ===== 阶段B: 启动 Lyapunov 后台线程，同时测量热路径延迟 =====
@@ -734,7 +715,6 @@ public final class IntegrationPerformanceBenchmark {
                 energyBefore += 10.0f;
                 energyAfter += 9.5f;
             }
-"Lyapunov-Stress-Thread"
         }, "Lyapunov-Stress-Thread");
         lyapunovThread.setDaemon(true);
 
@@ -763,7 +743,6 @@ public final class IntegrationPerformanceBenchmark {
         // 停止 Lyapunov 线程
         lyapunovRunning.set(false);
 
-"热路径(Lyapunov并行)"
         LatencyStats concurrentStats = new LatencyStats("热路径(Lyapunov并行)", concurrentLatencies);
 
         // 输出冷路径不阻塞验证结果
@@ -791,21 +770,12 @@ public final class IntegrationPerformanceBenchmark {
      */
     private static void printBanner() {
         System.out.println();
-"===================================================================="
         System.out.println("====================================================================");
-"  Renderium 集成性能基准测试"
         System.out.println("  Renderium 集成性能基准测试");
-"  目标: 1000-2000 FPS (0.5-1ms/帧)"
         System.out.println("  目标: 1000-2000 FPS (0.5-1ms/帧)");
-"  预热: "
-" 次迭代"
         System.out.println("  预热: " + WARMUP_ITERATIONS + " 次迭代");
-"  测量: "
-" 次迭代"
         System.out.println("  测量: " + MEASURE_ITERATIONS + " 次迭代");
-"  计时: System.nanoTime()"
         System.out.println("  计时: System.nanoTime()");
-"===================================================================="
         System.out.println("====================================================================");
         System.out.println();
     }
@@ -817,35 +787,13 @@ public final class IntegrationPerformanceBenchmark {
      */
     private static void printReport(LatencyStats[] allStats) {
         System.out.println();
-"===================================================================="
         System.out.println("====================================================================");
-"  性能基准测试结果"
         System.out.println("  性能基准测试结果");
-"===================================================================="
         System.out.println("====================================================================");
         System.out.println();
-"  %-35s | %8s | %8s | %8s | %7s | %s%n"
         System.out.printf("  %-35s | %8s | %8s | %8s | %7s | %s%n",
-"组件"
-"P50(μs)"
-"P95(μs)"
-"P99(μs)"
-"FPS"
-"达标"
             "组件", "P50(μs)", "P95(μs)", "P99(μs)", "FPS", "达标");
-"  "
-"-"
-"-+-"
-"-"
-"-+-"
         System.out.println("  " + "-".repeat(37) + "-+-" + "-".repeat(8) + "-+-"
-"-"
-"-+-"
-"-"
-"-+-"
-"-"
-"-+-"
-"-"
             + "-".repeat(8) + "-+-" + "-".repeat(8) + "-+-" + "-".repeat(7) + "-+-" + "-".repeat(4));
 
         int passCount = 0;
@@ -862,34 +810,20 @@ public final class IntegrationPerformanceBenchmark {
         }
 
         System.out.println();
-"  达标标准: P95 延迟 <= "
-"%.1f"
-"ms ("
         System.out.println("  达标标准: P95 延迟 <= " + String.format("%.1f", TARGET_FRAME_TIME_MS) + "ms ("
-" FPS)"
             + TARGET_FPS + " FPS)");
-"  等效FPS: 1000ms / P95延迟(ms)"
         System.out.println("  等效FPS: 1000ms / P95延迟(ms)");
         System.out.println();
 
         // 汇总判定
-"  +------------------------------------+"
         System.out.println("  +------------------------------------+");
         if (failCount == 0) {
-"  |  ALL PASSED - "
-"/"
             System.out.println("  |  ALL PASSED - " + passCount + "/" + (passCount + failCount)
-" 组件达标  |"
                 + " 组件达标  |");
         } else {
-"  |  "
-" FAILED - "
             System.out.println("  |  " + failCount + " FAILED - "
-"/"
-" 组件达标     |"
                 + passCount + "/" + (passCount + failCount) + " 组件达标     |");
         }
-"  +------------------------------------+"
         System.out.println("  +------------------------------------+");
         System.out.println();
     }
@@ -907,12 +841,9 @@ public final class IntegrationPerformanceBenchmark {
             long lyapunovIterations) {
 
         System.out.println();
-"  +-- Lyapunov 冷路径不阻塞验证 ------------------+"
         System.out.println("  +-- Lyapunov 冷路径不阻塞验证 ------------------+");
-"  |  基准 P95:    %8.1f μs (无 Lyapunov)       |%n"
         System.out.printf("  |  基准 P95:    %8.1f μs (无 Lyapunov)       |%n",
             baselineStats.p95Ns / NS_TO_US);
-"  |  并行 P95:    %8.1f μs (Lyapunov 运行中)    |%n"
         System.out.printf("  |  并行 P95:    %8.1f μs (Lyapunov 运行中)    |%n",
             concurrentStats.p95Ns / NS_TO_US);
 
@@ -922,19 +853,13 @@ public final class IntegrationPerformanceBenchmark {
             increasePercent = ((double) (concurrentStats.p95Ns - baselineStats.p95Ns)
                 / baselineStats.p95Ns) * 100.0;
         }
-"  |  延迟增幅:    %+.1f%%                           |%n"
         System.out.printf("  |  延迟增幅:    %+.1f%%                           |%n", increasePercent);
 
         // 判定：增幅 < 20% 视为不阻塞
         boolean nonBlocking = increasePercent < 20.0;
-"PASS (不阻塞)"
-"FAIL (存在阻塞)"
         String verdict = nonBlocking ? "PASS (不阻塞)" : "FAIL (存在阻塞)";
-"  |  判定:        %-30s |%n"
         System.out.printf("  |  判定:        %-30s |%n", verdict);
-"  |  Lyapunov 迭代: %-28d |%n"
         System.out.printf("  |  Lyapunov 迭代: %-28d |%n", lyapunovIterations);
-"  +------------------------------------------------+"
         System.out.println("  +------------------------------------------------+");
     }
 }

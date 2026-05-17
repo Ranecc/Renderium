@@ -167,9 +167,13 @@ public final class ShaderCache {
                         }
                     })
                     .forEach(p -> {
-                        try { Files.delete(p); } catch (IOException ignored) {}
+                        try { Files.delete(p); } catch (IOException e) {
+                            LOGGER.fine("Failed to delete cache file: " + e);
+                        }
                     });
-        } catch (IOException ignored) {}
+        } catch (IOException e) {
+            LOGGER.fine("Failed to create/delete cache file: " + e);
+        }
     }
 
     /**
@@ -212,7 +216,9 @@ public final class ShaderCache {
     private Path getCacheFile(String key) {
         String subDir = key.substring(0, Math.min(2, key.length()));
         Path subPath = cacheDir.resolve(subDir);
-        try { Files.createDirectories(subPath); } catch (IOException ignored) {}
+        try { Files.createDirectories(subPath); } catch (IOException e) {
+            LOGGER.fine("Failed to create cache directory: " + e);
+        }
         return subPath.resolve(key + ".spv");
     }
 
@@ -246,9 +252,13 @@ public final class ShaderCache {
                     .filter(Files::isRegularFile)
                     .filter(p -> p.toString().endsWith(".spv"))
                     .forEach(p -> {
-                        try { Files.delete(p); } catch (IOException ignored) {}
+                        try { Files.delete(p); } catch (IOException e) {
+                            LOGGER.fine("Failed to delete cache file: " + e);
+                        }
                     });
-        } catch (IOException ignored) {}
+        } catch (IOException e) {
+            LOGGER.fine("Failed to clear disk cache: " + e);
+        }
     }
 
     /**

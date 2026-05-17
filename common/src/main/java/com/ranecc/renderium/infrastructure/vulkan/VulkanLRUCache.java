@@ -161,7 +161,10 @@ public class VulkanLRUCache<K, V> extends LinkedHashMap<K, V> {
                 Map.Entry<K, V> entry = it.next();
                 try {
                     evictionAction.onEvict(entry.getKey(), entry.getValue());
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    java.util.logging.Logger.getLogger("Renderium|LRUCache")
+                        .warning("Eviction failed during clearAndDestroy: " + e.getMessage());
+                }
                 it.remove();
             }
         }
