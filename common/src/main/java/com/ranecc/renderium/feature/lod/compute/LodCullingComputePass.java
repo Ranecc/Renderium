@@ -230,8 +230,11 @@ public final class LodCullingComputePass {
     static long getVkDevice() { return vkDevice; }
     static long getCommandPool() { return commandPool; }
     static long getFence() { return fence; }
+    static long getComputeQueue() { return computeQueue; }
+    static void setVkDevice(long v) { vkDevice = v; }
     static void setCommandPool(long v) { commandPool = v; }
     static void setFence(long v) { fence = v; }
+    static void setComputeQueue(long v) { computeQueue = v; }
 
     // ==================== Pipeline 缓存（首次创建后复用）====================
 

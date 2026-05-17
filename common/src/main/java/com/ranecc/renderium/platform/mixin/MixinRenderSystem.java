@@ -13,6 +13,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.feature.blaze3d.stylizedrt.StreamlineIntegration;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.debug.VulkanCheckpointManager;
 
 /**
  * RenderSystem Mixin - Vulkan 设备句柄提取
@@ -135,6 +136,9 @@ public abstract class MixinRenderSystem {
                 graphicsQueue,
                 computeQueue
             );
+
+            // 初始化 VulkanCheckpointManager（GPU 调试检查点）
+            VulkanCheckpointManager.initialize(vkDevice);
 
             // 初始化 Streamline SDK（DLSS/FSR/XeSS/FG）
             try {

@@ -159,7 +159,7 @@ public final class OptimizerRegistry {
     public static boolean isFullyInitialized() {
         return memoryOptimizer != null
             && pipelineOptimizer != null
-            && commandBatcher != null
+            && (commandOptimizer != null || commandBatcher != null)
             && frameGraphOptimizer != null;
     }
 
@@ -169,11 +169,19 @@ public final class OptimizerRegistry {
      * @return comma-separated list of initialized/uninitialized components
      */
     public static String getStatusReport() {
+        String cmdStatus;
+        if (commandBatcher != null) {
+            cmdStatus = "Batcher✓";
+        } else if (commandOptimizer != null) {
+            cmdStatus = "Optimizer✓";
+        } else {
+            cmdStatus = "✗";
+        }
         return String.format(
             "Memory[%s] Pipeline[%s] Command[%s] FrameGraph[%s] Streamline[%s] Culling[%s] Pool[%s]",
             memoryOptimizer != null ? "✓" : "✗",
             pipelineOptimizer != null ? "✓" : "✗",
-            commandBatcher != null ? "✓" : "✗",
+            cmdStatus,
             frameGraphOptimizer != null ? "✓" : "✗",
             streamlineManager != null ? "✓" : "✗",
             multiLevelCuller != null ? "✓" : "✗",
