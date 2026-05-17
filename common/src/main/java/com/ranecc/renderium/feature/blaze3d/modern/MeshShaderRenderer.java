@@ -200,6 +200,9 @@ public final class MeshShaderRenderer implements AutoCloseable {
     /** Mesh Shader Workgroup 大小（应匹配 MESHLET_MAX_VERTICES）*/
     private static final int MESH_WORKGROUP_SIZE = 32;
 
+    /** 可见性估算比率：假设约 60-80% 的注册 Meshlets 可见 */
+    private static final double ESTIMATED_VISIBILITY_RATIO = 0.7;
+
     // ==================== 扩展支持检测标志 ====================
 
     /**
@@ -1441,7 +1444,7 @@ public final class MeshShaderRenderer implements AutoCloseable {
     private int estimateVisibleMeshletCount() {
         // 简化估算：假设约 60-80% 的注册 Meshlets 可见
         // 实际值取决于相机位置、视锥角度、遮挡情况等
-        return Math.max(1, (int)(this.totalRegisteredMeshlets * 0.7));
+        return Math.max(1, (int)(this.totalRegisteredMeshlets * ESTIMATED_VISIBILITY_RATIO));
     }
 
     // ==================== 内部数据类 ====================

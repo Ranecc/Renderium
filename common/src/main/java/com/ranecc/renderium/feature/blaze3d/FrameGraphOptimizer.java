@@ -79,196 +79,21 @@ public class FrameGraphOptimizer implements AutoCloseable {
     private volatile boolean enabled = false;
     private volatile boolean initialized = false;
 
-    // ==================== Pipeline Cache 系统 ====================
+    // ==================== 子管理器 ====================
 
-    /**
-     * Pipeline 缓存条目
-     * <p>存储缓存的 Pipeline 及其关联元数据。
-     */
-    private static class CachedPipeline {
-        /** Vulkan Pipeline 句柄 */
-        final long pipeline;
+    /** Pipeline Cache 管理器 */
+    private final PipelineCacheManager pipelineCacheManager = new PipelineCacheManager();
 
-        /** 配置哈希值（用于快速匹配） */
-        final long configHash;
-
-        /** 最后使用帧号（用于 LRU 淘汰） */
-        final AtomicLong lastUsedFrame;
-
-        /** 引用计数（用于追踪复用情况） */
-        final AtomicInteger referenceCount;
-
-        CachedPipeline(long pipeline, long configHash, long frame) {
-            this.pipeline = pipeline;
-            this.configHash = configHash;
-            this.lastUsedFrame = new AtomicLong(frame);
-            this.referenceCount = new AtomicInteger(0);
-        }
-    }
-
-    /** Pipeline 缓存表 (configHash → CachedPipeline) */
-    private final ConcurrentHashMap<Long, CachedPipeline> pipelineCache = new ConcurrentHashMap<>();
-
-    // ==================== Descriptor Set 复用系统 ====================
-
-    /**
-     * Descriptor Set 缓存条目
-     * <p>存储预分配的 Descriptor Set 及其组合键。
-     */
-    private static class CachedDescriptorSet {
-        /** Vulkan Descriptor Set 句柄 */
-        final long descriptorSet;
-
-        /** 组合键：textureView ^ sampler ^ uniformBuffer */
-        final long compositeKey;
-
-        /** 分配帧号（用于调试） */
-        long allocatedFrame;
-
-        CachedDescriptorSet(long descriptorSet, long compositeKey, long frame) {
-            this.descriptorSet = descriptorSet;
-            this.compositeKey = compositeKey;
-            this.allocatedFrame = frame;
-        }
-    }
-
-    /** Descriptor Set 缓存表 (compositeKey → CachedDescriptorSet) */
-    private final ConcurrentHashMap<Long, CachedDescriptorSet> descriptorSetCache = new ConcurrentHashMap<>();
-
-    /** Descriptor Pool 句柄（实际实现时使用） */
-    private volatile long descriptorPool = 0;
+    /** Descriptor Set 管理器 */
+    private final DescriptorSetManager descriptorSetManager = new DescriptorSetManager();
 
     // ==================== 统计字段 ====================
 
-    private final AtomicLong pipelineCacheHits = new AtomicLong(0);
-    private final AtomicLong pipelineCacheMisses = new AtomicLong(0);
-    private final AtomicLong totalCreatedPipelines = new AtomicLong(0);
-    private final AtomicLong descriptorSetHits = new AtomicLong(0);
-    private final AtomicLong descriptorSetMisses = new AtomicLong(0);
-    private final AtomicLong totalAllocatedDescriptorSets = new AtomicLong(0);
     private final AtomicInteger currentFrame = new AtomicInteger(0);
 
     // ==================== DAG 依赖图系统 ====================
-
-    /**
-     * 渲染 Pass 节点
-     * <p>
-     * 表示帧图中的一个渲染通道，包含其资源依赖关系和执行元数据。
-     * 用于构建 DAG（有向无环图）进行依赖分析和拓扑排序。
-     *
-     * <h3>字段说明：</h3>
-     * <ul>
-     *   <li>passId: 唯一标识符，由 RenderPassMixin 分配</li>
-     *   <li>passName: 人类可读名称，用于调试和日志</li>
-     *   <li>pipelineHash: 当前使用的 Pipeline 配置哈希</li>
-     *   <li>inputResources: 此 Pass 读取的资源集合（纹理、Buffer 等）</li>
-     *   <li>outputResources: 此 Pass 写入的资源集合（渲染目标等）</li>
-     *   <li>dependencies: 此 Pass 依赖的其他 Pass ID 集合</li>
-     *   <li>dependents: 依赖此 Pass 的其他 Pass ID 集合</li>
-     * </ul>
-     */
-    public static class RenderPassNode {
-        /** 唯一标识符（由 RenderPassMixin 分配） */
-        final long passId;
-
-        /** 人类可读的 Pass 名称 */
-        final String passName;
-
-        /** 当前绑定的 Pipeline 配置哈希 */
-        volatile long pipelineHash;
-
-        /** 输入资源集合：此 Pass 读取的资源（只读依赖） */
-        final Set<Long> inputResources;
-
-        /** 输出资源集合：此 Pass 写入的资源（写依赖） */
-        final Set<Long> outputResources;
-
-        /** 依赖的 Pass ID 集合（必须在当前 Pass 之前执行） */
-        final Set<Long> dependencies;
-
-        /** 被依赖的 Pass ID 集合（必须在当前 Pass 之后执行） */
-        final Set<Long> dependents;
-
-        /** 拓扑排序后的执行顺序索引（-1 表示未分配） */
-        int topologyIndex;
-
-        /** Pass 类型分类（用于状态切换优化） */
-        PassType passType;
-
-        /**
-         * Pass 类型枚举
-         * <p>用于状态切换优化：相同类型的 Pass 相邻时可减少切换开销
-         */
-        enum PassType {
-            /** 几何渲染（不透明物体） */
-            GEOMETRY_OPAQUE,
-            /** 几何渲染（透明/半透明物体） */
-            GEOMETRY_TRANSLUCENT,
-            /** 后处理效果 */
-            POST_PROCESS,
-            /** 计算着色器 Pass */
-            COMPUTE,
-            /** 复制/Blit 操作 */
-            COPY,
-            /** 其他未分类 */
-            UNKNOWN
-        }
-
-        /**
-         * 创建渲染 Pass 节点
-         *
-         * @param passId      唯一标识符
-         * @param passName    人类可读名称
-         * @param pipelineHash 初始 Pipeline 哈希
-         */
-        RenderPassNode(long passId, String passName, long pipelineHash) {
-            this.passId = passId;
-            this.passName = passName;
-            this.pipelineHash = pipelineHash;
-            this.inputResources = ConcurrentHashMap.newKeySet();
-            this.outputResources = ConcurrentHashMap.newKeySet();
-            this.dependencies = ConcurrentHashMap.newKeySet();
-            this.dependents = ConcurrentHashMap.newKeySet();
-            this.topologyIndex = -1;
-            this.passType = PassType.UNKNOWN;
-        }
-
-        /**
-         * 添加输入资源（只读依赖）
-         *
-         * @param resourceId 资源句柄或唯一标识
-         */
-        void addInputResource(long resourceId) {
-            inputResources.add(resourceId);
-        }
-
-        /**
-         * 添加输出资源（写依赖）
-         *
-         * @param resourceId 资源句柄或唯一标识
-         */
-        void addOutputResource(long resourceId) {
-            outputResources.add(resourceId);
-        }
-
-        /**
-         * 添加对另一个 Pass 的依赖
-         *
-         * @param dependentPassId 被依赖的 Pass ID
-         */
-        void addDependency(long dependentPassId) {
-            dependencies.add(dependentPassId);
-        }
-
-        /**
-         * 获取此节点的总度数（入度 + 出度）
-         *
-         * @return 总边数
-         */
-        int getTotalDegree() {
-            return dependencies.size() + dependents.size();
-        }
-    }
+    // RenderPassNode 已提取为独立文件：RenderPassNode.java
+    // 包含 PassType 枚举定义
 
     /**
      * 资源生命周期条目
@@ -374,12 +199,6 @@ public class FrameGraphOptimizer implements AutoCloseable {
     /** Pass 性能统计表 (passId → PassPerformanceStats) */
     private final ConcurrentHashMap<Long, PassPerformanceStats> passStatsMap = new ConcurrentHashMap<>();
 
-    /** 拓扑排序后的 Pass 执行顺序（缓存结果） */
-    private volatile List<Long> cachedTopologyOrder = Collections.unmodifiableList(new ArrayList<>());
-
-    /** 拓扑排序脏标记：当图变更时设为 true */
-    private volatile boolean topologyDirty = true;
-
     /** 状态切换计数器：记录每帧的总切换次数 */
     private final AtomicLong stateSwitchCount = new AtomicLong(0);
 
@@ -388,6 +207,9 @@ public class FrameGraphOptimizer implements AutoCloseable {
 
     /** Pass 合并候选对数量 */
     private final AtomicInteger mergeCandidateCount = new AtomicInteger(0);
+
+    /** DAG 依赖图分析器（拓扑排序、Pass 合并分析） */
+    private final DependencyGraphAnalyzer dependencyGraphAnalyzer;
 
     // ==================== 构造函数 ====================
 
@@ -398,6 +220,7 @@ public class FrameGraphOptimizer implements AutoCloseable {
      */
     public FrameGraphOptimizer(RenderiumConfig config) {
         this.config = config.getFrameGraphConfig();
+        this.dependencyGraphAnalyzer = new DependencyGraphAnalyzer(passRegistry);
     }
 
     // ==================== 生命周期方法 ====================
@@ -414,29 +237,26 @@ public class FrameGraphOptimizer implements AutoCloseable {
 
         try {
             // 清空缓存（防止重复初始化）
-            pipelineCache.clear();
-            descriptorSetCache.clear();
+            pipelineCacheManager.clear();
+            pipelineCacheManager.resetStats();
+            descriptorSetManager.clear();
+            descriptorSetManager.resetStats();
 
             // 清空 DAG 依赖图系统
             passRegistry.clear();
             resourceLifetimes.clear();
             passStatsMap.clear();
-            cachedTopologyOrder = Collections.unmodifiableList(new ArrayList<>());
-            topologyDirty = true;
+            dependencyGraphAnalyzer.clearTopologyCache();
 
             // 重置统计
-            pipelineCacheHits.set(0);
-            pipelineCacheMisses.set(0);
-            totalCreatedPipelines.set(0);
-            descriptorSetHits.set(0);
-            descriptorSetMisses.set(0);
-            totalAllocatedDescriptorSets.set(0);
             currentFrame.set(0);
             stateSwitchCount.set(0);
             memoryAliasSavedBytes.set(0);
             mergeCandidateCount.set(0);
 
             this.initialized = true;
+            pipelineCacheManager.setInitialized(true);
+            descriptorSetManager.setInitialized(true);
 
             LOGGER.info(String.format(
                     "FrameGraphOptimizer initialized" +
@@ -448,8 +268,8 @@ public class FrameGraphOptimizer implements AutoCloseable {
                     "  DAG dependency analysis: ENABLED" +
                     "  Topological sorting: ENABLED" +
                     "  Resource lifetime tracking: ENABLED",
-                    MAX_CACHED_PIPELINES,
-                    MAX_DESCRIPTOR_SETS,
+                    PipelineCacheManager.MAX_CACHED_PIPELINES,
+                    DescriptorSetManager.MAX_DESCRIPTOR_SETS,
                     config.isPassMergingEnabled() ? "ON" : "OFF",
                     config.getMaxParallelPasses(),
                     config.isAsyncTransferEnabled() ? "ON" : "OFF"
@@ -487,6 +307,8 @@ public class FrameGraphOptimizer implements AutoCloseable {
         }
 
         enabled = true;
+        pipelineCacheManager.setEnabled(true);
+        descriptorSetManager.setEnabled(true);
 
         LOGGER.info(String.format(
                 "✓ FrameGraphOptimizer enabled" +
@@ -494,8 +316,8 @@ public class FrameGraphOptimizer implements AutoCloseable {
                 "  [Descriptor Reuse] Active (max %d sets)" +
                 "  [Pass Merging] ON" +
                 "  [Async Transfer] %s",
-                MAX_CACHED_PIPELINES,
-                MAX_DESCRIPTOR_SETS,
+                PipelineCacheManager.MAX_CACHED_PIPELINES,
+                DescriptorSetManager.MAX_DESCRIPTOR_SETS,
                 config.isAsyncTransferEnabled() ? "ON" : "OFF"
         ));
     }
@@ -503,7 +325,11 @@ public class FrameGraphOptimizer implements AutoCloseable {
     /**
      * 禁用帧图优化器
      */
-    public void disable() { enabled = false; }
+    public void disable() {
+        enabled = false;
+        pipelineCacheManager.setEnabled(false);
+        descriptorSetManager.setEnabled(false);
+    }
 
     /**
      * 销毁所有缓存并释放资源
@@ -513,27 +339,26 @@ public class FrameGraphOptimizer implements AutoCloseable {
         if (!initialized) return;
 
         // 清空所有缓存
-        evictAllCachedPipelines();
-        evictAllCachedDescriptorSets();
+        pipelineCacheManager.evictAllCachedPipelines();
+        descriptorSetManager.evictAllCachedDescriptorSets();
 
-        pipelineCache.clear();
-        descriptorSetCache.clear();
+        pipelineCacheManager.clear();
+        descriptorSetManager.clear();
 
         // 销毁 Descriptor Pool（Vulkan 资源清理）
         // 注意：实际集成时需要调用 vkDestroyDescriptorPool
-        destroyDescriptorPoolInternal();
-        descriptorPool = 0;
+        descriptorSetManager.destroyDescriptorPoolInternal();
 
         enabled = false;
         initialized = false;
+        pipelineCacheManager.setEnabled(false);
+        pipelineCacheManager.setInitialized(false);
+        descriptorSetManager.setEnabled(false);
+        descriptorSetManager.setInitialized(false);
 
         // 重置统计
-        pipelineCacheHits.set(0);
-        pipelineCacheMisses.set(0);
-        totalCreatedPipelines.set(0);
-        descriptorSetHits.set(0);
-        descriptorSetMisses.set(0);
-        totalAllocatedDescriptorSets.set(0);
+        pipelineCacheManager.resetStats();
+        descriptorSetManager.resetStats();
 
         LOGGER.info("FrameGraphOptimizer disposed");
     }
@@ -579,7 +404,7 @@ public class FrameGraphOptimizer implements AutoCloseable {
         node.pipelineHash = pipelineHash;
 
         // 标记拓扑排序需要重新计算
-        topologyDirty = true;
+        dependencyGraphAnalyzer.setTopologyDirty(true);
 
         // 初始化此 Pass 的性能统计（如果不存在）
         passStatsMap.computeIfAbsent(passId, PassPerformanceStats::new);
@@ -630,7 +455,7 @@ public class FrameGraphOptimizer implements AutoCloseable {
             passStatsMap.remove(passId);
 
             // 标记拓扑排序需要重新计算
-            topologyDirty = true;
+            dependencyGraphAnalyzer.setTopologyDirty(true);
 
             LOGGER.fine(String.format("Removed pass: id=0x%X, name=%s", passId, removed.passName));
             return true;
@@ -707,7 +532,7 @@ public class FrameGraphOptimizer implements AutoCloseable {
         resourceLifetimes.computeIfAbsent(resourceId, id -> new ResourceLifetime(id, 0, 0));
 
         // 标记拓扑排序需要重新计算
-        topologyDirty = true;
+        dependencyGraphAnalyzer.setTopologyDirty(true);
 
         LOGGER.fine(String.format(
                 "Dependency added: %s(0x%X) -> %s(0x%X) via resource 0x%X",
@@ -740,7 +565,7 @@ public class FrameGraphOptimizer implements AutoCloseable {
         RenderPassNode node = passRegistry.get(passId);
         if (node != null) {
             node.passType = passType;
-            topologyDirty = true; // 类型变更可能影响重排序结果
+            dependencyGraphAnalyzer.setTopologyDirty(true); // 类型变更可能影响重排序结果
             LOGGER.fine(String.format("Pass type set: %s(0x%X) -> %s", node.passName, passId, passType));
         }
     }
@@ -765,122 +590,7 @@ public class FrameGraphOptimizer implements AutoCloseable {
      * @return 排序后的 Pass ID 列表；如果检测到循环依赖则返回空列表
      */
     public List<Long> getOptimizedExecutionOrder() {
-        if (!initialized || !topologyDirty) {
-            return cachedTopologyOrder; // 返回缓存结果
-        }
-
-        List<Long> sortedOrder = executeTopologicalSort();
-
-        if (!sortedOrder.isEmpty()) {
-            cachedTopologyOrder = Collections.unmodifiableList(sortedOrder);
-            topologyDirty = false;
-
-            // 更新所有节点的拓扑索引
-            for (int i = 0; i < sortedOrder.size(); i++) {
-                RenderPassNode node = passRegistry.get(sortedOrder.get(i));
-                if (node != null) {
-                    node.topologyIndex = i;
-                }
-            }
-
-            LOGGER.fine(String.format(
-                    "Topological sort completed: %d passes ordered", sortedOrder.size()));
-        } else {
-            LOGGER.warning("Topological sort failed: cycle detected in dependency graph");
-        }
-
-        return cachedTopologyOrder;
-    }
-
-    /**
-     * 内部方法：执行 Kahn 算法拓扑排序
-     * <p>
-     * 算法复杂度: O(V + E)，其中 V 是节点数，E 是边数
-     *
-     * @return 排序后的 Pass ID 列表
-     */
-    private List<Long> executeTopologicalSort() {
-        if (passRegistry.isEmpty()) {
-            return new ArrayList<>();
-        }
-
-        // ---- 第一步：计算每个节点的入度 ----//
-        Map<Long, Integer> inDegree = new HashMap<>();
-        Queue<Long> zeroInDegreeQueue = new LinkedList<>();
-
-        // 初始化所有节点的入度
-        for (RenderPassNode node : passRegistry.values()) {
-            int degree = 0;
-            // 只统计仍在注册表中的依赖（避免脏数据）
-            for (Long depId : node.dependencies) {
-                if (passRegistry.containsKey(depId)) {
-                    degree++;
-                }
-            }
-            inDegree.put(node.passId, degree);
-            if (degree == 0) {
-                zeroInDegreeQueue.offer(node.passId);
-            }
-        }
-
-        // ---- 第二步：Kahn 算法主循环 ----//
-        List<Long> result = new ArrayList<>(passRegistry.size());
-        
-        // 同层收集器：用于对相同入度的节点按类型分组
-        List<Long> currentLayer = new ArrayList<>();
-
-        while (!zeroInDegreeQueue.isEmpty()) {
-            currentLayer.clear();
-            
-            // 收集当前层的所有零入度节点
-            while (!zeroInDegreeQueue.isEmpty()) {
-                currentLayer.add(zeroInDegreeQueue.poll());
-            }
-
-            // 对当前层按 Pass 类型分组排序（减少状态切换）
-            // 策略：GEOMETRY_OPAQUE → GEOMETRY_TRANSLUCENT → COMPUTE → POST_PROCESS → COPY
-            currentLayer.sort((a, b) -> {
-                RenderPassNode nodeA = passRegistry.get(a);
-                RenderPassNode nodeB = passRegistry.get(b);
-                int typeA = (nodeA != null) ? nodeA.passType.ordinal() : Integer.MAX_VALUE;
-                int typeB = (nodeB != null) ? nodeB.passType.ordinal() : Integer.MAX_VALUE;
-                return Integer.compare(typeA, typeB);
-            });
-
-            // 将排序后的当前层加入结果
-            result.addAll(currentLayer);
-
-            // 处理当前层节点的出边
-            for (Long passId : currentLayer) {
-                RenderPassNode node = passRegistry.get(passId);
-                if (node == null) continue;
-
-                for (Long dependentId : node.dependents) {
-                    // 减少依赖者的入度
-                    Integer newDegree = inDegree.compute(dependentId, (k, v) -> (v == null ? 0 : v) - 1);
-                    if (newDegree != null && newDegree == 0) {
-                        zeroInDegreeQueue.offer(dependentId);
-                    }
-                }
-            }
-        }
-
-        // ---- 第三步：检测循环依赖 ----//
-        if (result.size() != passRegistry.size()) {
-            // 存在循环依赖，记录警告并返回部分结果
-            Set<Long> sortedSet = new HashSet<>(result);
-            StringBuilder cycleNodes = new StringBuilder();
-            for (Long id : passRegistry.keySet()) {
-                if (!sortedSet.contains(id)) {
-                    RenderPassNode node = passRegistry.get(id);
-                    cycleNodes.append(node != null ? node.passName : "0x" + Long.toHexString(id)).append(", ");
-                }
-            }
-            LOGGER.warning(String.format(
-                    "Cycle detected! Unsorted passes: [%s]", cycleNodes.toString()));
-        }
-
-        return result;
+        return dependencyGraphAnalyzer.getOptimizedExecutionOrder();
     }
 
     /**
@@ -905,65 +615,8 @@ public class FrameGraphOptimizer implements AutoCloseable {
     public List<long[]> analyzeMergeCandidates() {
         if (!initialized) return Collections.emptyList();
 
-        List<long[]> candidates = new ArrayList<>();
-        List<Long> order = getOptimizedExecutionOrder();
-
-        // 遍历相邻的 Pass 对
-        for (int i = 0; i < order.size() - 1; i++) {
-            long passA = order.get(i);
-            long passB = order.get(i + 1);
-
-            RenderPassNode nodeA = passRegistry.get(passA);
-            RenderPassNode nodeB = passRegistry.get(passB);
-
-            if (nodeA == null || nodeB == null) continue;
-
-            // 条件1：检查是否有其他 Pass 依赖这两个 Pass 之间的中间状态
-            boolean hasIntermediateDependent = false;
-            for (Long depId : nodeA.dependents) {
-                if (depId != passB && passRegistry.containsKey(depId)) {
-                    hasIntermediateDependent = true;
-                    break;
-                }
-            }
-
-            if (hasIntermediateDependent) continue;
-
-            // 条件2：检查 Pipeline 兼容性（相同类型通常可以合并）
-            boolean pipelineCompatible = (nodeA.pipelineHash == nodeB.pipelineHash) ||
-                    (nodeA.passType == nodeB.passType && 
-                     nodeA.passType != RenderPassNode.PassType.COMPUTE);
-
-            if (!pipelineCompatible) continue;
-
-            // 条件3：检查资源冲突（A 的输出不能是 B 的输入以外的其他 Pass 的输入）
-            boolean resourceConflict = false;
-            for (Long outputRes : nodeA.outputResources) {
-                for (Long otherDep : nodeA.dependents) {
-                    if (otherDep != passB) {
-                        RenderPassNode otherNode = passRegistry.get(otherDep);
-                        if (otherNode != null && otherNode.inputResources.contains(outputRes)) {
-                            resourceConflict = true;
-                            break;
-                        }
-                    }
-                }
-                if (resourceConflict) break;
-            }
-
-            if (resourceConflict) continue;
-
-            // 所有条件满足，这是一个合并候选
-            candidates.add(new long[]{passA, passB});
-        }
-
+        List<long[]> candidates = dependencyGraphAnalyzer.analyzeMergeCandidates();
         mergeCandidateCount.set(candidates.size());
-
-        if (!candidates.isEmpty()) {
-            LOGGER.fine(String.format(
-                    "Found %d merge candidate pairs", candidates.size()));
-        }
-
         return candidates;
     }
 
@@ -1190,51 +843,8 @@ public class FrameGraphOptimizer implements AutoCloseable {
      */
     public long getOrCreatePipeline(long vkDevice, long pipelineCacheHandle,
                                     long configHash) {
-        if (!enabled || !initialized) return 0;
-
-        // 1. 尝试从缓存获取
-        CachedPipeline cached = pipelineCache.get(configHash);
-
-        if (cached != null) {
-            // 缓存命中
-            cached.lastUsedFrame.set(currentFrame.get());
-            cached.referenceCount.incrementAndGet();
-            pipelineCacheHits.incrementAndGet();
-
-            LOGGER.fine(String.format(
-                    "Pipeline cache HIT: hash=0x%016X, refs=%d",
-                    configHash, cached.referenceCount.get()
-            ));
-
-            return cached.pipeline;
-        }
-
-        // 2. 缓存未命中，需要创建新的 Pipeline
-        pipelineCacheMisses.incrementAndGet();
-
-        // 检查缓存大小限制
-        if (pipelineCache.size() >= MAX_CACHED_PIPELINES) {
-            evictOldestPipelines();
-        }
-
-        // 创建新 Pipeline
-        long newPipeline = createNewPipeline(vkDevice, pipelineCacheHandle, configHash);
-
-        if (newPipeline != 0) {
-            // 加入缓存
-            CachedPipeline entry = new CachedPipeline(
-                    newPipeline, configHash, currentFrame.get()
-            );
-            pipelineCache.put(configHash, entry);
-            totalCreatedPipelines.incrementAndGet();
-
-            LOGGER.fine(String.format(
-                    "Pipeline created: hash=0x%016X, total_cached=%d",
-                    configHash, pipelineCache.size()
-            ));
-        }
-
-        return newPipeline;
+        return pipelineCacheManager.getOrCreatePipeline(
+                vkDevice, pipelineCacheHandle, configHash, currentFrame.get());
     }
 
     /**
@@ -1246,20 +856,7 @@ public class FrameGraphOptimizer implements AutoCloseable {
      * @return 是否成功移除
      */
     public boolean invalidatePipeline(long configHash) {
-        if (!initialized) return false;
-
-        CachedPipeline removed = pipelineCache.remove(configHash);
-
-        if (removed != null) {
-            // 销毁 Pipeline（Vulkan 资源清理）
-            destroyPipelineInternal(removed.pipeline);
-            LOGGER.fine(String.format(
-                    "Pipeline invalidated: hash=0x%016X", configHash
-            ));
-            return true;
-        }
-
-        return false;
+        return pipelineCacheManager.invalidatePipeline(configHash);
     }
 
     // ==================== 核心 API：Descriptor Set 复用 ====================
@@ -1284,54 +881,8 @@ public class FrameGraphOptimizer implements AutoCloseable {
     public long getOrCreateDescriptorSet(long vkDevice,
                                          long textureView, long sampler,
                                          long uniformBuffer) {
-        if (!enabled || !initialized) return 0;
-
-        // 构建组合键
-        long compositeKey = buildDescriptorCompositeKey(textureView, sampler, uniformBuffer);
-
-        // 1. 尝试从缓存获取
-        CachedDescriptorSet cached = descriptorSetCache.get(compositeKey);
-
-        if (cached != null) {
-            // 缓存命中
-            descriptorSetHits.incrementAndGet();
-
-            LOGGER.fine(String.format(
-                    "Descriptor set cache HIT: key=0x%016X",
-                    compositeKey
-            ));
-
-            return cached.descriptorSet;
-        }
-
-        // 2. 缓存未命中，需要分配新的 Descriptor Set
-        descriptorSetMisses.incrementAndGet();
-
-        // 检查缓存大小限制
-        if (descriptorSetCache.size() >= MAX_DESCRIPTOR_SETS) {
-            evictOldestDescriptorSets();
-        }
-
-        // 分配新的 Descriptor Set
-        long newDescriptorSet = allocateNewDescriptorSet(
-                vkDevice, textureView, sampler, uniformBuffer
-        );
-
-        if (newDescriptorSet != 0) {
-            // 加入缓存
-            CachedDescriptorSet entry = new CachedDescriptorSet(
-                    newDescriptorSet, compositeKey, currentFrame.get()
-            );
-            descriptorSetCache.put(compositeKey, entry);
-            totalAllocatedDescriptorSets.incrementAndGet();
-
-            LOGGER.fine(String.format(
-                    "Descriptor set allocated: key=0x%016X, total_cached=%d",
-                    compositeKey, descriptorSetCache.size()
-            ));
-        }
-
-        return newDescriptorSet;
+        return descriptorSetManager.getOrCreateDescriptorSet(
+                vkDevice, textureView, sampler, uniformBuffer, currentFrame.get());
     }
 
     /**
@@ -1341,15 +892,7 @@ public class FrameGraphOptimizer implements AutoCloseable {
      * 每帧开始时重置 Pool 以释放上一帧的 Descriptor Set。
      */
     public void resetDescriptorPool() {
-        if (!enabled || !initialized) return;
-
-        // 清空 Descriptor Set 缓存
-        descriptorSetCache.clear();
-
-        // 重置 Descriptor Pool（每帧重置以复用资源）
-        resetDescriptorPoolInternal();
-
-        LOGGER.fine("Descriptor pool reset");
+        descriptorSetManager.resetDescriptorPool();
     }
 
     // ==================== 帧管理 API ====================
@@ -1370,11 +913,11 @@ public class FrameGraphOptimizer implements AutoCloseable {
         int frame = currentFrame.incrementAndGet();
 
         // 重置 Descriptor Pool
-        resetDescriptorPool();
+        descriptorSetManager.resetDescriptorPool();
 
         // 每 300 帧（约 5 秒）清理一次缓存
         if (frame % CACHE_EVICTION_FRAME_THRESHOLD == 0) {
-            evictOldPipelines(frame - CACHE_EVICTION_FRAME_THRESHOLD);
+            pipelineCacheManager.evictOldPipelines(frame - CACHE_EVICTION_FRAME_THRESHOLD);
         }
     }
 
@@ -1653,11 +1196,7 @@ public class FrameGraphOptimizer implements AutoCloseable {
      * @return 命中率 (0.0 ~ 1.0)
      */
     public double getPipelineCacheHitRate() {
-        long hits = pipelineCacheHits.get();
-        long misses = pipelineCacheMisses.get();
-        long total = hits + misses;
-
-        return total > 0 ? (double) hits / total : 0.0;
+        return pipelineCacheManager.getHitRate();
     }
 
     /**
@@ -1666,32 +1205,28 @@ public class FrameGraphOptimizer implements AutoCloseable {
      * @return 命中率 (0.0 ~ 1.0)
      */
     public double getDescriptorSetHitRate() {
-        long hits = descriptorSetHits.get();
-        long misses = descriptorSetMisses.get();
-        long total = hits + misses;
-
-        return total > 0 ? (double) hits / total : 0.0;
+        return descriptorSetManager.getHitRate();
     }
 
     /**
      * 获取当前 Pipeline 缓存大小
      */
-    public int getPipelineCacheSize() { return pipelineCache.size(); }
+    public int getPipelineCacheSize() { return pipelineCacheManager.getCacheSize(); }
 
     /**
      * 获取当前 Descriptor Set 缓存大小
      */
-    public int getDescriptorSetCacheSize() { return descriptorSetCache.size(); }
+    public int getDescriptorSetCacheSize() { return descriptorSetManager.getCacheSize(); }
 
     /**
      * 获取总创建 Pipeline 数量
      */
-    public long getTotalCreatedPipelines() { return totalCreatedPipelines.get(); }
+    public long getTotalCreatedPipelines() { return pipelineCacheManager.getTotalCreatedPipelines(); }
 
     /**
      * 获取总分配 Descriptor Set 数量
      */
-    public long getTotalAllocatedDescriptorSets() { return totalAllocatedDescriptorSets.get(); }
+    public long getTotalAllocatedDescriptorSets() { return descriptorSetManager.getTotalAllocatedDescriptorSets(); }
 
     /**
      * 获取当前注册的 Pass 数量
@@ -1825,7 +1360,7 @@ public class FrameGraphOptimizer implements AutoCloseable {
         report.append("[Descriptor Set Cache]\n");
         report.append(String.format(
                 "  Size: %d/%d | Hit Rate: %.1f%% | Allocated: %d\n",
-                getDescriptorSetCacheSize(), MAX_DESCRIPTOR_SETS,
+                getDescriptorSetCacheSize(), DescriptorSetManager.MAX_DESCRIPTOR_SETS,
                 descSetHitRate * 100,
                 getTotalAllocatedDescriptorSets()
         ));
@@ -1836,7 +1371,7 @@ public class FrameGraphOptimizer implements AutoCloseable {
                 "  State Switches (frame): %d\n",
                 getRegisteredPassCount(),
                 getTrackedResourceCount(),
-                topologyDirty ? "YES" : "NO (cached)",
+                dependencyGraphAnalyzer.isTopologyDirty() ? "YES" : "NO (cached)",
                 getMergeCandidateCount(),
                 getStateSwitchCount()
         ));
@@ -1867,227 +1402,8 @@ public class FrameGraphOptimizer implements AutoCloseable {
     }
 
     // ==================== 内部实现方法 ====================
-
-    /**
-     * 构建 Descriptor Set 组合键
-     *
-     * @param textureView   纹理视图句柄
-     * @param sampler       采样器句柄
-     * @param uniformBuffer Uniform Buffer 句柄
-     * @return 组合键
-     */
-    private long buildDescriptorCompositeKey(long textureView, long sampler, long uniformBuffer) {
-        // 使用位运算组合三个值，尽量减少冲突
-        return textureView ^ sampler ^ uniformBuffer;
-    }
-
-    /**
-     * 创建新的 Pipeline
-     * <p>
-     * 这是实际创建逻辑的占位符。
-     * 在集成时需要替换为真正的 Vulkan API 调用。
-     *
-     * @param vkDevice           设备句柄
-     * @param pipelineCacheHandle Pipeline Cache 句柄
-     * @param configHash         配置哈希（用于调试日志）
-     * @return 新创建的 Pipeline 句柄，失败返回 0
-     */
-    private long createNewPipeline(long vkDevice, long pipelineCacheHandle,
-                                   long configHash) {
-        // 创建新的 Vulkan Pipeline
-        // 实际集成时需要根据 configHash 还原管线配置并调用 vkCreateGraphicsPipelines
-        //
-        // 参数说明：
-        // - vkDevice: Vulkan 设备句柄
-        // - pipelineCacheHandle: Pipeline Cache 句柄（用于加速管线创建）
-        // - configHash: 管线配置哈希值（用于日志记录）
-        //
-        // 返回值：新创建的 Pipeline 句柄（非零表示成功），失败返回 0
-
-        LOGGER.warning("createNewPipeline() 未实现：返回 0");
-        return 0L;
-    }
-
-    /**
-     * 分配新的 Descriptor Set
-     * <p>
-     * 这是实际分配逻辑的占位符。
-     * 在集成时需要替换为真正的 Vulkan API 调用。
-     *
-     * @param vkDevice      设备句柄
-     * @param textureView   纹理视图句柄
-     * @param sampler       采样器句柄
-     * @param uniformBuffer Uniform Buffer 句柄
-     * @return 新分配的 Descriptor Set 句柄，失败返回 0
-     */
-    private long allocateNewDescriptorSet(long vkDevice,
-                                          long textureView, long sampler,
-                                          long uniformBuffer) {
-        // 分配新的 Vulkan Descriptor Set
-        // 实际集成时需要调用 vkAllocateDescriptorSets 和 vkUpdateDescriptorSets
-        //
-        // 参数说明：
-        // - vkDevice: Vulkan 设备句柄
-        // - textureView: 纹理视图句柄
-        // - sampler: 采样器句柄
-        // - uniformBuffer: Uniform Buffer 句柄
-        //
-        // 返回值：新分配的 Descriptor Set 句柄（非零表示成功），失败返回 0
-
-        LOGGER.warning("allocateNewDescriptorSet() 未实现：返回 0");
-        return 0L;
-    }
-
-    // ==================== 缓存管理方法 ====================
-
-    /**
-     * 淘汰最老的 Pipeline 缓存条目（LRU 策略）
-     * <p>
-     * 当缓存达到上限时调用。
-     */
-    private void evictOldestPipelines() {
-        if (pipelineCache.isEmpty()) return;
-
-        long oldestFrame = Long.MAX_VALUE;
-        Long oldestKey = null;
-
-        // 找到最老的条目
-        for (var entry : pipelineCache.entrySet()) {
-            if (entry.getValue().lastUsedFrame.get() < oldestFrame) {
-                oldestFrame = entry.getValue().lastUsedFrame.get();
-                oldestKey = entry.getKey();
-            }
-        }
-
-        // 淘汰最老的条目
-        if (oldestKey != null) {
-            CachedPipeline evicted = pipelineCache.remove(oldestKey);
-            if (evicted != null) {
-                // 销毁被淘汰的 Pipeline（Vulkan 资源清理）
-                destroyPipelineInternal(evicted.pipeline);
-                LOGGER.fine(String.format(
-                        "Evicted oldest pipeline: last_used_frame=%d, current_cache_size=%d",
-                        evicted.lastUsedFrame.get(), pipelineCache.size()
-                ));
-            }
-        }
-    }
-
-    /**
-     * 淘汰超过帧阈值的旧 Pipeline 条目
-     *
-     * @param thresholdFrame 帧阈值
-     */
-    private void evictOldPipelines(long thresholdFrame) {
-        if (pipelineCache.isEmpty()) return;
-
-        int evictedCount = 0;
-
-        var iterator = pipelineCache.entrySet().iterator();
-        while (iterator.hasNext()) {
-            var entry = iterator.next();
-            if (entry.getValue().lastUsedFrame.get() < thresholdFrame) {
-                // 销毁超过阈值的旧 Pipeline（Vulkan 资源清理）
-                destroyPipelineInternal(entry.getValue().pipeline);
-                iterator.remove();
-                evictedCount++;
-            }
-        }
-
-        if (evictedCount > 0) {
-            LOGGER.fine(String.format(
-                    "Evicted %d old pipelines (threshold_frame=%d), remaining=%d",
-                    evictedCount, thresholdFrame, pipelineCache.size()
-            ));
-        }
-    }
-
-    /**
-     * 清空所有缓存的 Pipeline
-     */
-    private void evictAllCachedPipelines() {
-        if (pipelineCache.isEmpty()) return;
-
-        int count = 0;
-        for (CachedPipeline cached : pipelineCache.values()) {
-            // 销毁所有缓存的 Pipeline（Vulkan 资源清理）
-            destroyPipelineInternal(cached.pipeline);
-            count++;
-        }
-
-        LOGGER.info(String.format(
-                "Evicted all %d cached pipelines", count
-        ));
-    }
-
-    /**
-     * 淘汰最老的 Descriptor Set 缓存条目（LRU 策略）
-     * <p>
-     * 当缓存达到上限时调用。
-     */
-    private void evictOldestDescriptorSets() {
-        if (descriptorSetCache.isEmpty()) return;
-
-        // Descriptor Set 是每帧重置的，所以直接清空即可
-        // 这里保留接口以备将来扩展
-        descriptorSetCache.clear();
-
-        LOGGER.fine("Evicted all descriptor sets (pool reset)");
-    }
-
-    /**
-     * 清空所有缓存的 Descriptor Set
-     */
-    private void evictAllCachedDescriptorSets() {
-        if (descriptorSetCache.isEmpty()) return;
-
-        int count = descriptorSetCache.size();
-        descriptorSetCache.clear();
-
-        LOGGER.info(String.format(
-                "Evicted all %d cached descriptor sets", count
-        ));
-    }
-
-    // ==================== Vulkan 资源管理内部方法 ====================
-
-    /**
-     * 销毁 Pipeline（内部方法）
-     * <p>
-     * 封装 vkDestroyPipeline 调用，用于统一管理 Pipeline 资源销毁。
-     *
-     * @param pipeline 需要销毁的 Pipeline 句柄
-     */
-    private void destroyPipelineInternal(long pipeline) {
-        if (pipeline == 0) return;
-        // 实际集成时调用：vkDestroyPipeline(vkDevice, pipeline, null)
-        // 当前为存根实现，仅记录日志
-        LOGGER.finer(String.format("Destroying pipeline: 0x%X", pipeline));
-    }
-
-    /**
-     * 销毁 Descriptor Pool（内部方法）
-     * <p>
-     * 封装 vkDestroyDescriptorPool 调用，用于在优化器关闭时清理资源。
-     */
-    private void destroyDescriptorPoolInternal() {
-        if (descriptorPool == 0) return;
-        // 实际集成时调用：vkDestroyDescriptorPool(vkDevice, descriptorPool, null)
-        // 当前为存根实现，仅记录日志
-        LOGGER.finer(String.format("Destroying descriptor pool: 0x%X", descriptorPool));
-    }
-
-    /**
-     * 重置 Descriptor Pool（内部方法）
-     * <p>
-     * 封装 vkResetDescriptorPool 调用，每帧开始时重置以复用资源。
-     */
-    private void resetDescriptorPoolInternal() {
-        if (descriptorPool == 0) return;
-        // 实际集成时调用：vkResetDescriptorPool(vkDevice, descriptorPool, 0)
-        // 当前为存根实现，仅记录日志
-        LOGGER.finer("Resetting descriptor pool for frame reuse");
-    }
+    // Descriptor Set 管理已提取到 DescriptorSetManager.java
+    // Pipeline 缓存管理已提取到 PipelineCacheManager.java
 
     // ==================== 统计和监控内部方法 ====================
 

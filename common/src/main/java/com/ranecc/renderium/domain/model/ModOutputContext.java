@@ -2,13 +2,11 @@
 // 模组输出上下文类 - 封装模组渲染输出的信息
 
 package com.ranecc.renderium.domain.model;
-import com.ranecc.renderium.feature.intercept.handler.ModOutputHandler;
 
 /**
  * 模组输出上下文
  * <p>
- * 封装第三方模组（如 Sodium、Iris、Oculus）的渲染输出信息，
- * 作为 {@link ModOutputHandler#handleOutput(ModOutputContext)} 的输入参数。
+ * 封装第三方模组（如 Sodium、Iris、Oculus）的渲染输出信息。
  *
  * <h3>包含的信息：</h3>
  * <ul>
@@ -18,8 +16,6 @@ import com.ranecc.renderium.feature.intercept.handler.ModOutputHandler;
  *   <li>模组类型标识</li>
  * </ul>
  *
- * @see ModOutputHandler
- * @see PreBlaze3DInterceptor#registerModHandler(String, ModOutputHandler)
  * @since 5.1.0
  */
 public final class ModOutputContext {

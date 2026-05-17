@@ -4,7 +4,6 @@
 package com.ranecc.renderium.domain.model;
 
 import java.util.Objects;
-import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
 
 /**
  * 渲染上下文
@@ -40,7 +39,6 @@ import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
  * 应通过 {@link Builder} 创建新实例。
  *
  * @see PreBlaze3DInterceptor#intercept(RenderContext)
- * @see InterceptionResult
  * @since 5.1.0
  */
 public final class RenderContext {
