@@ -216,16 +216,22 @@ public final class LodCullingComputePass {
     // ==================== Vulkan 句柄缓存 ====================
 
     /** VkDevice 句柄 */
-    static volatile long vkDevice = 0L;
+    private static volatile long vkDevice = 0L;
 
     /** 计算队列句柄 */
     private static volatile long computeQueue = 0L;
 
     /** 命令池句柄 */
-    static volatile long commandPool = 0L;
+    private static volatile long commandPool = 0L;
 
     /** 同步栅栏句柄 */
-    static volatile long fence = 0L;
+    private static volatile long fence = 0L;
+
+    static long getVkDevice() { return vkDevice; }
+    static long getCommandPool() { return commandPool; }
+    static long getFence() { return fence; }
+    static void setCommandPool(long v) { commandPool = v; }
+    static void setFence(long v) { fence = v; }
 
     // ==================== Pipeline 缓存（首次创建后复用）====================
 

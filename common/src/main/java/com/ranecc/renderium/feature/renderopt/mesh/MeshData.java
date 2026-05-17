@@ -1,10 +1,7 @@
 // Renderium - 网格数据容器
 // 存储构建完成的区块网格数据，供渲染器上传到 GPU
 
-package com.ranecc.renderium.domain.model;
-
-import com.ranecc.renderium.feature.renderopt.mesh.ChunkMeshBuilder;
-import com.ranecc.renderium.feature.renderopt.mesh.CompactVertexFormat;
+package com.ranecc.renderium.feature.renderopt.mesh;
 
 /**
  * 网格数据容器。

@@ -1,9 +1,7 @@
 // Renderium - 网格构建结果
 // 多线程网格构建的输出，包含构建完成的 MeshData 和性能指标
 
-package com.ranecc.renderium.domain.model;
-
-import com.ranecc.renderium.feature.renderopt.mesh.MeshBuildTask;
+package com.ranecc.renderium.feature.renderopt.mesh;
 
 /**
  * 网格构建结果。

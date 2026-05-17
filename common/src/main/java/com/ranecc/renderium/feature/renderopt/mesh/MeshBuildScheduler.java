@@ -5,8 +5,8 @@
 package com.ranecc.renderium.feature.renderopt.mesh;
 
 import com.ranecc.renderium.None;
-import com.ranecc.renderium.domain.model.MeshBuildResult;
-import com.ranecc.renderium.domain.model.MeshData;
+import com.ranecc.renderium.feature.renderopt.mesh.MeshBuildResult;
+import com.ranecc.renderium.feature.renderopt.mesh.MeshData;
 import com.ranecc.renderium.domain.constant.ConfigConstants;
 
 import java.util.ArrayList;

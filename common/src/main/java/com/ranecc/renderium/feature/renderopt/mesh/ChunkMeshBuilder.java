@@ -6,7 +6,7 @@ package com.ranecc.renderium.feature.renderopt.mesh;
 import com.ranecc.renderium.feature.culling.optimization.NeighborFaceCuller;
 
 import com.ranecc.renderium.None;
-import com.ranecc.renderium.domain.model.MeshData;
+import com.ranecc.renderium.feature.renderopt.mesh.MeshData;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;

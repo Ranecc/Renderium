@@ -352,7 +352,7 @@ public final class HiZComputePipeline {
             int result = VK_SUCCESS;
             try {
                 result = (int) vkCreateShaderModule.invokeExact(
-                        LodCullingComputePass.vkDevice,         // device
+                        LodCullingComputePass.getVkDevice(),         // device
                         createInfo.address(),                   // pCreateInfo
                         0L,                                     // pAllocator (null)
                         shaderModuleOut.address()               // pShaderModule (output)
@@ -450,7 +450,7 @@ public final class HiZComputePipeline {
             int hizResult = VK_SUCCESS;
             try {
                 hizResult = (int) vkCreateDescriptorSetLayout.invokeExact(
-                        LodCullingComputePass.vkDevice,       // device
+                        LodCullingComputePass.getVkDevice(),       // device
                         hizCreateInfo.address(),              // pCreateInfo
                         0L,                                   // pAllocator = null
                         hizLayoutOut.address()                // pSetLayout (output)
@@ -519,7 +519,7 @@ public final class HiZComputePipeline {
             int occResult = VK_SUCCESS;
             try {
                 occResult = (int) vkCreateDescriptorSetLayout.invokeExact(
-                        LodCullingComputePass.vkDevice,       // device
+                        LodCullingComputePass.getVkDevice(),        // device
                         occCreateInfo.address(),              // pCreateInfo
                         0L,                                   // pAllocator = null
                         occLayoutOut.address()                // pSetLayout (output)
@@ -610,7 +610,7 @@ public final class HiZComputePipeline {
             int result = VK_SUCCESS;
             try {
                 result = (int) vkCreatePipelineLayout.invokeExact(
-                        LodCullingComputePass.vkDevice,        // device
+                        LodCullingComputePass.getVkDevice(),        // device
                         layoutCreateInfo.address(),            // pCreateInfo
                         0L,                                    // pAllocator = null
                         layoutOut.address()                     // pPipelineLayout (output)
@@ -723,7 +723,7 @@ public final class HiZComputePipeline {
             int result = VK_SUCCESS;
             try {
                 result = (int) vkCreateComputePipelines.invokeExact(
-                        LodCullingComputePass.vkDevice,            // device
+                        LodCullingComputePass.getVkDevice(),            // device
                         0L,                                        // pipelineCache = VK_NULL_HANDLE (不使用缓存)
                         2,                                         // createInfoCount = 2 (同时创建两个 Pipeline)
                         createInfos.address(),                     // pCreateInfos
@@ -804,7 +804,7 @@ public final class HiZComputePipeline {
                 int poolResult = VK_SUCCESS;
                 try {
                     poolResult = (int) vkCreateCommandPool.invokeExact(
-                            LodCullingComputePass.vkDevice,        // device
+                            LodCullingComputePass.getVkDevice(),        // device
                             poolCreateInfo.address(),              // pCreateInfo
                             0L,                                    // pAllocator = null
                             commandPoolOut.address()                // pCommandPool (output)
@@ -818,9 +818,9 @@ public final class HiZComputePipeline {
                     throw new RuntimeException("vkCreateCommandPool 失败: VkResult=" + poolResult);
                 }
 
-                LodCullingComputePass.commandPool = commandPoolOut.get(ValueLayout.JAVA_LONG, 0);
+                LodCullingComputePass.setCommandPool(commandPoolOut.get(ValueLayout.JAVA_LONG, 0));
                 LOGGER.fine("[HiZPipeline] ✓ Command Pool 创建成功 | handle=0x" +
-                        Long.toHexString(LodCullingComputePass.commandPool) +
+                        Long.toHexString(LodCullingComputePass.getCommandPool()) +
                         " (queueFamily=" + computeQueueFamilyIndex + ")");
             }
 
@@ -844,7 +844,7 @@ public final class HiZComputePipeline {
                 int fenceResult = VK_SUCCESS;
                 try {
                     fenceResult = (int) vkCreateFence.invokeExact(
-                            LodCullingComputePass.vkDevice,       // device
+                            LodCullingComputePass.getVkDevice(),       // device
                             fenceCreateInfo.address(),            // pCreateInfo
                             0L,                                   // pAllocator = null
                             fenceOut.address()                     // pFence (output)
@@ -858,14 +858,14 @@ public final class HiZComputePipeline {
                     throw new RuntimeException("vkCreateFence 失败: VkResult=" + fenceResult);
                 }
 
-                LodCullingComputePass.fence = fenceOut.get(ValueLayout.JAVA_LONG, 0);
+                LodCullingComputePass.setFence(fenceOut.get(ValueLayout.JAVA_LONG, 0));
                 LOGGER.fine("[HiZPipeline] ✓ Fence 创建成功 | handle=0x" +
-                        Long.toHexString(LodCullingComputePass.fence));
+                        Long.toHexString(LodCullingComputePass.getFence()));
             }
 
             LOGGER.info(String.format("[HiZPipeline] ✓ 同步对象创建成功 | CommandPool=0x%s, Fence=0x%s",
-                    Long.toHexString(LodCullingComputePass.commandPool),
-                    Long.toHexString(LodCullingComputePass.fence)));
+                    Long.toHexString(LodCullingComputePass.getCommandPool()),
+                    Long.toHexString(LodCullingComputePass.getFence())));
         }
     }
 
@@ -892,7 +892,7 @@ public final class HiZComputePipeline {
             return 0L;
         }
 
-        if (LodCullingComputePass.commandPool == 0L) {
+        if (LodCullingComputePass.getCommandPool() == 0L) {
             LOGGER.severe("[HiZPipeline] CommandPool 无效（0x0），请确保初始化已完成");
             return 0L;
         }
@@ -909,7 +909,7 @@ public final class HiZComputePipeline {
             MemorySegment allocInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
             allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 44L);          // sType = COMMAND_BUFFER_ALLOCATE_INFO
             allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);           // pNext = null
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, LodCullingComputePass.commandPool);   // commandPool
+            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, LodCullingComputePass.getCommandPool());   // commandPool
             allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L);           // level = PRIMARY (0)
             allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 1L);           // commandBufferCount = 1
 
