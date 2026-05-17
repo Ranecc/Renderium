@@ -9,6 +9,7 @@ import com.ranecc.renderium.feature.blaze3d.MemoryOptimizer;
 import com.ranecc.renderium.feature.blaze3d.ShaderPipelineOptimizer;
 import com.ranecc.renderium.feature.blaze3d.VulkanCommandOptimizer;
 import com.ranecc.renderium.feature.blaze3d.FrameGraphOptimizer;
+import com.ranecc.renderium.platform.bridge.mc.VulkanCommandBatcher;
 import com.ranecc.renderium.tech.streamline.StreamlineSharedMemoryManager;
 import com.ranecc.renderium.feature.renderopt.MultiLevelCuller;
 import com.ranecc.renderium.feature.renderopt.ObjectPoolManager;
@@ -73,14 +74,31 @@ public final class OptimizerRegistry {
 
     // ==================== Command Optimization ====================
 
+    /** @deprecated 由 commandBatcher 替代 */
+    @Deprecated
     private static volatile VulkanCommandOptimizer commandOptimizer;
 
+    /** s7 原生命令批处理器 */
+    private static volatile VulkanCommandBatcher commandBatcher;
+
+    /** @deprecated 由 getCommandBatcher() 替代 */
+    @Deprecated
     public static VulkanCommandOptimizer getCommandOptimizer() {
         return commandOptimizer;
     }
 
+    /** @deprecated 由 setCommandBatcher() 替代 */
+    @Deprecated
     public static void setCommandOptimizer(VulkanCommandOptimizer optimizer) {
         commandOptimizer = optimizer;
+    }
+
+    public static VulkanCommandBatcher getCommandBatcher() {
+        return commandBatcher;
+    }
+
+    public static void setCommandBatcher(VulkanCommandBatcher batcher) {
+        commandBatcher = batcher;
     }
 
     // ==================== FrameGraph Optimization ====================
@@ -141,7 +159,7 @@ public final class OptimizerRegistry {
     public static boolean isFullyInitialized() {
         return memoryOptimizer != null
             && pipelineOptimizer != null
-            && commandOptimizer != null
+            && commandBatcher != null
             && frameGraphOptimizer != null;
     }
 
@@ -155,7 +173,7 @@ public final class OptimizerRegistry {
             "Memory[%s] Pipeline[%s] Command[%s] FrameGraph[%s] Streamline[%s] Culling[%s] Pool[%s]",
             memoryOptimizer != null ? "✓" : "✗",
             pipelineOptimizer != null ? "✓" : "✗",
-            commandOptimizer != null ? "✓" : "✗",
+            commandBatcher != null ? "✓" : "✗",
             frameGraphOptimizer != null ? "✓" : "✗",
             streamlineManager != null ? "✓" : "✗",
             multiLevelCuller != null ? "✓" : "✗",

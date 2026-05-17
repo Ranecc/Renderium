@@ -1,5 +1,6 @@
 package com.ranecc.renderium.platform.mixin;
 
+import com.mojang.blaze3d.GpuDeviceLossException;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
@@ -156,6 +157,9 @@ public abstract class MixinRenderSystem {
                 ));
             }
 
+        } catch (GpuDeviceLossException e) {
+            LOGGER.log(Level.SEVERE, "Renderium: Vulkan 设备丢失，跳过 Renderium Vulkan 初始化", e);
+            VulkanDeviceHolder.getInstance().markDeviceLost();
         } catch (Exception e) {
             // 记录严重错误但不崩溃游戏
             LOGGER.log(Level.SEVERE, "Renderium: VulkanDevice 句柄提取失败", e);

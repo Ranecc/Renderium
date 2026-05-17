@@ -9,6 +9,7 @@ import com.ranecc.renderium.feature.module.ModuleContext;
 import com.ranecc.renderium.feature.module.ModuleMetadata;
 import com.ranecc.renderium.feature.module.ModuleCategory;
 import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
+import com.ranecc.renderium.platform.bridge.mc.VulkanCommandBatcher;
 
 import com.ranecc.renderium.feature.blaze3d.VersionAdapter;
 import com.ranecc.renderium.feature.blaze3d.MethodSignature;
@@ -124,8 +125,12 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
     /** 帧图优化器 */
     private volatile FrameGraphOptimizer frameGraphOptimizer;
 
-    /** Vulkan 命令优化器 */
+    /** Vulkan 命令优化器（已废弃，由 VulkanCommandBatcher 替代） */
+    @SuppressWarnings("deprecation")
     private volatile VulkanCommandOptimizer vulkanCommandOptimizer;
+
+    /** s7 原生命令批处理器 */
+    private volatile VulkanCommandBatcher vulkanCommandBatcher;
 
     /** 内存优化器 */
     private volatile MemoryOptimizer memoryOptimizer;
@@ -415,6 +420,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public boolean initialize(ModuleContext context) {
         LOGGER.info("╔══════════════════════════════════════╗");
         LOGGER.info("║  初始化 Blaze3D 优化模块              ║");
@@ -427,6 +433,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
             // 初始化各优化器子组件
             this.frameGraphOptimizer = new FrameGraphOptimizer(config);
             this.vulkanCommandOptimizer = new VulkanCommandOptimizer(config);
+            this.vulkanCommandBatcher = new VulkanCommandBatcher();
             this.memoryOptimizer = new MemoryOptimizer(config);
             this.shaderPipelineOptimizer = new ShaderPipelineOptimizer(config);
 
@@ -450,8 +457,12 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
             // 启用所有优化器子组件
             frameGraphOptimizer.enable();
             vulkanCommandOptimizer.enable();
+            vulkanCommandBatcher.enable();
             memoryOptimizer.enable();
             shaderPipelineOptimizer.enable();
+
+            // 注册 s7 原生批处理器到渲染桥接器
+            MCRenderBridge.setCommandBatcher(vulkanCommandBatcher);
 
             // ========== Mixin 注册：向各 Mixin 类注入优化器实例引用 ==========
             //
@@ -538,7 +549,13 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
     /**
      * 获取 Vulkan 命令优化器
      */
+    @SuppressWarnings("deprecation")
     public VulkanCommandOptimizer getVulkanCommandOptimizer() { return vulkanCommandOptimizer; }
+
+    /**
+     * 获取 s7 原生命令批处理器
+     */
+    public VulkanCommandBatcher getVulkanCommandBatcher() { return vulkanCommandBatcher; }
 
     /**
      * 获取内存优化器

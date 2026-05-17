@@ -1,5 +1,6 @@
 package com.ranecc.renderium.platform.mixin;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.platform.hook.HookDispatcher;
 import com.mojang.blaze3d.systems.GpuDevice;
 import org.spongepowered.asm.mixin.Mixin;
@@ -34,6 +35,8 @@ public abstract class MixinGpuDevice {
      */
     @Inject(method = "createBuffer", at = @At("HEAD"))
     private void onBufferCreate(CallbackInfo ci) {
-        HookDispatcher.dispatchGpuDeviceBuffer();
+        if (VulkanDeviceHolder.isAvailable()) {
+            HookDispatcher.dispatchGpuDeviceBuffer();
+        }
     }
 }
