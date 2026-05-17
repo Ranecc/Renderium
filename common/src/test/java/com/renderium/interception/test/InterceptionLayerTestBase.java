@@ -10,7 +10,6 @@ import com.ranecc.renderium.feature.intercept.base.InterceptionCallback;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
 import com.ranecc.renderium.domain.model.FrameCaptureContext;
-import com.ranecc.renderium.feature.culling.core.CullingContext;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
 
 import com.renderium.interception.base.InterceptionCallback;
@@ -68,7 +67,6 @@ import java.util.logging.*;
  * @author Renderium Team
  * @since 5.6.0 (Phase 6)
  */
-"拦截层测试基类"
 @DisplayName("拦截层测试基类")
 public abstract class InterceptionLayerTestBase {
 
@@ -127,7 +125,6 @@ public abstract class InterceptionLayerTestBase {
     void baseSetUp() {
         // 初始化日志捕获器
         logHandler = new TestLogHandler();
-"com.renderium"
         Logger rootLogger = Logger.getLogger("com.renderium");
         rootLogger.addHandler(logHandler);
         rootLogger.setLevel(Level.FINEST);
@@ -138,7 +135,6 @@ public abstract class InterceptionLayerTestBase {
         // 记录测试开始时间
         testStartTime = Instant.now();
 
-"--- 测试初始化完成 [%s] ---"
         LOGGER.info(String.format("--- 测试初始化完成 [%s] ---",
                 this.getClass().getSimpleName()));
     }
@@ -151,13 +147,11 @@ public abstract class InterceptionLayerTestBase {
     @AfterEach
     void baseTearDown() {
         // 移除日志处理器
-"com.renderium"
         Logger rootLogger = Logger.getLogger("com.renderium");
         rootLogger.removeHandler(logHandler);
 
         // 输出测试摘要
         Duration testDuration = Duration.between(testStartTime, Instant.now());
-"--- 测试清理完成 [耗时: %dms] ---"
         LOGGER.info(String.format("--- 测试清理完成 [耗时: %dms] ---",
                 testDuration.toMillis()));
     }
@@ -181,9 +175,7 @@ public abstract class InterceptionLayerTestBase {
                 .resolution(TEST_WIDTH, TEST_HEIGHT)
                 .frameIndex(frameIndex)
                 .deltaTime(1.0f / (float) TARGET_FPS)
-"COMPATIBILITY"
                 .modeName("COMPATIBILITY")
-"sodium"
                 .loadedMods(new String[]{"sodium"})
                 .build();
     }
@@ -205,7 +197,6 @@ public abstract class InterceptionLayerTestBase {
                 .resolution(TEST_WIDTH, TEST_HEIGHT)
                 .frameIndex(frameIndex)
                 .deltaTime(1.0f / (float) TARGET_FPS)
-"AGGRESSIVE"
                 .modeName("AGGRESSIVE")
                 .build();
     }
@@ -276,9 +267,6 @@ public abstract class InterceptionLayerTestBase {
     /**
      * 创建标准的测试用 SuperResolutionContext
      *
-"QUALITY"
-"BALANCED"
-"PERFORMANCE"
      * @param qualityPreset 质量预设（如 "QUALITY", "BALANCED", "PERFORMANCE"）
      * @return 配置好的 SuperResolutionContext 实例
      */
@@ -558,7 +546,6 @@ public abstract class InterceptionLayerTestBase {
             List<String> messages = new java.util.ArrayList<>();
             for (LogRecord record : records) {
                 if (record.getLevel().intValue() >= level.intValue()) {
-"[%s] %s"
                     messages.add(String.format("[%s] %s",
                             record.getLevel().getName(),
                             record.getMessage()));
@@ -653,38 +640,25 @@ public abstract class InterceptionLayerTestBase {
              */
             public static String generateMarkdownSummary(TestSuiteSummary summary) {
                 StringBuilder sb = new StringBuilder();
-"# %s 测试报告%n"
                 sb.append(String.format("# %s 测试报告%n", summary.suiteName()));
-"- **总测试数**: %d%n"
                 sb.append(String.format("- **总测试数**: %d%n", summary.totalTests()));
-"- **通过**: %d | **失败**: %d | **跳过**: %d%n"
                 sb.append(String.format("- **通过**: %d | **失败**: %d | **跳过**: %d%n",
                         summary.passedCount(), summary.failedCount(), summary.skippedCount()));
-"- **总耗时**: %dms%n"
                 sb.append(String.format("- **总耗时**: %dms%n", summary.totalDuration().toMillis()));
-"%n## 详细结果%n%n"
                 sb.append("%n## 详细结果%n%n");
                 for (TestResult result : summary.results()) {
-"PASS"
-"FAIL"
                     String status = result.passed() ? "PASS" : "FAIL";
-"### [%s] %s%n"
                     sb.append(String.format("### [%s] %s%n", status, result.testName()));
-"- 状态: %s | 耗时: %dms%n"
                     sb.append(String.format("- 状态: %s | 耗时: %dms%n",
                             status, result.duration().toMillis()));
-"- 说明: %s%n"
                     sb.append(String.format("- 说明: %s%n", result.message()));
                     if (!result.metrics().isEmpty()) {
-"- 指标:%n"
                         sb.append("- 指标:%n");
                         for (Map.Entry<String, Object> entry : result.metrics().entrySet()) {
-"  - `%s`: `%s`%n"
                             sb.append(String.format("  - `%s`: `%s`%n",
                                     entry.getKey(), entry.getValue()));
                         }
                     }
-"%n"
                     sb.append("%n");
                 }
                 return sb.toString();
@@ -857,15 +831,10 @@ public abstract class InterceptionLayerTestBase {
              * @return 质量等级字符串
              */
             public static String getQualityGrade(double ssimValue) {
-"优秀"
                 if (ssimValue >= 0.99) return "优秀";
-"良好"
                 if (ssimValue >= 0.95) return "良好";
-"可接受"
                 if (ssimValue >= 0.90) return "可接受";
-"较差"
                 if (ssimValue >= 0.75) return "较差";
-"不可接受"
                 return "不可接受";
             }
         }

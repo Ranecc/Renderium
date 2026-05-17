@@ -8,39 +8,28 @@ package com.renderium.core;
 public class Phase2MinVerification {
 
     public static void main(String[] args) {
-"+--------------------------------------+"
         System.out.println("+--------------------------------------+");
-"=    Renderium Phase 2 Minimal Verification  ="
         System.out.println("=    Renderium Phase 2 Minimal Verification  =");
-"+--------------------------------------+ "
         System.out.println("+--------------------------------------+ ");
 
         boolean allPassed = true;
 
-"▶ [1/2] PrecisionConfig 配置系统"
         System.out.println("▶ [1/2] PrecisionConfig 配置系统");
         try { allPassed &= testPrecisionConfig(); }
-"  ❌ FAIL: "
         catch (Exception e) { System.out.println("  ❌ FAIL: " + e.getMessage()); allPassed = false; }
         System.out.println();
 
-"▶ [2/2] DynamicPrecisionManager 核心决策"
         System.out.println("▶ [2/2] DynamicPrecisionManager 核心决策");
         try { allPassed &= testDynamicPrecisionManager(); }
-"  ❌ FAIL: "
         catch (Exception e) { System.out.println("  ❌ FAIL: " + e.getMessage()); allPassed = false; }
         System.out.println();
 
-"--------------------------------------"
         System.out.println("--------------------------------------");
         if (allPassed) {
-"✅ ALL TESTS PASSED - Phase 2 Core Ready!"
             System.out.println("✅ ALL TESTS PASSED - Phase 2 Core Ready!");
         } else {
-"[WARN]️  SOME TESTS NEED ATTENTION"
             System.out.println("[WARN]️  SOME TESTS NEED ATTENTION");
         }
-"--------------------------------------"
         System.out.println("--------------------------------------");
     }
 
@@ -49,12 +38,10 @@ public class Phase2MinVerification {
 
         // Test 1: DEFAULT_1000FPS 配置
         PrecisionConfig cfg1000 = PrecisionConfig.DEFAULT_1000FPS;
-"1000FPS目标"
         ok &= check("1000FPS目标", cfg1000.getTargetFrameTimeMs() == 0.9f, cfg1000.getTargetFrameTimeMs());
 
         // Test 2: QUALITY_PRIORITY 配置
         PrecisionConfig cfgQuality = PrecisionConfig.QUALITY_PRIORITY;
-"质量优先目标>1ms"
         ok &= check("质量优先目标>1ms", cfgQuality.getTargetFrameTimeMs() > 1.0f,
                    cfgQuality.getTargetFrameTimeMs());
 
@@ -64,25 +51,18 @@ public class Phase2MinVerification {
                 .adjustmentIntervalFrames(30)
                 .enableAutoAdjustment(true)
                 .build();
-"Builder目标=1.5ms"
         ok &= check("Builder目标=1.5ms", custom.getTargetFrameTimeMs() == 1.5f,
                    custom.getTargetFrameTimeMs());
-"调整间隔=30帧"
         ok &= check("调整间隔=30帧", custom.getAdjustmentIntervalFrames() == 30,
                    custom.getAdjustmentIntervalFrames());
-"自动调整启用"
         ok &= check("自动调整启用", custom.isAutoAdjustmentEnabled(),
                    custom.isAutoAdjustmentEnabled());
 
         // Test 4: BALANCED 预设
         PrecisionConfig balanced = PrecisionConfig.BALANCED;
-"BALANCED存在"
-"not null"
         ok &= check("BALANCED存在", balanced != null, "not null");
-"BALANCED目标~16ms(60FPS)"
         ok &= check("BALANCED目标~16ms(60FPS)", 
                    Math.abs(balanced.getTargetFrameTimeMs() - 16.666f) < 1.0f,
-"ms"
                    balanced.getTargetFrameTimeMs() + "ms");
 
         return ok;
@@ -94,7 +74,6 @@ public class Phase2MinVerification {
 
         // Test 1: 初始状态应该是 FP16_MEDIUM
         DynamicPrecisionManager.PrecisionLevel initial = mgr.getCurrentLevel();
-"初始=FP16_MEDIUM"
         ok &= check("初始=FP16_MEDIUM", 
                    initial == DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM, 
                    initial);
@@ -102,7 +81,6 @@ public class Phase2MinVerification {
         // Test 2: 热路径应该返回快速精度
         DynamicPrecisionManager.PrecisionLevel hot = mgr.decidePrecision(
             DynamicPrecisionManager.OperationCategory.HOT_PATH_PER_PIXEL);
-"热路径vINT8_FAST"
         ok &= check("热路径vINT8_FAST", 
                    hot == DynamicPrecisionManager.PrecisionLevel.INT8_FAST, 
                    hot);
@@ -110,7 +88,6 @@ public class Phase2MinVerification {
         // Test 3: 离线分析应该返回 KAHAN
         DynamicPrecisionManager.PrecisionLevel offline = mgr.decidePrecision(
             DynamicPrecisionManager.OperationCategory.OFFLINE_ANALYSIS);
-"离线vKAHAN"
         ok &= check("离线vKAHAN", 
                    offline == DynamicPrecisionManager.PrecisionLevel.KAHAN_PRECISE, 
                    offline);
@@ -118,7 +95,6 @@ public class Phase2MinVerification {
         // Test 4: Tile 统计应该返回 FP16
         DynamicPrecisionManager.PrecisionLevel tile = mgr.decidePrecision(
             DynamicPrecisionManager.OperationCategory.TILE_LEVEL_STATS);
-"Tile统计vFP16"
         ok &= check("Tile统计vFP16", 
                    tile == DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM, 
                    tile);
@@ -126,21 +102,18 @@ public class Phase2MinVerification {
         // Test 5: 帧累加应该返回 FP32
         DynamicPrecisionManager.PrecisionLevel frame = mgr.decidePrecision(
             DynamicPrecisionManager.OperationCategory.FRAME_LEVEL_ACCUMULATION);
-"帧累加vFP32"
         ok &= check("帧累加vFP32", 
                    frame == DynamicPrecisionManager.PrecisionLevel.FP32_FULL, 
                    frame);
 
         // Test 6: 强制设置 SKIP
         mgr.forcePrecision(DynamicPrecisionManager.PrecisionLevel.SKIP);
-"强制SKIP"
         ok &= check("强制SKIP", 
                    mgr.getCurrentLevel() == DynamicPrecisionManager.PrecisionLevel.SKIP,
                    mgr.getCurrentLevel());
 
         // Test 7: 重置后应该回到自适应模式
         mgr.resetToAdaptive();
-"重置后=FP16"
         ok &= check("重置后=FP16", 
                    mgr.getCurrentLevel() == DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM,
                    mgr.getCurrentLevel());
@@ -150,8 +123,6 @@ public class Phase2MinVerification {
             mgr.updateFrameTime(0.3f);  // 模拟 0.3ms (远低于 0.9ms 目标)
         }
         float avgFast = mgr.getAverageFrameTime();
-"快速帧平均~0.3ms"
-"ms"
         ok &= check("快速帧平均~0.3ms", Math.abs(avgFast - 0.3f) < 0.05f, avgFast + "ms");
 
         // Test 9: 模拟慢速帧更新（应该降级）
@@ -161,24 +132,15 @@ public class Phase2MinVerification {
         }
         DynamicPrecisionManager.PrecisionLevel afterSlow = slowMgr.getCurrentLevel();
         // 超支后应该降级到更低精度
-"慢速后降级"
         ok &= check("慢速后降级", 
                    afterSlow.ordinal() <= DynamicPrecisionManager.PrecisionLevel.FP16_MEDIUM.ordinal(),
-" (ordinal="
-")"
                    afterSlow + " (ordinal=" + afterSlow.ordinal() + ")");
 
         return ok;
     }
 
     private static boolean check(String name, boolean condition, Object actual) {
-"✅"
-"❌"
         String icon = condition ? "✅" : "❌";
-"  "
-" "
-" ["
-"]"
         System.out.println("  " + icon + " " + name + " [" + actual + "]");
         return condition;
     }

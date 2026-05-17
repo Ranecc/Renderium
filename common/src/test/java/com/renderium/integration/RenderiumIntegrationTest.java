@@ -38,7 +38,6 @@ import java.util.Map;
  * @author Renderium Team
  * @since 1.0.0
  */
-"Renderium 集成测试 (v5)"
 @DisplayName("Renderium 集成测试 (v5)")
 class RenderiumIntegrationTest {
 
@@ -50,7 +49,6 @@ class RenderiumIntegrationTest {
         vulkanBackend = BackendStub.createStub();
         computeCuller = AsyncComputeCuller.getInstance();
 
-"--- 集成测试初始化完成 (v5) ---"
         LOGGER.info("--- 集成测试初始化完成 (v5) ---");
     }
 
@@ -62,63 +60,42 @@ class RenderiumIntegrationTest {
     // ==================== .rgb 格式测试 ====================
 
     @Test
-".rgb 格式 Builder 功能"
     @DisplayName(".rgb 格式 Builder 功能")
     void testRGBFormatBuilder() {
         byte[] rgbData = RenderiumGraphBinary.builder()
                 .addFlag(RenderiumGraphBinary.FLAG_HAS_CUSTOM_SHADERS)
-"exposure"
                 .addParameter("exposure", 1.5f)
-"contrast"
                 .addParameter("contrast", 1.2f)
-"bloom_strength"
                 .addParameter("bloom_strength", 0.8f)
-"async_cull"
                 .addShader("async_cull", new byte[]{0x03, 0x02, 0x23, 0x07})
                 .build();
 
-".rgb 数据不应为 null"
         assertNotNull(rgbData, ".rgb 数据不应为 null");
         assertTrue(rgbData.length > RenderiumGraphBinary.HEADER_SIZE,
-".rgb 数据应大于 Header 大小"
                 ".rgb 数据应大于 Header 大小");
 
         RenderiumGraphBinary parsed = RenderiumGraphBinary.parseFromBytes(rgbData);
-"解析后的 .rgb 不应为 null"
         assertNotNull(parsed, "解析后的 .rgb 不应为 null");
 
-"应包含自定义 Shader"
         assertTrue(parsed.hasCustomShaders(), "应包含自定义 Shader");
-"应有 1 个 Shader"
         assertEquals(1, parsed.getShaderCount(), "应有 1 个 Shader");
 
         Map<String, Float> params = parsed.getParameterTable();
-"参数表不应为 null"
         assertNotNull(params, "参数表不应为 null");
-"应有 3 个参数"
         assertEquals(3, params.size(), "应有 3 个参数");
-"exposure"
         assertEquals(1.5f, params.get("exposure"), 0.001f);
-"contrast"
         assertEquals(1.2f, params.get("contrast"), 0.001f);
-"bloom_strength"
         assertEquals(0.8f, params.get("bloom_strength"), 0.001f);
 
-".rgb 格式创建和解析成功 ("
-" bytes)"
         System.out.println(".rgb 格式创建和解析成功 (" + rgbData.length + " bytes)");
     }
 
     @Test
-".rgb 格式无效数据处理"
     @DisplayName(".rgb 格式无效数据处理")
     void testRGBFormatInvalidData() {
-"Null 数据应返回 null"
         assertNull(RenderiumGraphBinary.parseFromBytes(null), "Null 数据应返回 null");
-"空数组应返回 null"
         assertNull(RenderiumGraphBinary.parseFromBytes(new byte[0]), "空数组应返回 null");
         assertNull(RenderiumGraphBinary.parseFromBytes(new byte[10]),
-"过小的数据应返回 null"
                 "过小的数据应返回 null");
 
         byte[] invalidMagic = new byte[RenderiumGraphBinary.HEADER_SIZE];
@@ -128,24 +105,19 @@ class RenderiumIntegrationTest {
         invalidMagic[3] = (byte) 0xEF;
 
         assertNull(RenderiumGraphBinary.parseFromBytes(invalidMagic),
-"错误 Magic 应返回 null"
                 "错误 Magic 应返回 null");
     }
 
     // ==================== AsyncComputeCuller 测试 ====================
 
     @Test
-"AsyncComputeCuller 初始化"
     @DisplayName("AsyncComputeCuller 初始化")
     void testAsyncComputeCullerInit() {
-"AsyncComputeCuller 实例不应为 null"
         assertNotNull(computeCuller, "AsyncComputeCuller 实例不应为 null");
-"应尚未初始化（需要 Device）"
         assertFalse(computeCuller.isInitialized(), "应尚未初始化（需要 Device）");
     }
 
     @Test
-"AsyncComputeCuller 数据准备"
     @DisplayName("AsyncComputeCuller 数据准备")
     void testAsyncComputeCullerDataPrep() {
         final int SECTION_COUNT = 100;
@@ -173,6 +145,5 @@ class RenderiumIntegrationTest {
     // ==================== 辅助常量和方法 ====================
 
     private static final java.util.logging.Logger LOGGER =
-"Renderium-IntegrationTest-v5"
             java.util.logging.Logger.getLogger("Renderium-IntegrationTest-v5");
 }

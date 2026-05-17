@@ -43,73 +43,58 @@ public class Phase2PerformanceBenchmark {
     private static final long TARGET_UPDATE_THROUGHPUT = 1_000_000L;
 
     public static void main(String[] args) {
-"+------------------------------------------+"
         System.out.println("+------------------------------------------+");
-"=   Renderium Phase 2 Performance Benchmark   ="
         System.out.println("=   Renderium Phase 2 Performance Benchmark   =");
-"+------------------------------------------+ "
         System.out.println("+------------------------------------------+ ");
 
         boolean allPassed = true;
 
         // 测试1: decidePrecision() 延迟
-"▶ [1/4] decidePrecision() 决策延迟"
         System.out.println("▶ [1/4] decidePrecision() 决策延迟");
         try {
             allPassed &= benchmarkDecisionLatency();
         } catch (Exception e) {
-"  ❌ FAIL: "
             System.out.println("  ❌ FAIL: " + e.getMessage());
             allPassed = false;
         }
         System.out.println();
 
         // 测试2: updateFrameTime() 吞吐量
-"▶ [2/4] updateFrameTime() 吞吐量"
         System.out.println("▶ [2/4] updateFrameTime() 吞吐量");
         try {
             allPassed &= benchmarkUpdateThroughput();
         } catch (Exception e) {
-"  ❌ FAIL: "
             System.out.println("  ❌ FAIL: " + e.getMessage());
             allPassed = false;
         }
         System.out.println();
 
         // 测试3: 模拟渲染循环性能
-"▶ [3/4] 模拟渲染循环 (10K frames)"
         System.out.println("▶ [3/4] 模拟渲染循环 (10K frames)");
         try {
             allPassed &= benchmarkSimulatedRenderLoop();
         } catch (Exception e) {
-"  ❌ FAIL: "
             System.out.println("  ❌ FAIL: " + e.getMessage());
             allPassed = false;
         }
         System.out.println();
 
         // 测试4: 内存占用和GC影响
-"▶ [4/4] 内存占用与 GC 影响"
         System.out.println("▶ [4/4] 内存占用与 GC 影响");
         try {
             allPassed &= benchmarkMemoryFootprint();
         } catch (Exception e) {
-"  ❌ FAIL: "
             System.out.println("  ❌ FAIL: " + e.getMessage());
             allPassed = false;
         }
         System.out.println();
 
-"------------------------------------------"
         System.out.println("------------------------------------------");
         if (allPassed) {
-"✅ ALL BENCHMARKS PASSED - Ready for 1000 FPS!"
             System.out.println("✅ ALL BENCHMARKS PASSED - Ready for 1000 FPS!");
         } else {
-"[WARN]️  SOME BENCHMARKS NEED OPTIMIZATION"
             System.out.println("[WARN]️  SOME BENCHMARKS NEED OPTIMIZATION");
         }
-"------------------------------------------"
         System.out.println("------------------------------------------");
     }
 
@@ -154,26 +139,19 @@ public class Phase2PerformanceBenchmark {
         double avgLatencyUs = avgLatencyNs / 1000.0;
 
         boolean passed = avgLatencyUs <= 1.0;
-"✅"
-"❌"
         String icon = passed ? "✅" : "❌";
 
         System.out.println(String.format(
-"  %s 平均延迟: %.3f μs (%.0f ns/call)"
             "  %s 平均延迟: %.3f μs (%.0f ns/call)",
             icon, avgLatencyUs, avgLatencyNs
         ));
         System.out.println(String.format(
-"     最小: %d ns | 最大: %d ns | 总调用: %d"
             "     最小: %d ns | 最大: %d ns | 总调用: %d",
             minLatencyNs, maxLatencyNs, BENCHMARK_ITERATIONS
         ));
         System.out.println(String.format(
-"     目标: < %.0f μs | 达标: %s"
             "     目标: < %.0f μs | 达标: %s",
             TARGET_DECISION_LATENCY_NS / 1000.0,
-"YES ✓"
-"NO ✗"
             passed ? "YES ✓" : "NO ✗"
         ));
 
@@ -208,25 +186,18 @@ public class Phase2PerformanceBenchmark {
         double throughput = BENCHMARK_ITERATIONS / elapsedSeconds;
 
         boolean passed = throughput >= TARGET_UPDATE_THROUGHPUT;
-"✅"
-"❌"
         String icon = passed ? "✅" : "❌";
 
         System.out.println(String.format(
-"  %s 吞吐量: %.2f M calls/s (%.0f calls in %.3fs)"
             "  %s 吞吐量: %.2f M calls/s (%.0f calls in %.3fs)",
             icon, throughput / 1e6, (double)BENCHMARK_ITERATIONS, elapsedSeconds
         ));
         System.out.println(String.format(
-"     单次耗时: %.0f ns | 目标: > %d K calls/s"
             "     单次耗时: %.0f ns | 目标: > %d K calls/s",
             (elapsedSeconds / BENCHMARK_ITERATIONS) * 1e9,
             TARGET_UPDATE_THROUGHPUT / 1000
         ));
         System.out.println(String.format(
-"     达标: %s"
-"YES ✓"
-"NO ✗"
             "     达标: %s", passed ? "YES ✓" : "NO ✗"
         ));
 
@@ -306,34 +277,25 @@ public class Phase2PerformanceBenchmark {
         double effectiveFPS = 1000.0 / effectiveFrameTimeMs;
 
         boolean passed = avgFrameOverheadUs < 100.0;  // 开销 < 100μs
-"✅"
-"❌"
         String icon = passed ? "✅" : "❌";
 
         System.out.println(String.format(
-"  %s 平均帧开销: %.2f μs (%d decisions/frame)"
             "  %s 平均帧开销: %.2f μs (%d decisions/frame)",
             icon, avgFrameOverheadUs, precisionDecisionsPerFrame
         ));
         System.out.println(String.format(
-"     总时间: %.2f ms | 帧数: %d"
             "     总时间: %.2f ms | 帧数: %d",
             totalLoopTimeMs, SIMULATED_FRAMES
         ));
         System.out.println(String.format(
-"     有效 FPS (估算): %.0f | 目标: > 1000"
             "     有效 FPS (估算): %.0f | 目标: > 1000",
             effectiveFPS
         ));
         System.out.println(String.format(
-"     最终精度级别: %s"
             "     最终精度级别: %s",
             mgr.getCurrentLevel().name()
         ));
         System.out.println(String.format(
-"     达标: %s"
-"YES ✓"
-"NO ✗"
             "     达标: %s", passed ? "YES ✓" : "NO ✗"
         ));
 
@@ -387,40 +349,29 @@ public class Phase2PerformanceBenchmark {
 
         // 检查决策日志大小是否受限
         String decisionLog = managers[0].getDecisionLog();
-" "
-").length;
+        int logLineCount = decisionLog.length();
         int expectedMaxLogSize = PrecisionConfig.DEFAULT_1000FPS.getDecisionLogSize();
 
         boolean memoryStable = memoryDeltaMB < 5;  // 增长 < 5MB 视为稳定
         boolean logSizeOK = logLineCount <= expectedMaxLogSize;
         boolean passed = memoryStable && logSizeOK;
-"✅"
-"❌"
         String icon = passed ? "✅" : "❌";
 
         System.out.println(String.format(
-"  %s 内存增长: %d MB (%d v %d)"
             "  %s 内存增长: %d MB (%d v %d)",
             icon, memoryDeltaMB, memoryBeforeMB, memoryAfterMB
         ));
         System.out.println(String.format(
-"     决志日志行数: %d (上限: %d)"
             "     决志日志行数: %d (上限: %d)",
             logLineCount, expectedMaxLogSize
         ));
         System.out.println(String.format(
-"     迭代次数: %d | 管理器实例: %d"
             "     迭代次数: %d | 管理器实例: %d",
             iterations, managers.length
         ));
         System.out.println(String.format(
-"     内存稳定: %s | 日志受限: %s"
             "     内存稳定: %s | 日志受限: %s",
-"YES ✓"
-"NO ✗"
             memoryStable ? "YES ✓" : "NO ✗",
-"YES ✓"
-"NO ✗"
             logSizeOK ? "YES ✓" : "NO ✗"
         ));
 

@@ -269,8 +269,7 @@ class KahanAccumulatorTest {
 
         IllegalArgumentException exception = assertThrows(
             IllegalArgumentException.class,
-            () -> accumulator.add(Float.NaN),
-            "添加 NaN 应抛出 IllegalArgumentException"
+            () -> accumulator.add(Float.NaN)
         );
 
         assertTrue(exception.getMessage().contains("NaN"),

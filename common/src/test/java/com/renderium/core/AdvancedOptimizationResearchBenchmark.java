@@ -186,7 +186,6 @@ public class AdvancedOptimizationResearchBenchmark {
         try {
             // 尝试加载MultiStreamTaskDispatcher（可能在不同的包路径）
             Class<?> dispatcherClass = Class.forName(
-                "com.renderium.gpu.multistream.MultiStreamTaskDispatcher"
             );
 
             // 使用反射调用benchmark
