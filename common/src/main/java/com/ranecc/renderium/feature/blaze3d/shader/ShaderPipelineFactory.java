@@ -312,8 +312,8 @@ public final class ShaderPipelineFactory {
             case FRAGMENT     -> GlslangCompiler.Stage.FRAGMENT;
             case COMPUTE      -> GlslangCompiler.Stage.COMPUTE;
             case GEOMETRY     -> GlslangCompiler.Stage.GEOMETRY;
-            case TESS_CONTROL -> GlslangCompiler.Stage.TESS_CONTROL;
-            case TESS_EVAL    -> GlslangCompiler.Stage.TESS_EVAL;
+            case TESS_CONTROL -> GlslangCompiler.Stage.TESSCONTROL;
+            case TESS_EVAL    -> GlslangCompiler.Stage.TESSEVALUATION;
         };
     }
 

@@ -258,6 +258,15 @@ public final class LodCullingComputePass {
     /** Hi-Z Occlusion Query Descriptor Set Layout 句柄 */
     private static volatile long hizOcclusionDescSetLayout = 0L;
 
+    /** Hi-Z Descriptor Pool 句柄（管理 Build + Occlusion 两个 DescriptorSet） */
+    private static volatile long hizDescriptorPool = 0L;
+
+    /** Hi-Z Build 分配的 Descriptor Set 句柄 */
+    private static volatile long hizBuildDescSet = 0L;
+
+    /** Occlusion Query 分配的 Descriptor Set 句柄 */
+    private static volatile long hizOcclusionDescSet = 0L;
+
     // ==================== LOD Compute Pipeline 资源 ====================
 
     /** LOD Descriptor Set Layout 句柄 (binding: 0=chunkBounds SSBO, 1=config UBO, 2=visibility SSBO) */
@@ -769,6 +778,10 @@ public final class LodCullingComputePass {
                 // 创建 Pipeline Layout
                 createPipelineLayout();
 
+                // 创建 Descriptor Pool + 分配 DescriptorSets
+                createHiZDescriptorPool();
+                allocateHiZDescriptorSets();
+
                 // 创建 Compute Pipelines
                 createComputePipelines();
 
@@ -1278,6 +1291,139 @@ public final class LodCullingComputePass {
 
             LOGGER.info(String.format("[LodCulling] ✓ Pipeline Layout 创建成功 | handle=0x%s (2 DSLs + 128B PushConst)",
                     Long.toHexString(pipelineLayout)));
+        }
+    }
+
+    /**
+     * 创建 Hi-Z Descriptor Pool
+     * <p>
+     * 为 Hi-Z Build 和 Occlusion Query 两个 Descriptor Set 创建共享的 Descriptor Pool。
+     * Pool 包含以下类型的描述符：
+     * <ul>
+     *   <li>combinedImageSampler × 11：depth (1) + hizMipmaps sampler[10] (10)</li>
+     *   <li>storageImage × 10：hizMipmaps storage[10]</li>
+     *   <li>storageBuffer × 2：objects SSBO + visibilityMask SSBO</li>
+     *   <li>uniformBuffer × 2：HiZConfig UBO + OcclusionConfig UBO</li>
+     * </ul>
+     *
+     * 【方法参数】无
+     *
+     * 【返回值】void（副作用：设置 hizDescriptorPool）
+     *
+     * @throws Exception 如果创建失败
+     */
+    private static void createHiZDescriptorPool() throws Exception {
+        MethodHandle vkCreateDescriptorPool = VulkanFFMBinding.getVkCreateDescriptorPool();
+        if (!ffmLoaded || vkCreateDescriptorPool == null) {
+            throw new IllegalStateException("vkCreateDescriptorPool 方法句柄未加载");
+        }
+
+        try (Arena arena = Arena.ofConfined()) {
+            // 4个 poolSize 条目，每条目 [type(int), count(int)] = 8 bytes
+            MemorySegment poolSizes = arena.allocate(ValueLayout.JAVA_INT, 8);
+            // poolSize[0]: COMBINED_IMAGE_SAMPLER × 11
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 1, 11);
+            // poolSize[1]: STORAGE_IMAGE × 10
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 3, 10);
+            // poolSize[2]: STORAGE_BUFFER × 2
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 5, 2);
+            // poolSize[3]: UNIFORM_BUFFER × 2
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 6, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 7, 2);
+
+            // VkDescriptorPoolCreateInfo 结构体：7 个 JAVA_LONG 字段
+            // [0] sType, [1] pNext, [2] flags, [3] maxSets, [4] poolSizeCount, [5] pPoolSizes, [6] padding(对齐)
+            MemorySegment poolInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
+            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 35L);     // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
+            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);      // pNext
+            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);      // flags
+            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 2L);      // maxSets = 2（Build + Occlusion）
+            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 4L);      // poolSizeCount = 4
+            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, poolSizes.address());
+
+            MemorySegment poolOut = arena.allocate(ValueLayout.JAVA_LONG);
+            int result;
+            try {
+                result = (int) vkCreateDescriptorPool.invokeExact(vkDevice, poolInfo.address(), 0L, poolOut.address());
+            } catch (Throwable t) {
+                throw new RuntimeException("vkCreateDescriptorPool 调用异常", t);
+            }
+            if (result != VK_SUCCESS) {
+                throw new RuntimeException("vkCreateDescriptorPool 失败: VkResult=" + result);
+            }
+
+            hizDescriptorPool = poolOut.get(ValueLayout.JAVA_LONG, 0);
+            LOGGER.info("[LodCulling] ✓ Hi-Z Descriptor Pool 创建成功 | handle=0x" + Long.toHexString(hizDescriptorPool));
+        }
+    }
+
+    /**
+     * 分配 Hi-Z Build 和 Occlusion Query 的 Descriptor Sets
+     * <p>
+     * 从已创建的 hizDescriptorPool 中分配两个 Descriptor Set：
+     * <ul>
+     *   <li>hizBuildDescSet — 对应 hizBuildDescSetLayout</li>
+     *   <li>hizOcclusionDescSet — 对应 hizOcclusionDescSetLayout</li>
+     * </ul>
+     *
+     * 【方法参数】无
+     *
+     * 【返回值】void（副作用：设置 hizBuildDescSet 和 hizOcclusionDescSet）
+     *
+     * @throws Exception 如果分配失败
+     */
+    private static void allocateHiZDescriptorSets() throws Exception {
+        MethodHandle vkAllocateDescriptorSets = VulkanFFMBinding.getVkAllocateDescriptorSets();
+        if (!ffmLoaded || vkAllocateDescriptorSets == null) {
+            throw new IllegalStateException("vkAllocateDescriptorSets 方法句柄未加载");
+        }
+
+        try (Arena arena = Arena.ofConfined()) {
+            // ==================== 分配 HiZ Build DescriptorSet ====================
+            // VkDescriptorSetAllocateInfo: [0]sType, [1]pNext, [2]descriptorPool, [3]descriptorSetCount, [4]pSetLayouts
+            MemorySegment buildAllocInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
+            buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 48L);              // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO
+            buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);              // pNext
+            buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, hizDescriptorPool);
+            buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 1L);              // descriptorSetCount = 1
+            buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, hizBuildDescSetLayout);
+
+            MemorySegment dsOut = arena.allocate(ValueLayout.JAVA_LONG);
+            int result;
+            try {
+                result = (int) vkAllocateDescriptorSets.invokeExact(vkDevice, buildAllocInfo.address(), dsOut.address());
+            } catch (Throwable t) {
+                throw new RuntimeException("vkAllocateDescriptorSets(HiZ Build) 调用异常", t);
+            }
+            if (result != VK_SUCCESS) {
+                throw new RuntimeException("vkAllocateDescriptorSets(HiZ Build) 失败: VkResult=" + result);
+            }
+            hizBuildDescSet = dsOut.get(ValueLayout.JAVA_LONG, 0);
+
+            // ==================== 分配 Occlusion Query DescriptorSet ====================
+            MemorySegment occAllocInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
+            occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 48L);
+            occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, hizDescriptorPool);
+            occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 1L);
+            occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, hizOcclusionDescSetLayout);
+
+            MemorySegment occDsOut = arena.allocate(ValueLayout.JAVA_LONG);
+            try {
+                result = (int) vkAllocateDescriptorSets.invokeExact(vkDevice, occAllocInfo.address(), occDsOut.address());
+            } catch (Throwable t) {
+                throw new RuntimeException("vkAllocateDescriptorSets(Occlusion) 调用异常", t);
+            }
+            if (result != VK_SUCCESS) {
+                throw new RuntimeException("vkAllocateDescriptorSets(Occlusion) 失败: VkResult=" + result);
+            }
+            hizOcclusionDescSet = occDsOut.get(ValueLayout.JAVA_LONG, 0);
+
+            LOGGER.info("[LodCulling] ✓ Hi-Z DescriptorSets 分配成功 | Build=0x" + Long.toHexString(hizBuildDescSet)
+                    + ", Occlusion=0x" + Long.toHexString(hizOcclusionDescSet));
         }
     }
 
@@ -1859,15 +2005,19 @@ public final class LodCullingComputePass {
         bindPipeline(cmdBuf, hizBuildPipeline, "HiZ Build");
 
         // Step 2: 绑定 Descriptor Sets（depthBuffer, hizMipmaps, config）
-        // 注意: Descriptor Set 绑定需要预先分配的 Descriptor Pool 和已更新的 Descriptor Set。
-        // 当前阶段跳过绑定，待 Descriptor Pool 实现后补充完整的 vkCmdBindDescriptorSets 调用。
-        // 后续实现时需要:
-        //   1. 创建 VkDescriptorPool (包含所有 binding 的 descriptor 数量)
-        //   2. 从 Pool 分配 VkDescriptorSet (对应 hizBuildDescSetLayout)
-        //   3. 使用 vkUpdateDescriptorSets 写入实际资源句柄
-        //   4. 调用 vkCmdBindDescriptorSets(cmdBuf, COMPUTE, pipelineLayout, 0, 1, &descSet, 0, null)
-        if (VK_CMD_BIND_DESCRIPTOR_SETS != null) {
-            LOGGER.fine("[LodCulling] HiZ Build: DescriptorSet 绑定暂未实现（等待 DescriptorPool）");
+        // 使用预先分配好的 hizBuildDescSet，通过 vkCmdBindDescriptorSets 绑定到 set=0
+        if (hizBuildDescSet != 0L && VK_CMD_BIND_DESCRIPTOR_SETS != null) {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment descSetPtr = arena.allocate(ValueLayout.JAVA_LONG, hizBuildDescSet);
+                VK_CMD_BIND_DESCRIPTOR_SETS.invokeExact(cmdBuf,
+                        VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout,
+                        0, 1, descSetPtr.address(),
+                        0, 0L);
+            } catch (Throwable t) {
+                LOGGER.warning("[LodCulling] HiZ Build: bindDescriptorSets 失败: " + t.getMessage());
+            }
+        } else {
+            LOGGER.fine("[LodCulling] HiZ Build: DescriptorSet 绑定跳过（DS未分配或MH不可用）");
         }
 
         // Step 3: 计算工作组数量（基于屏幕分辨率）
@@ -1904,15 +2054,19 @@ public final class LodCullingComputePass {
         bindPipeline(cmdBuf, hizOcclusionPipeline, "Occlusion Query");
 
         // Step 2: 绑定 Descriptor Sets（objects, hizMipmaps, config, visibilityMask）
-        // 注意: 与 HiZ Build 类似，Descriptor Set 绑定需要完整的 Descriptor Pool 基础设施。
-        // 当前阶段跳过绑定，待 Descriptor Pool 实现后补充。
-        // Occlusion Query 需要绑定的资源:
-        //   - binding 0: objects SSBO (物体 AABB 数据)
-        //   - binding 1: hizMipmaps sampler[10] (Hi-Z 金字塔只读采样)
-        //   - binding 2: config UBO (相机矩阵、屏幕尺寸等配置)
-        //   - binding 3: visibilityMask SSBO (输出可见性掩码，R32UI 格式)
-        if (VK_CMD_BIND_DESCRIPTOR_SETS != null) {
-            LOGGER.fine("[LodCulling] Occlusion Query: DescriptorSet 绑定暂未实现（等待 DescriptorPool）");
+        // 使用预先分配好的 hizOcclusionDescSet，通过 vkCmdBindDescriptorSets 绑定到 set=0
+        if (hizOcclusionDescSet != 0L && VK_CMD_BIND_DESCRIPTOR_SETS != null) {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment descSetPtr = arena.allocate(ValueLayout.JAVA_LONG, hizOcclusionDescSet);
+                VK_CMD_BIND_DESCRIPTOR_SETS.invokeExact(cmdBuf,
+                        VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout,
+                        0, 1, descSetPtr.address(),
+                        0, 0L);
+            } catch (Throwable t) {
+                LOGGER.warning("[LodCulling] Occlusion Query: bindDescriptorSets 失败: " + t.getMessage());
+            }
+        } else {
+            LOGGER.fine("[LodCulling] Occlusion Query: DescriptorSet 绑定跳过（DS未分配或MH不可用）");
         }
 
         // Step 3: 计算工作组数量（基于物体数量）
@@ -2308,6 +2462,21 @@ public final class LodCullingComputePass {
             lodConfigBuffer = 0L;
             chunkBoundsBuffer = 0L;
             visibilityOutputBuffer = 0L;
+
+            // 销毁 Descriptor Pool（自动释放所有分配出的 Descriptor Sets）
+            if (hizDescriptorPool != 0L) {
+                MethodHandle vkDestroyDescriptorPool = VulkanFFMBinding.getVkDestroyDescriptorPool();
+                if (vkDestroyDescriptorPool != null) {
+                    try {
+                        vkDestroyDescriptorPool.invokeExact(vkDevice, hizDescriptorPool, 0L);
+                    } catch (Throwable t) {
+                        // shutdown 期间忽略 Vulkan 清理错误
+                    }
+                }
+                hizDescriptorPool = 0L;
+                hizBuildDescSet = 0L;
+                hizOcclusionDescSet = 0L;
+            }
 
             // 销毁 Command Pool
             if (commandPool != 0L && VK_DESTROY_COMMAND_POOL != null) {

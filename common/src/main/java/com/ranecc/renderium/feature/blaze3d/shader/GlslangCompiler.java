@@ -1,6 +1,3 @@
-// Renderium - Blaze3D Shader 转译模块
-// GLSL → SPIR-V 编译器 - Panama FFM 进程内调用 libglslang
-
 package com.ranecc.renderium.feature.blaze3d.shader;
 
 import java.io.*;
@@ -11,93 +8,44 @@ import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.logging.Logger;
-import java.util.Base64;
 
-/**
- * GLSL → SPIR-V 编译器 (Panama FFM 内嵌 libglslang)。
- *
- * <h2>与 ProcessBuilder 方式的本质区别：</h2>
- * <ul>
- *   <li>旧方式: {@code new ProcessBuilder("glslangValidator.exe")} — 每次 Fork 系统进程 (~50ms/次)</li>
- *   <li>本类: 通过 {@code Linker.nativeLinker()} 直接调用 libglslang C 函数 — 零进程开销 (~2ms/次)</li>
- * </ul>
- *
- * <h2>libglang C API 封装：</h2>
- * <pre>
- * 1. 初始化/销毁:    glslang_initialize_process() / glslang_finalize_process()
- * 2. 创建编译输入:    glslang_input_new() / set_string / set_stage
- * 3. 编译:            glslang_shader_compile()
- * 4. 错误信息:        glslang_shader_get_info_log()
- * 5. 提取 SPIR-V:     glslang_shader_get_spirv() / get_spirv_size()
- * 6. 清理:            glslang_shader_delete() / glslang_input_delete()
- * </pre>
- *
- * <h2>库加载策略：</h2>
- * <ol>
- *   <li>从 classpath 的 {@code natives/{platform}/} 目录提取平台原生库</li>
- *   <li>解压到临时目录</li>
- *   <li>通过 Panama {@code SymbolLookup.libraryLoad()} 加载</li>
- *   <li>缓存 MethodHandle 避免重复查找</li>
- * </ol>
- *
- * <h2>使用示例：</h2>
- * <pre>{@code
- * GlslangCompiler compiler = GlslangCompiler.initialize();
- *
- * byte[] spirv = compiler.compile(
- *     vulkanGLSLSource,           // 经过 GlslToVkTransformer 转换后的源码
- *     GlslangCompiler.Stage.FRAGMENT
- * );
- *
- * // spirv 可直接传给 VulkanFFM.vkCreateShaderModule()
- * long module = VulkanFFM.vkCreateShaderModule(device, spirv);
- * }</pre>
- *
- * @see VulkanFFM#vkCreateShaderModule(long, byte[]) 接收本编译器的输出
- * @see GlslToVkTransformer 产生本编译器的输入
- * @since 3.0.0
- */
 public final class GlslangCompiler {
 
     private static final Logger LOGGER = Logger.getLogger("Renderium-Glslang");
 
-    /** 平台相关的库名称 */
     private static final String LIB_NAME = switch (osType()) {
         case WINDOWS -> "glslang.dll";
         case LINUX   -> "libglslang.so";
         case MACOS   -> "libglslang.dylib";
     };
 
-    /** 库查找器 (Panama SymbolLookup) */
     private volatile SymbolLookup lookup;
-
-    /** 方法句柄缓存 (函数名 → MethodHandle) */
     private final Map<String, MethodHandle> handles = new HashMap<>();
-
-    /** 是否已初始化 */
     private volatile boolean initialized = false;
-
-    /** Arena 用于分配 C 结构体 (confined scope) */
     private volatile Arena cArena;
 
     // ==================== 枚举定义 ====================
 
-    /**
-     * glslang shader stage (对应 C 枚举 EShLanguage)
-     */
     public enum Stage {
         VERTEX(0),
-        FRAGMENT(4),
-        COMPUTE(5),
+        TESSCONTROL(1),
+        TESSEVALUATION(2),
         GEOMETRY(3),
-        TESS_CONTROL(6),
-        TESS_EVAL(7);
+        FRAGMENT(4),
+        COMPUTE(5);
 
         public final int glslangValue;
         Stage(int v) { this.glslangValue = v; }
     }
 
-    /** 操作系统类型 */
+    public enum SourceLanguage {
+        GLSL(0),
+        HLSL(1);
+
+        public final int apiValue;
+        SourceLanguage(int v) { this.apiValue = v; }
+    }
+
     private enum OsType { WINDOWS, LINUX, MACOS }
 
     private static OsType osType() {
@@ -107,368 +55,429 @@ public final class GlslangCompiler {
         return OsType.LINUX;
     }
 
+    // ==================== 常量（glslang_c_interface.h 枚举值） ====================
+
+    private static final int GLSLANG_SOURCE_GLSL = 0;
+    private static final int GLSLANG_SOURCE_HLSL = 1;
+    private static final int GLSLANG_CLIENT_VULKAN = 1;
+    private static final int GLSLANG_TARGET_VULKAN_1_1 = 0x004000;
+    private static final int GLSLANG_TARGET_VULKAN_1_2 = 0x004001;
+    private static final int GLSLANG_TARGET_SPV = 1;
+    private static final int GLSLANG_TARGET_SPV_1_5 = 0x010500;
+    private static final int GLSLANG_NO_PROFILE = 0;
+    private static final int GLSLANG_MSG_DEFAULT_BIT = 0;
+
+    // ==================== Struct 偏移常量（x64） ====================
+
+    private static final int INPUT_LANGUAGE_OFF = 0;
+    private static final int INPUT_STAGE_OFF = 4;
+    private static final int INPUT_CLIENT_OFF = 8;
+    private static final int INPUT_CLIENT_VERSION_OFF = 12;
+    private static final int INPUT_TARGET_LANG_OFF = 16;
+    private static final int INPUT_TARGET_LANG_VERSION_OFF = 20;
+    private static final int INPUT_CODE_OFF = 24;
+    private static final int INPUT_DEFAULT_VERSION_OFF = 32;
+    private static final int INPUT_DEFAULT_PROFILE_OFF = 36;
+    private static final int INPUT_FORCE_DEFAULT_OFF = 40;
+    private static final int INPUT_FORWARD_COMPAT_OFF = 44;
+    private static final int INPUT_MESSAGES_OFF = 48;
+    private static final int INPUT_RESOURCE_OFF = 56;
+    private static final int INPUT_CALLBACKS_OFF = 64;
+    private static final int INPUT_SIZE = 96;
+
+    // glslang_resource_t: ~83 int fields + 9 bools + padding
+    private static final int RESOURCE_FIELD_COUNT = 83;
+    private static final int RESOURCE_SIZE = (RESOURCE_FIELD_COUNT * 4) + 16;
+
     // ==================== 单例 & 生命周期 ====================
 
     private static volatile GlslangCompiler instance;
 
     private GlslangCompiler() {}
 
-    /**
-     * 初始化编译器单例。
-     *
-     * <h3>步骤：</h3>
-     * <ol>
-     *   <li>从 jar 包内的 {@code natives/{platform}/} 提取库文件到临时目录</li>
-     *   <li>通过 Panama {@code SymbolLookup.libraryLoad()} 加载</li>
-     *   <li>解析所有需要的 C 函数句柄</li>
-     *   <li>调用 {@code glslang_initialize_process()}</li>
-     * </ol>
-     *
-     * @return 初始化后的编译器实例
-     * @throws IllegalStateException 如果库文件不存在或加载失败
-     */
     public static synchronized GlslangCompiler initialize() {
         if (instance != null && instance.initialized) {
             return instance;
         }
-
         GlslangCompiler compiler = new GlslangCompiler();
         compiler.doInitialize();
         instance = compiler;
         return instance;
     }
 
-    /**
-     * 获取已初始化的单例实例 (未初始化返回 null)
-     */
     public static GlslangCompiler getInstance() {
         return instance;
     }
 
-    /**
-     * 执行初始化 (内部)
-     */
     private void doInitialize() {
         try {
-            // Step 1: 提取并定位原生库
             Path libPath = extractNativeLibrary();
-
-            // Step 2: 加载库
-            LOGGER.info("正在加载 libglslang: " + libPath);
+            LOGGER.info("Loading libglslang: " + libPath);
             cArena = Arena.ofConfined();
-            // 使用 JDK 21+ Panama FFM 的 SymbolLookup.libraryLookup() 加载原生库
-            // 注意: libraryLookup 在 Arena 关闭时自动释放库句柄
             lookup = SymbolLookup.libraryLookup(libPath.toString(), cArena);
-
-            // Step 3: 解析函数句柄
             resolveAllHandles();
-
-            // Step 4: 初始化 glslang 进程
-            callVoid("glslang_initialize_process");
-
+            int result = (int) callInt("glslang_initialize_process");
+            if (result == 0) {
+                throw new IllegalStateException("glslang_initialize_process returned 0 (failure)");
+            }
             initialized = true;
-            LOGGER.info("✓ libglslang 初始化成功 (Panama FFM, 零进程开销)");
-
+            LOGGER.info("glslang initialized via Panama FFM");
         } catch (Throwable t) {
-            // 修复: catch (Exception) → catch (Throwable)
-            // 原因: callVoid() 等辅助方法声明 throws Throwable (MethodHandle.invokeExact 抛出 Throwable)
-            // Exception 无法捕获 Error 子类（如 OutOfMemoryError、StackOverflowError 等）
-            throw new IllegalStateException(
-                    "无法初始化 libglslang: " + t.getMessage(), t);
+            throw new IllegalStateException("Cannot initialize libglslang: " + t.getMessage(), t);
         }
     }
 
-    /**
-     * 从 classpath 提取原生库到临时目录
-     */
     private Path extractNativeLibrary() throws Exception {
         String resourcePath = "natives/" + LIB_NAME;
-
         InputStream is = getClass().getClassLoader().getResourceAsStream(resourcePath);
         if (is == null) {
-            throw new FileNotFoundException(
-                    "找不到原生库: " + resourcePath +
-                    "\nWindows 需要 glslang.dll\nLinux 需要 libglslang.so\nmacOS 需要 libglslang.dylib"
-            );
+            throw new FileNotFoundException("Native library not found: " + resourcePath
+                + "\nWindows: glslang.dll\nLinux: libglslang.so\nmacOS: libglslang.dylib");
         }
-
         Path tempDir = Paths.get(System.getProperty("java.io.tmpdir"), "renderium-glslang");
         Files.createDirectories(tempDir);
         Path targetPath = tempDir.resolve(LIB_NAME);
-
         if (!Files.exists(targetPath)) {
             Files.copy(is, targetPath);
             targetPath.toFile().deleteOnExit();
         }
-
         return targetPath;
     }
 
-    // ==================== 核心: 编译接口 ====================
+    // ==================== 核心编译接口 ====================
 
-    /**
-     * 编译 GLSL 源码为 SPIR-V 二进制。
-     *
-     * <h3>参数说明：</h3>
-     * <table>
-     *   <tr><th>参数</th><th>类型</th><th>说明</th></tr>
-     *   <tr><td>glslSource</td><td>String</td><td>Vulkan GLSL 源码 (经 GlslToVkTransformer 转换后)</td></tr>
-     *   <tr><td>stage</td><td>Stage</td><td>Shader 阶段</td></tr>
-     *   <tr><td>返回值</td><td>byte[]</td><td>SPIR-V 字节码 (可直接传给 vkCreateShaderModule)</td></tr>
-     * </table>
-     *
-     * @param glslSource Vulkan GLSL 源码
-     * @param stage Shader 阶段
-     * @return SPIR-V 字节数组
-     * @throws GlslCompileException 编译失败时抛出 (含详细错误信息)
-     */
     public byte[] compile(String glslSource, Stage stage) throws GlslCompileException {
+        return compile(glslSource, stage, SourceLanguage.GLSL);
+    }
+
+    public byte[] compile(String source, Stage stage, SourceLanguage lang) throws GlslCompileException {
         if (!initialized) {
-            throw new IllegalStateException("编译器未初始化，请先调用 initialize()");
+            throw new IllegalStateException("Compiler not initialized, call initialize() first");
         }
-
+        if (source == null || source.isEmpty()) {
+            throw new GlslCompileException("Empty shader source");
+        }
         try (Arena arena = Arena.ofConfined()) {
-            // 1. 创建编译输入并配置
-            MemorySegment inputPtr = createInput(arena, glslSource, stage);
-
-            // 2. 执行编译
-            MemorySegment shaderPtr = compileShader(inputPtr);
-
-            // 3. 检查错误日志
-            checkCompileErrors(shaderPtr);
-
-            // 4. 提取 SPIR-V 二进制数据
-            byte[] spirv = extractSPIRV(shaderPtr);
-
-            // 5. 清理 C 资源
-            callVoid("glslang_shader_delete", shaderPtr);
-            callVoid("glslang_input_delete", inputPtr);
-
-            return spirv;
-
+            MemorySegment input = createInputStruct(arena, source, stage, lang);
+            MemorySegment shader = (MemorySegment) callPointer("glslang_shader_create", input);
+            if (shader.equals(MemorySegment.NULL)) {
+                throw new GlslCompileException("glslang_shader_create returned NULL");
+            }
+            try {
+                int preprocOk = (int) callInt("glslang_shader_preprocess", shader, input);
+                if (preprocOk == 0) {
+                    String log = getInfoLogSafe(shader);
+                    throw new GlslCompileException("Preprocess failed:\n" + log);
+                }
+                int parseOk = (int) callInt("glslang_shader_parse", shader, input);
+                if (parseOk == 0) {
+                    String log = getInfoLogSafe(shader);
+                    throw new GlslCompileException("Parse failed:\n" + log);
+                }
+                MemorySegment prog = (MemorySegment) callPointer("glslang_program_create");
+                if (prog.equals(MemorySegment.NULL)) {
+                    throw new GlslCompileException("glslang_program_create returned NULL");
+                }
+                try {
+                    callVoid("glslang_program_add_shader", prog, shader);
+                    int linkOk = (int) callInt("glslang_program_link", prog, GLSLANG_MSG_DEFAULT_BIT);
+                    if (linkOk == 0) {
+                        String log = getProgramInfoLogSafe(prog);
+                        throw new GlslCompileException("Link failed:\n" + log);
+                    }
+                    callVoid("glslang_program_SPIRV_generate", prog, stage.glslangValue);
+                    byte[] spirv = extractSPIRV(prog);
+                    return spirv;
+                } finally {
+                    callVoid("glslang_program_delete", prog);
+                }
+            } finally {
+                callVoid("glslang_shader_delete", shader);
+            }
         } catch (GlslCompileException e) {
-            throw e; // 向上传播编译错误
+            throw e;
         } catch (Throwable t) {
-            // 修复: catch (Exception) → catch (Throwable)
-            // 原因: createInput/compileShader/checkCompileErrors/extractSPIRV/callVoid 等辅助方法
-            //       均声明 throws Throwable (MethodHandle.invokeExact 抛出 Throwable)
-            //       Exception 无法覆盖 Error 子类，导致 6 个 unreported exception 编译错误
-            throw new GlslCompileException("编译过程异常: " + t.getMessage(), t);
+            throw new GlslCompileException("Compilation failed: " + t.getMessage(), t);
         }
     }
 
-    /**
-     * 异步编译 (用于 AOT 预编译场景)。
-     *
-     * @param glslSource Vulkan GLSL 源码
-     * @param stage Shader 阶段
-     * @return CompletableFuture 包装的 SPIR-V 字节码
-     */
     public CompletableFuture<byte[]> compileAsync(String glslSource, Stage stage) {
-        // 修复: lambda 表达式内不能直接抛出 checked exception (GlslCompileException)
-        // Supplier<byte[]> 函数式接口的 get() 方法未声明 throws 异常
-        // 需要在 lambda 内部用 try-catch 包裹，将 checked 异常包装为 CompletionException
+        return compileAsync(glslSource, stage, SourceLanguage.GLSL);
+    }
+
+    public CompletableFuture<byte[]> compileAsync(String source, Stage stage, SourceLanguage lang) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                return compile(glslSource, stage);
+                return compile(source, stage, lang);
             } catch (GlslCompileException e) {
-                // 将 checked 异常包装为 CompletionException，由 CompletableFuture.get() 时抛出
                 throw new CompletionException(e);
             }
         });
     }
 
-    // ==================== C API 封装 (内部实现) ====================
+    // ==================== C API 调用 ====================
 
-    /** 创建 glslang_input 并配置源码和阶段 */
-    private MemorySegment createInput(Arena arena, String source, Stage stage) throws Throwable {
-        // glslang_input_new()
-        MemorySegment input = (MemorySegment) callPointer("glslang_input_new");
-
-        // glslang_input_set_string(input, source)
-        MemorySegment sourceStr = arena.allocateFrom(source);
-        callVoid("glslang_input_set_string", input, sourceStr);
-
-        // glslang_input_set_stage(input, stage)
-        callVoid("glslang_input_set_stage", input, stage.glslangValue);
-
+    private MemorySegment createInputStruct(Arena arena, String source, Stage stage, SourceLanguage lang) {
+        MemorySegment input = arena.allocate(INPUT_SIZE);
+        input.set(ValueLayout.JAVA_INT, INPUT_LANGUAGE_OFF, lang == SourceLanguage.HLSL ? GLSLANG_SOURCE_HLSL : GLSLANG_SOURCE_GLSL);
+        input.set(ValueLayout.JAVA_INT, INPUT_STAGE_OFF, stage.glslangValue);
+        input.set(ValueLayout.JAVA_INT, INPUT_CLIENT_OFF, GLSLANG_CLIENT_VULKAN);
+        input.set(ValueLayout.JAVA_INT, INPUT_CLIENT_VERSION_OFF, GLSLANG_TARGET_VULKAN_1_1);
+        input.set(ValueLayout.JAVA_INT, INPUT_TARGET_LANG_OFF, GLSLANG_TARGET_SPV);
+        input.set(ValueLayout.JAVA_INT, INPUT_TARGET_LANG_VERSION_OFF, GLSLANG_TARGET_SPV_1_5);
+        MemorySegment codeStr = arena.allocateFrom(source);
+        input.set(ValueLayout.ADDRESS, INPUT_CODE_OFF, codeStr);
+        input.set(ValueLayout.JAVA_INT, INPUT_DEFAULT_VERSION_OFF, 450);
+        input.set(ValueLayout.JAVA_INT, INPUT_DEFAULT_PROFILE_OFF, GLSLANG_NO_PROFILE);
+        input.set(ValueLayout.JAVA_INT, INPUT_FORCE_DEFAULT_OFF, 0);
+        input.set(ValueLayout.JAVA_INT, INPUT_FORWARD_COMPAT_OFF, 0);
+        input.set(ValueLayout.JAVA_INT, INPUT_MESSAGES_OFF, GLSLANG_MSG_DEFAULT_BIT);
+        MemorySegment resource = createDefaultResource(arena);
+        input.set(ValueLayout.ADDRESS, INPUT_RESOURCE_OFF, resource);
+        input.set(ValueLayout.ADDRESS, INPUT_CALLBACKS_OFF, MemorySegment.NULL);
+        input.set(ValueLayout.ADDRESS, INPUT_CALLBACKS_OFF + 8, MemorySegment.NULL);
+        input.set(ValueLayout.ADDRESS, INPUT_CALLBACKS_OFF + 16, MemorySegment.NULL);
+        input.set(ValueLayout.ADDRESS, INPUT_CALLBACKS_OFF + 24, MemorySegment.NULL);
         return input;
     }
 
-    /** 执行编译，返回 shader 对象指针 */
-    private MemorySegment compileShader(MemorySegment input) throws Throwable {
-        return (MemorySegment) callPointer("glslang_shader_compile", input);
+    private MemorySegment createDefaultResource(Arena arena) {
+        MemorySegment r = arena.allocate(RESOURCE_SIZE);
+        int[] defaults = {
+            32,    // max_lights
+            8,     // max_clip_planes
+            32,    // max_texture_units
+            32,    // max_texture_coords
+            64,    // max_vertex_attribs
+            4096,  // max_vertex_uniform_components
+            64,    // max_varying_floats
+            32,    // max_vertex_texture_image_units
+            80,    // max_combined_texture_image_units
+            80,    // max_texture_image_units
+            4096,  // max_fragment_uniform_components
+            8,     // max_draw_buffers
+            256,   // max_vertex_uniform_vectors
+            60,    // max_varying_vectors
+            256,   // max_fragment_uniform_vectors
+            16,    // max_vertex_output_vectors
+            15,    // max_fragment_input_vectors
+            -8,    // min_program_texel_offset
+            7,     // max_program_texel_offset
+            8,     // max_clip_distances
+            65535, // max_compute_work_group_count_x
+            65535, // max_compute_work_group_count_y
+            65535, // max_compute_work_group_count_z
+            1024,  // max_compute_work_group_size_x
+            1024,  // max_compute_work_group_size_y
+            64,    // max_compute_work_group_size_z
+            1024,  // max_compute_uniform_components
+            32,    // max_compute_texture_image_units
+            8,     // max_compute_image_uniforms
+            8,     // max_compute_atomic_counters
+            1,     // max_compute_atomic_counter_buffers
+            64,    // max_varying_components
+            64,    // max_vertex_output_components
+            128,   // max_geometry_input_components
+            128,   // max_geometry_output_components
+            128,   // max_fragment_input_components
+            8,     // max_image_units
+            8,     // max_combined_image_units_and_fragment_outputs
+            8,     // max_combined_shader_output_resources
+            0,     // max_image_samples
+            4,     // max_vertex_image_uniforms
+            4,     // max_tess_control_image_uniforms
+            4,     // max_tess_evaluation_image_uniforms
+            4,     // max_geometry_image_uniforms
+            8,     // max_fragment_image_uniforms
+            8,     // max_combined_image_uniforms
+            32,    // max_geometry_texture_image_units
+            256,   // max_geometry_output_vertices
+            1024,  // max_geometry_total_output_components
+            4096,  // max_geometry_uniform_components
+            64,    // max_geometry_varying_components
+            128,   // max_tess_control_input_components
+            128,   // max_tess_control_output_components
+            32,    // max_tess_control_texture_image_units
+            4096,  // max_tess_control_uniform_components
+            4096,  // max_tess_control_total_output_components
+            128,   // max_tess_evaluation_input_components
+            128,   // max_tess_evaluation_output_components
+            32,    // max_tess_evaluation_texture_image_units
+            4096,  // max_tess_evaluation_uniform_components
+            128,   // max_tess_patch_components
+            32,    // max_patch_vertices
+            64,    // max_tess_gen_level
+            16,    // max_viewports
+            8,     // max_vertex_atomic_counters
+            8,     // max_tess_control_atomic_counters
+            8,     // max_tess_evaluation_atomic_counters
+            8,     // max_geometry_atomic_counters
+            8,     // max_fragment_atomic_counters
+            8,     // max_combined_atomic_counters
+            1,     // max_atomic_counter_bindings
+            0,     // max_vertex_atomic_counter_buffers
+            0,     // max_tess_control_atomic_counter_buffers
+            0,     // max_tess_evaluation_atomic_counter_buffers
+            0,     // max_geometry_atomic_counter_buffers
+            1,     // max_fragment_atomic_counter_buffers
+            1,     // max_combined_atomic_counter_buffers
+            16384, // max_atomic_counter_buffer_size
+            4,     // max_transform_feedback_buffers
+            64,    // max_transform_feedback_interleaved_components
+            8,     // max_cull_distances
+            8,     // max_combined_clip_and_cull_distances
+            4,     // max_samples
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // remaining fields (mesh/task/etc) zeroed
+        };
+        for (int i = 0; i < defaults.length && i < RESOURCE_FIELD_COUNT; i++) {
+            r.set(ValueLayout.JAVA_INT, i * 4L, defaults[i]);
+        }
+        return r;
     }
 
-    /** 检查编译错误日志 */
-    private void checkCompileErrors(MemorySegment shaderPtr) throws Throwable, GlslCompileException {
-        String infoLog = getCString(shaderPtr, "glslang_shader_get_info_log");
-        String debugLog = getCString(shaderPtr, "glslang_shader_get_info_debug_log");
-
-        if (infoLog != null && !infoLog.isEmpty()) {
-            if (infoLog.toLowerCase().contains("error") ||
-                    infoLog.toLowerCase().contains("warning")) {
-                LOGGER.fine("glslang 编译日志:\n" + infoLog);
-                if (infoLog.toLowerCase().contains("error")) {
-                    throw new GlslCompileException("GLSL 编译失败:\n" + infoLog);
-                }
-            }
-        }
+    private MemorySegment glslang_shader_create(MemorySegment input) throws Throwable {
+        return (MemorySegment) callPointer("glslang_shader_create", input);
     }
 
-    /** 从 C 内存提取 SPIR-V 二进制到 Java byte[] */
-    private byte[] extractSPIRV(MemorySegment shaderPtr) throws Throwable {
-        // 获取 SPIR-V 指针和大小
-        MemorySegment spirvPtr = (MemorySegment) callPointer("glslang_shader_get_spirv", shaderPtr);
-        long size = (long) callLong("glslang_shader_get_spirv_size", shaderPtr);
-
-        if (size == 0 || spirvPtr.equals(MemorySegment.NULL)) {
-            throw new GlslCompileException("编译未产生 SPIR-V 输出 (可能是空 shader)");
+    private byte[] extractSPIRV(MemorySegment prog) throws Throwable {
+        long wordCount = (long) callLong("glslang_program_SPIRV_get_size", prog);
+        if (wordCount == 0) {
+            throw new GlslCompileException("SPIR-V generation produced zero words");
         }
-
-        // 将 C 内存中的 SPIR-V 复制到 Java byte[]
-        // 使用 reinterpret 确保内存段有正确的边界，然后通过 ByteBuffer 复制
-        MemorySegment spirvSegment = spirvPtr.reinterpret(size);
-        byte[] result = new byte[(int) size];
-
-        // 使用 Panama FFM 标准 API：通过 asByteBuffer() 获取 ByteBuffer 视图后复制
-        // 注意：MemorySegment 不存在 getByteArray() 方法，asByteBuffer().get() 是标准做法
+        MemorySegment spirvPtr = (MemorySegment) callPointer("glslang_program_SPIRV_get_ptr", prog);
+        if (spirvPtr.equals(MemorySegment.NULL)) {
+            throw new GlslCompileException("SPIR-V pointer is NULL");
+        }
+        long byteSize = wordCount * 4L;
+        MemorySegment spirvSegment = spirvPtr.reinterpret(byteSize);
+        byte[] result = new byte[(int) byteSize];
         spirvSegment.asByteBuffer().get(result);
-
-        // 验证 SPIR-V magic number (0x07230203)
         validateSpirvMagic(result);
-
         return result;
     }
 
-    /** 验证 SPIR-V magic number */
     private void validateSpirvMagic(byte[] spirv) throws GlslCompileException {
         if (spirv.length < 4) {
-            throw new GlslCompileException("SPIR-V 数据过短，无效");
+            throw new GlslCompileException("SPIR-V data too short");
         }
-
-        int magic = ((spirv[0] & 0xFF)) |
-                    ((spirv[1] & 0xFF) << 8) |
-                    ((spirv[2] & 0xFF) << 16) |
-                    ((spirv[3] & 0xFF) << 24);
-
+        int magic = (spirv[0] & 0xFF) | ((spirv[1] & 0xFF) << 8)
+                  | ((spirv[2] & 0xFF) << 16) | ((spirv[3] & 0xFF) << 24);
         if (magic != 0x07230203) {
-            throw new GlslCompileException(
-                    "SPIR-V magic number 无效: 0x" +
-                            Long.toHexString(magic & 0xFFFFFFFFL));
+            throw new GlslCompileException("Invalid SPIR-V magic: 0x" + Long.toHexString(magic & 0xFFFFFFFFL));
         }
     }
 
-    // ==================== FFM 方法调用辅助 ====================
+    private String getInfoLogSafe(MemorySegment shader) {
+        try {
+            MemorySegment ptr = (MemorySegment) callPointer("glslang_shader_get_info_log", shader);
+            if (ptr.equals(MemorySegment.NULL)) return "";
+            return ptr.reinterpret(Long.MAX_VALUE).getString(0);
+        } catch (Throwable e) {
+            return "(failed to get log: " + e.getMessage() + ")";
+        }
+    }
 
-    /** 解析所有需要的 C 函数句柄 */
+    private String getProgramInfoLogSafe(MemorySegment prog) {
+        try {
+            MemorySegment ptr = (MemorySegment) callPointer("glslang_program_get_info_log", prog);
+            if (ptr.equals(MemorySegment.NULL)) return "";
+            return ptr.reinterpret(Long.MAX_VALUE).getString(0);
+        } catch (Throwable e) {
+            return "(failed to get log: " + e.getMessage() + ")";
+        }
+    }
+
+    // ==================== FFM 方法句柄管理 ====================
+
     private void resolveAllHandles() throws Exception {
         String[] functions = {
-                "glslang_initialize_process",
-                "glslang_finalize_process",
-                "glslang_input_new",
-                "glslang_input_set_string",
-                "glslang_input_set_stage",
-                "glslang_shader_compile",
-                "glslang_shader_get_info_log",
-                "glslang_shader_get_info_debug_log",
-                "glslang_shader_get_spirv",
-                "glslang_shader_get_spirv_size",
-                "glslang_shader_delete",
-                "glslang_input_delete"
+            "glslang_initialize_process",
+            "glslang_finalize_process",
+            "glslang_shader_create",
+            "glslang_shader_delete",
+            "glslang_shader_preprocess",
+            "glslang_shader_parse",
+            "glslang_shader_get_info_log",
+            "glslang_shader_get_info_debug_log",
+            "glslang_program_create",
+            "glslang_program_delete",
+            "glslang_program_add_shader",
+            "glslang_program_link",
+            "glslang_program_SPIRV_generate",
+            "glslang_program_SPIRV_get_size",
+            "glslang_program_SPIRV_get_ptr",
+            "glslang_program_get_info_log",
+            "glslang_program_get_info_debug_log"
         };
-
         Linker linker = Linker.nativeLinker();
-
         for (String fn : functions) {
             MemorySegment addr = lookup.find(fn)
-                    .orElseThrow(() -> new UnsatisfiedLinkError(
-                            "libglslang 中找不到函数: " + fn));
-
+                    .orElseThrow(() -> new UnsatisfiedLinkError("Symbol not found in glslang: " + fn));
             FunctionDescriptor desc = getDescriptor(fn);
             handles.put(fn, linker.downcallHandle(addr, desc));
         }
     }
 
-    /** 获取函数签名描述符 */
     private FunctionDescriptor getDescriptor(String name) {
         return switch (name) {
-            case "glslang_initialize_process", "glslang_finalize_process",
-                 "glslang_shader_delete", "glslang_input_delete" ->
-                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS);
-            case "glslang_input_new", "glslang_shader_compile" ->
-                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS);
-            case "glslang_input_set_string" ->
-                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS);
-            case "glslang_input_set_stage" ->
-                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_INT);
-            case "glslang_shader_get_info_log", "glslang_shader_get_info_debug_log",
-                 "glslang_shader_get_spirv" ->
-                    FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS);
-            case "glslang_shader_get_spirv_size" ->
-                    FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS);
-            default -> throw new AssertionError("未知函数: " + name);
+            case "glslang_initialize_process" -> FunctionDescriptor.of(ValueLayout.JAVA_INT);
+            case "glslang_finalize_process" -> FunctionDescriptor.ofVoid();
+            case "glslang_shader_create" -> FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS);
+            case "glslang_shader_delete" -> FunctionDescriptor.ofVoid(ValueLayout.ADDRESS);
+            case "glslang_shader_preprocess" -> FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS);
+            case "glslang_shader_parse" -> FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS);
+            case "glslang_shader_get_info_log", "glslang_shader_get_info_debug_log" ->
+                FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS);
+            case "glslang_program_create" -> FunctionDescriptor.of(ValueLayout.ADDRESS);
+            case "glslang_program_delete" -> FunctionDescriptor.ofVoid(ValueLayout.ADDRESS);
+            case "glslang_program_add_shader" -> FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS);
+            case "glslang_program_link" -> FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT);
+            case "glslang_program_SPIRV_generate" -> FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_INT);
+            case "glslang_program_SPIRV_get_size" -> FunctionDescriptor.of(ValueLayout.JAVA_LONG, ValueLayout.ADDRESS);
+            case "glslang_program_SPIRV_get_ptr" -> FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS);
+            case "glslang_program_get_info_log", "glslang_program_get_info_debug_log" ->
+                FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS);
+            default -> throw new AssertionError("Unknown function: " + name);
         };
     }
 
-    /** 调用无返回值函数 */
+    private int callInt(String name, Object... args) throws Throwable {
+        return (int) handles.get(name).invokeExact(args);
+    }
+
     private void callVoid(String name, Object... args) throws Throwable {
         handles.get(name).invokeExact(args);
     }
 
-    /** 调用返回指针的函数 */
     private Object callPointer(String name, Object... args) throws Throwable {
         return handles.get(name).invokeExact(args);
     }
 
-    /** 调用返回 long 的函数 */
     private long callLong(String name, Object... args) throws Throwable {
         return (long) handles.get(name).invokeExact(args);
     }
 
-    /** 从 C 函数获取字符串 (自动释放) */
-    private String getCString(MemorySegment obj, String getterName) throws Throwable {
-        MemorySegment strPtr = (MemorySegment) callPointer(getterName, obj);
-        if (strPtr.equals(MemorySegment.NULL)) return null;
-        return strPtr.reinterpret(Long.MAX_VALUE).getString(0);
-    }
-
     // ==================== 生命周期管理 ====================
 
-    /**
-     * 关闭编译器，释放所有资源
-     */
     public void shutdown() {
         if (initialized) {
             try {
                 callVoid("glslang_finalize_process");
-            } catch (Throwable ignored) {
-                LOGGER.fine("Compilation cleanup ignored: " + ignored);
-            }
+            } catch (Throwable ignored) {}
             initialized = false;
-            LOGGER.info("libglslang 已关闭");
+            LOGGER.info("libglslang shut down");
         }
         if (cArena != null && cArena.scope().isAlive()) {
             cArena.close();
         }
     }
 
-    /** 是否已初始化 */
     public boolean isInitialized() {
         return initialized;
     }
 }
 
-/**
- * GLSL 编译异常
- */
 class GlslCompileException extends Exception {
-
-    public GlslCompileException(String message) {
-        super(message);
-    }
-
-    public GlslCompileException(String message, Throwable cause) {
-        super(message, cause);
-    }
+    public GlslCompileException(String message) { super(message); }
+    public GlslCompileException(String message, Throwable cause) { super(message, cause); }
 }

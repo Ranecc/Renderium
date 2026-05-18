@@ -115,6 +115,15 @@ public final class HiZComputePipeline {
     /** Hi-Z Occlusion Query Descriptor Set Layout 句柄 */
     private static volatile long hizOcclusionDescSetLayout = 0L;
 
+    /** Descriptor Pool 句柄（管理所有 descriptor 的内存分配） */
+    private static volatile long hizDescriptorPool = 0L;
+
+    /** Hi-Z Build 分配的 Descriptor Set 句柄 (DS0, 对应 set 0) */
+    private static volatile long hizBuildDescSet = 0L;
+
+    /** Occlusion Query 分配的 Descriptor Set 句柄 (DS1, 对应 set 1) */
+    private static volatile long hizOcclusionDescSet = 0L;
+
     // ==================== SPIR-V 二进制数据（预编译的着色器）====================
 
     /** Hi-Z Build 着色器 SPIR-V 字节码 */
@@ -136,6 +145,9 @@ public final class HiZComputePipeline {
     public static long getPipelineLayout() { return pipelineLayout; }
     public static long getHizBuildDescSetLayout() { return hizBuildDescSetLayout; }
     public static long getHizOcclusionDescSetLayout() { return hizOcclusionDescSetLayout; }
+    public static long getHizDescriptorPool() { return hizDescriptorPool; }
+    public static long getHizBuildDescSet() { return hizBuildDescSet; }
+    public static long getHizOcclusionDescSet() { return hizOcclusionDescSet; }
     public static byte[] getHizBuildSpirv() { return HIZ_BUILD_SPIRV; }
     public static byte[] getHizOcclusionSpirv() { return HIZ_OCCLUSION_SPIRV; }
     public static int getMaxHiZMipLevels() { return MAX_HIZ_MIP_LEVELS; }
@@ -636,6 +648,69 @@ public final class HiZComputePipeline {
 
             LOGGER.info(String.format("[HiZPipeline] ✓ Pipeline Layout 创建成功 | handle=0x%s (2 DSLs + 128B PushConst)",
                     Long.toHexString(pipelineLayout)));
+        }
+    }
+
+    /**
+     * 创建 Descriptor Pool
+     * <p>
+     * 为 HiZ Build 和 Occlusion Query 分配 DescriptorSet 所需的 Descriptor Pool。
+     * 包含两个 Pipeline 需要的所有 Descriptor 类型预算。
+     * </p>
+     *
+     * @throws Exception 如果创建失败
+     */
+    public static void createDescriptorPool() throws Exception {
+        MethodHandle vkCreateDescriptorPool = VulkanFFMBinding.getVkCreateDescriptorPool();
+        if (!VulkanFFMBinding.isFfmLoaded() || vkCreateDescriptorPool == null) {
+            throw new IllegalStateException("FFM 方法句柄未加载");
+        }
+
+        try (Arena arena = Arena.ofConfined()) {
+            // VkDescriptorPoolSize 结构体 = [type(int32), descriptorCount(int32)] = 8 字节
+            // 共需要 4 个 poolSize 条目
+            MemorySegment poolSizes = arena.allocate(ValueLayout.JAVA_INT, 8);
+
+            // HiZ Build: COMBINED_IMAGE_SAMPLER x1, STORAGE_IMAGE x10, UNIFORM_BUFFER x1
+            // Occlusion Query: STORAGE_BUFFER x2, COMBINED_IMAGE_SAMPLER x10, UNIFORM_BUFFER x1
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 1, 11);  // 1 (depth) + 10 (hiz sampler)
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 3, 10);  // hizMipmaps[10] storage
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 5, 2);   // objects SSBO + visibilityMask SSBO
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 6, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 7, 2);   // HiZConfig + OcclusionConfig
+
+            // VkDescriptorPoolCreateInfo: [sType, pNext, flags, maxSets, poolSizeCount, pPoolSizes] = 6 longs
+            MemorySegment poolInfo = arena.allocate(ValueLayout.JAVA_LONG, 6);
+            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 35L);                      // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
+            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                       // pNext
+            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                       // flags = 0
+            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 2L);                       // maxSets = 2 (Build + Occlusion)
+            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 4L);                       // poolSizeCount = 4
+            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, poolSizes.address());      // pPoolSizes
+
+            MemorySegment poolOut = arena.allocate(ValueLayout.JAVA_LONG);
+            int result;
+            try {
+                result = (int) vkCreateDescriptorPool.invokeExact(
+                        LodCullingComputePass.getVkDevice(),
+                        poolInfo.address(),
+                        0L,  // pAllocator = null
+                        poolOut.address()
+                );
+            } catch (Throwable t) {
+                throw new RuntimeException("vkCreateDescriptorPool 调用异常", t);
+            }
+
+            if (result != VK_SUCCESS) {
+                throw new RuntimeException("vkCreateDescriptorPool 失败: VkResult=" + result);
+            }
+
+            hizDescriptorPool = poolOut.get(ValueLayout.JAVA_LONG, 0);
+            LOGGER.info(String.format("[HiZPipeline] ✓ Descriptor Pool 创建成功 | handle=0x%s",
+                    Long.toHexString(hizDescriptorPool)));
         }
     }
 
