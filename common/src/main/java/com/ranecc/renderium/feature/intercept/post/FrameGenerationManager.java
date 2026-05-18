@@ -788,7 +788,10 @@ public final class FrameGenerationManager {
         long startTime = System.nanoTime();
 
         try {
-            // TODO: Phase 5 集成实际的帧生成调用
+            if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
+                return new FGOutput(false, List.of(), 0, 0.0, 0.0);
+            }
+            // Phase 5: integrate actual frame generation calls
             //
             // DLSS-FG:
             //   slDLSSGEvaluate(sl::ViewportHandle, const sl::DLSSGParams& params)

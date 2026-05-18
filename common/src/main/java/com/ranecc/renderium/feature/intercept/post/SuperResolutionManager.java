@@ -715,7 +715,10 @@ public final class SuperResolutionManager {
         long startTime = System.nanoTime();
 
         try {
-            // TODO: Phase 5 集成实际的超分辨率调用
+            if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
+                return new SROutput(false, 0, 0, 0, 0.0, tech);
+            }
+            // Phase 5: integrate actual super resolution calls
             // 各技术的具体实现：
             //
             // DLSS:

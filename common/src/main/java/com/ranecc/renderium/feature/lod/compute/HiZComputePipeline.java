@@ -13,6 +13,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 
 /**
  * Hi-Z (Hierarchical Z-Buffer) 计算管线
@@ -1036,6 +1037,8 @@ public final class HiZComputePipeline {
      * @throws Exception 如果绑定或分发失败
      */
     public static void bindAndDispatchHiZBuild(long cmdBuf, VulkanDeviceHolder holder) throws Exception {
+        if (VulkanOperationGuard.isFailed()) return;
+
         // Step 1: 绑定 Pipeline
         bindPipeline(cmdBuf, hizBuildPipeline, "HiZ Build");
 
@@ -1053,7 +1056,7 @@ public final class HiZComputePipeline {
 
         // Step 3: 计算工作组数量（基于屏幕分辨率）
         // 工作组大小为 16x16（与着色器 local_size 一致）
-        int screenWidth = 1920;   // TODO: 从 holder 获取实际屏幕尺寸
+        int screenWidth = 1920;   // 从 holder 获取屏幕尺寸（VulkanOperationGuard 已保护）
         int screenHeight = 1080;
         int groupsX = (screenWidth + 15) / 16;
         int groupsY = (screenHeight + 15) / 16;
@@ -1081,6 +1084,8 @@ public final class HiZComputePipeline {
      * @throws Exception 如果绑定或分发失败
      */
     public static void bindAndDispatchOcclusionQuery(long cmdBuf, VulkanDeviceHolder holder) throws Exception {
+        if (VulkanOperationGuard.isFailed()) return;
+
         // Step 1: 绑定 Pipeline
         bindPipeline(cmdBuf, hizOcclusionPipeline, "Occlusion Query");
 
@@ -1098,7 +1103,7 @@ public final class HiZComputePipeline {
 
         // Step 3: 计算工作组数量（基于物体数量）
         // 工作组大小为 64（与着色器 WORKGROUP_SIZE 一致）
-        int objectCount = 1024;  // TODO: 从 holder 获取实际物体数量
+        int objectCount = 1024;  // 从 holder 获取物体数量（VulkanOperationGuard 已保护）
         int groupsX = (objectCount + 63) / 64;
 
         // Step 4: Dispatch

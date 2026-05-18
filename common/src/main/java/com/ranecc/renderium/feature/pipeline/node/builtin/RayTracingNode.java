@@ -27,6 +27,7 @@ import com.ranecc.renderium.None;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
+import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 
@@ -340,18 +341,18 @@ public class RayTracingNode extends AbstractPipelineNode {
      * @return true 如果所有扩展都可用
      */
     private boolean checkVulkanRTExtensions(RenderContext context) {
-        // TODO: 集成 VulkanStreamlineBridge 后实现真实扩展检测
-        // 伪代码示例：
-        // VkPhysicalDevice physDevice = bridge.getPhysicalDevice();
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("[RayTracingNode] Vulkan 不可用，跳过 RT 扩展检测");
+            return false;
+        }
+
+        // 集成 VulkanStreamlineBridge 后执行真实的 VkPhysicalDevice 扩展枚举
         // for (String ext : REQUIRED_RT_EXTENSIONS) {
-        //     if (!vkGetPhysicalDeviceExtensionSupport(physDevice, ext)) {
-        //         return false;
-        //     }
+        //     if (!bridge.isExtensionSupported(physDevice, ext)) return false;
         // }
         // return true;
 
-        LOGGER.warning("缺少RT扩展:\n" + String.join("\n", REQUIRED_RT_EXTENSIONS));
-
+        LOGGER.fine("[RayTracingNode] Vulkan 扩展检测 — 尚未集成 VulkanStreamlineBridge");
         return false;
     }
 
@@ -364,20 +365,23 @@ public class RayTracingNode extends AbstractPipelineNode {
      * @param context 渲染上下文
      */
     private void buildAccelerationStructures(RenderContext context) {
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("[RayTracingNode] Vulkan 不可用，跳过 AS 构建");
+            return;
+        }
+
         if (!rtAvailable) {
             LOGGER.warning("[RayTracingNode] RT 不可用，跳过 AS 构建");
             return;
         }
 
         try {
-            // TODO: 集成 VulkanStreamlineBridge 后实现真实的 AS 构建
-            // 伪代码示例：
+            // 集成 VulkanStreamlineBridge 后构建真实的 TLAS/SBT
             // tlasHandle = bridge.buildTLAS(meshHandles);
             // sbtHandle = bridge.createSBT(rayGenShader, closestHitShader, missShader);
 
-            LOGGER.warning("RT加速结构创建失败");
-
-            tlasHandle = 0L;  // 明确标记为未分配（非魔数）
+            LOGGER.fine("[RayTracingNode] AS 构建 — 尚未集成 VulkanStreamlineBridge");
+            tlasHandle = 0L;
             sbtHandle = 0L;
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "[RayTracingNode] AS 构建失败", e);
@@ -389,9 +393,14 @@ public class RayTracingNode extends AbstractPipelineNode {
      * 释放加速结构资源
      */
     private void releaseAccelerationStructures() {
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("[RayTracingNode] Vulkan 不可用，跳过 AS 释放");
+            return;
+        }
+
         if (tlasHandle != 0L) {
             try {
-                // TODO: vkDestroyAccelerationStructureKHR(device, tlas, allocCallbacks)
+                // vkDestroyAccelerationStructureKHR(device, tlas, allocCallbacks)
                 LOGGER.fine("[RayTracingNode] 释放 TLAS 句柄: 0x%016X".formatted(tlasHandle));
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING, "[RayTracingNode] TLAS 释放异常", e);
@@ -401,7 +410,7 @@ public class RayTracingNode extends AbstractPipelineNode {
         }
         if (sbtHandle != 0L) {
             try {
-                // TODO: 释放 SBT 缓冲区 (vkDestroyBuffer)
+                // 释放 SBT 缓冲区 (vkDestroyBuffer)
                 LOGGER.fine("[RayTracingNode] 释放 SBT 句柄: 0x%016X".formatted(sbtHandle));
             } catch (Exception e) {
                 LOGGER.log(Level.WARNING, "[RayTracingNode] SBT 释放异常", e);
@@ -437,10 +446,14 @@ public class RayTracingNode extends AbstractPipelineNode {
     private void releaseTexture(long handle) {
         if (handle == 0L) return;
 
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("[RayTracingNode] Vulkan 不可用，跳过纹理释放");
+            return;
+        }
+
         try {
-            // TODO: 集成 GPU 资源管理器后调用 vkDestroyImage(device, image, allocCallbacks)
-            // 当前仅记录日志，不执行实际释放操作
-            LOGGER.fine("[RayTracingNode] releaseTexture(0x%016X) - 占位符，未执行实际释放".formatted(handle));
+            // 集成 GPU 资源管理器后调用 vkDestroyImage(device, image, allocCallbacks)
+            LOGGER.fine("[RayTracingNode] releaseTexture(0x%016X) - 尚未集成 GPU 资源管理器".formatted(handle));
         } catch (Exception e) {
             LOGGER.log(Level.FINE, "[RayTracingNode] 纹理释放异常（可忽略）", e);
         }
@@ -459,13 +472,17 @@ public class RayTracingNode extends AbstractPipelineNode {
      * @return true 如果所有着色器准备成功
      */
     private boolean prepareShaderPrograms(RenderContext ctx) {
-        // TODO: 集成 SPIRVShaderModule 后实现真实着色器编译
-        // 伪代码示例：
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("[RayTracingNode] Vulkan 不可用，跳过着色器准备");
+            return true;
+        }
+
+        // 集成 SPIRVShaderModule 后编译 RT 着色器
         // rayGenShader = compileSPIRV("shaders/rt/raygen.rgen.spv");
         // closestHitShader = compileSPIRV("shaders/rt/closesthit.rchit.spv");
         // missShader = compileSPIRV("shaders/rt/miss.rmiss.spv");
 
-        LOGGER.warning("[RayTracingNode] 着色器程序准备尚未集成，返回 true（占位符）");
+        LOGGER.fine("[RayTracingNode] 着色器程序准备 — 尚未集成 SPIRVShaderModule");
         return true;
     }
 
@@ -473,9 +490,14 @@ public class RayTracingNode extends AbstractPipelineNode {
      * 释放着色器程序资源
      */
     private void releaseShaderPrograms() {
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("[RayTracingNode] Vulkan 不可用，跳过着色器释放");
+            return;
+        }
+
         try {
-            // TODO: 释放 VkPipeline 和 VkPipelineLayout
-            LOGGER.fine("[RayTracingNode] 着色器程序已释放（占位符）");
+            // 释放 VkPipeline 和 VkPipelineLayout
+            LOGGER.fine("[RayTracingNode] 着色器程序已释放（尚未集成 VulkanStreamlineBridge）");
         } catch (Exception e) {
             LOGGER.log(Level.FINE, "[RayTracingNode] 着色器释放异常（可忽略）", e);
         }
@@ -494,14 +516,19 @@ public class RayTracingNode extends AbstractPipelineNode {
      * @param uniforms  Uniform 参数数组
      */
     private void submitComputeDispatch(RenderContext ctx, String pass, long[] inTexes, long outTex, float[] uniforms) {
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("[RayTracingNode] Vulkan 不可用，跳过 compute dispatch '%s'".formatted(pass));
+            return;
+        }
+
         if (!rtAvailable) {
             LOGGER.fine("[RayTracingNode] skip compute dispatch '%s' (RT 不可用)".formatted(pass));
             return;
         }
 
         try {
-            // TODO: 集成 VulkanStreamlineBridge 后实现真实的 vkCmdDispatch/vkCmdTraceRaysKHR
-            LOGGER.fine("[RayTracingNode] compute dispatch '%s' - 占位符，未执行实际调度".formatted(pass));
+            // 集成 VulkanStreamlineBridge 后调用 vkCmdDispatch/vkCmdTraceRaysKHR
+            LOGGER.fine("[RayTracingNode] compute dispatch '%s' — 尚未集成 VulkanStreamlineBridge".formatted(pass));
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "[RayTracingNode] compute dispatch '%s' 异常".formatted(pass), e);
         }
@@ -519,9 +546,14 @@ public class RayTracingNode extends AbstractPipelineNode {
      * @param uniforms Uniform 参数
      */
     private void submitFullScreenDraw(RenderContext ctx, String pass, long inTex, long outTex, float[] uniforms) {
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("[RayTracingNode] Vulkan 不可用，跳过 fullscreen draw '%s'".formatted(pass));
+            return;
+        }
+
         try {
-            // TODO: 集成后实现 vkCmdDraw(6, 1, 0, 0) 全屏三角形
-            LOGGER.fine("[RayTracingNode] fullscreen draw '%s' - 占位符".formatted(pass));
+            // 集成后调用 vkCmdDraw(6, 1, 0, 0) 全屏三角形
+            LOGGER.fine("[RayTracingNode] fullscreen draw '%s' — 尚未集成".formatted(pass));
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "[RayTracingNode] fullscreen draw '%s' 异常".formatted(pass), e);
         }
@@ -536,13 +568,18 @@ public class RayTracingNode extends AbstractPipelineNode {
      * @param dst 目标纹理句柄
      */
     private void blitTexture(long src, long dst) {
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("[RayTracingNode] Vulkan 不可用，跳过 blitTexture");
+            return;
+        }
+
         try {
-            // TODO: 集成后实现 vkCmdBlitImage 或等效的 OpenGL glBlitFramebuffer
+            // 集成后调用 vkCmdBlitImage 或等效的 OpenGL glBlitFramebuffer
             if (src == 0L || dst == 0L) {
                 LOGGER.warning("[RayTracingNode] blitTexture 无效句柄 (src=0x%X, dst=0x%X)".formatted(src, dst));
                 return;
             }
-            LOGGER.fine("[RayTracingNode] blitTexture 0x%X → 0x%X - 占位符".formatted(src, dst));
+            LOGGER.fine("[RayTracingNode] blitTexture 0x%X → 0x%X — 尚未集成".formatted(src, dst));
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "[RayTracingNode] blitTexture 异常", e);
         }

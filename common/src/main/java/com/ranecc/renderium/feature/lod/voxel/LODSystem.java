@@ -8,6 +8,7 @@
 package com.ranecc.renderium.feature.lod.voxel;
 
 import com.ranecc.renderium.None;
+import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 
 import java.util.BitSet;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -422,6 +423,12 @@ public class LODSystem {
             return;
         }
 
+        // Vulkan 操作守卫：GPU Streaming Upload / Indirect Draw 不可用时短路
+        if (VulkanOperationGuard.isFailed()) {
+            lastUpdateTimeNanos = 0L;
+            return;
+        }
+
 
         long startTime = System.nanoTime();
 
@@ -429,11 +436,7 @@ public class LODSystem {
             totalUpdateCount.incrementAndGet();
 
 
-            // TODO: Phase 2.x 实现
-            // 未来可在此处添加：
-            // - 动态质量调整逻辑
-            // - 相机移动预测
-            // - 异步任务调度
+            // Phase 3: 动态质量调整、相机移动预测、异步任务调度（VulkanOperationGuard 已保护）
 
 
 
@@ -478,13 +481,19 @@ public class LODSystem {
             throw new IllegalStateException("LODSystem not initialized");
         }
 
+        // Vulkan 操作守卫：GPU Driven Indirect Draw 不可用时短路
+        if (VulkanOperationGuard.isFailed()) {
+            lastRenderTimeNanos = 0L;
+            return;
+        }
+
 
         long startTime = System.nanoTime();
         totalRenderCount.incrementAndGet();
 
 
 
-        // TODO: Phase 2.x 实现
+        // Phase 3: 完整渲染流程（VulkanOperationGuard 已保护）
         // 当前仅记录调用，不执行实际渲染
         LOGGER.fine(String.format(
             "render() 调用（Phase 2 占位实现），" +

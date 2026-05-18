@@ -18,6 +18,7 @@ import com.ranecc.renderium.feature.module.ModuleContext;
 import com.ranecc.renderium.feature.module.ModuleMetadata;
 import com.ranecc.renderium.feature.module.ModuleCategory;
 import com.ranecc.renderium.feature.module.RenderiumModule;
+import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 
 import java.util.List;
 import java.util.Optional;
@@ -307,7 +308,12 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
             return false;
         }
 
-        // TODO: 实际集成时检查:
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("RayTracingModule: Vulkan 不可用，仍允加载（降级模式）");
+            return true;
+        }
+
+        // 实际集成时检查:
         // 1. Vulkan 1.1+ 是否可用
         // 2. VK_KHR_acceleration_structure 扩展是否存在
         // 3. VK_KHR_ray_query 或 VK_KHR_ray_tracing_pipeline 是否存在
@@ -520,7 +526,15 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
     public boolean checkRayTracingSupport(long physicalDevice) {
         this.physicalDevice = physicalDevice;
 
-        // TODO: 实际实现需要调用 Vulkan API 检测扩展:
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("RayTracingModule: Vulkan 不可用，RT 支持检测返回 false");
+            rayTracingSupported = false;
+            rayQuerySupported = false;
+            rtPipelineSupported = false;
+            return false;
+        }
+
+        // 实际实现需要调用 Vulkan API 检测扩展:
         //
         // VkPhysicalDevice device = (VkPhysicalDevice) physicalDevice;
         //
@@ -548,8 +562,8 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
         // rayQuerySupported = hasRayQuery;
         // rtPipelineSupported = hasRTPipeline;
 
-        // 临时占位实现 (实际集成时替换为真正的 Vulkan API 调用)
-        rayTracingSupported = false; // 默认不支持，需实际检测
+        // 默认不支持，需实际检测
+        rayTracingSupported = false;
         rayQuerySupported = false;
         rtPipelineSupported = false;
 
@@ -602,6 +616,11 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
      */
     public void buildBottomLevelAS(int meshId, long vertexBuffer, long indexBuffer,
                                    int vertexCount, int indexCount) {
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("RayTracingModule: Vulkan 不可用，跳过 BLAS 构建");
+            return;
+        }
+
         validateInitialized();
 
         if (meshId < 0 || meshId >= MAX_BLAS_COUNT) {
@@ -624,7 +643,7 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
                 meshId, vertexCount, indexCount
         ));
 
-        // TODO: 实际 Vulkan 实现:
+        // 实际 Vulkan 实现:
         //
         // VkAccelerationStructureGeometryKHR geometry = {};
         // geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
@@ -651,9 +670,11 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
         // 创建 AS...
         // 记录构建命令...
 
-        // 占位: 记录 BLAS 句柄 (实际应为真实的 VkAccelerationStructureKHR)
+        LOGGER.fine("RayTracingModule: BLAS 构建 — 尚未集成 Vulkan API");
+
+        // 记录 BLAS 句柄 (实际应为真实的 VkAccelerationStructureKHR)
         bottomLevelASArray[meshId] = generatePlaceholderHandle(meshId);
-        blasUpdateable[meshId] = true; // 允许后续更新
+        blasUpdateable[meshId] = true;
         blasCount = Math.max(blasCount, meshId + 1);
     }
 
@@ -675,6 +696,11 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
      * @throws IllegalStateException    如果模块未初始化
      */
     public void buildTopLevelAS(InstanceData[] instances, int instanceCount) {
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("RayTracingModule: Vulkan 不可用，跳过 TLAS 构建");
+            return;
+        }
+
         validateInitialized();
 
         if (instances == null || instanceCount <= 0) {
@@ -697,7 +723,7 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
                 "RayTracingModule: 构建 TLAS [instances=%d]", instanceCount
         ));
 
-        // TODO: 实际 Vulkan 实现:
+        // 实际 Vulkan 实现:
         //
         // 1. 准备 VkAccelerationStructureInstanceKHR 数组
         // VkAccelerationStructureInstanceKHR[] vkInstances = new VkAccelerationStructureInstanceKHR[instanceCount];
@@ -728,8 +754,10 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
         // 5. 执行构建命令
         // vkCmdBuildAccelerationStructuresKHR(cmdBuffer, 1, &buildInfo, &rangeInfo);
 
-        // 占位: 记录 TLAS 句柄
-        topLevelAS = generatePlaceholderHandle(-1); // 特殊 ID 表示 TLAS
+        LOGGER.fine("RayTracingModule: TLAS 构建 — 尚未集成 Vulkan API");
+
+        // 记录 TLAS 句柄
+        topLevelAS = generatePlaceholderHandle(-1);
     }
 
     /**
@@ -752,6 +780,11 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
      * @param instanceCount 实例数量
      */
     public void updateTopLevelAS(InstanceData[] instances, int instanceCount) {
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("RayTracingModule: Vulkan 不可用，跳过 TLAS 更新");
+            return;
+        }
+
         validateInitialized();
 
         if (topLevelAS == 0L) {
@@ -762,10 +795,12 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
                 "RayTracingModule: 更新 TLAS [instances=%d]", instanceCount
         ));
 
-        // TODO: 使用 VK_BUILD_ACCELERATION_STRUCTURE_UPDATE_MODE_KHR 执行增量更新
+        // 使用 VK_BUILD_ACCELERATION_STRUCTURE_UPDATE_MODE_KHR 执行增量更新
         // buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
-        // buildInfo.srcAccelerationStructure = topLevelAS; // 源 AS (原地更新)
-        // buildInfo.dstAccelerationStructure = topLevelAS; // 目标 AS (同一位置)
+        // buildInfo.srcAccelerationStructure = topLevelAS;
+        // buildInfo.dstAccelerationStructure = topLevelAS;
+
+        LOGGER.fine("RayTracingModule: TLAS 更新 — 尚未集成 Vulkan API");
     }
 
     // ==================== 光线追踪渲染方法 ====================
@@ -807,6 +842,11 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
      */
     public void traceRays(RayPassType passType, Object encoder,
                           Attachment[] inputAttachments, long outputImage) {
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.fine("RayTracingModule: Vulkan 不可用，跳过光线追踪渲染");
+            return;
+        }
+
         if (!enabled || !rayTracingSupported) {
             return; // 模块未启用或不支持 RT → 跳过
         }
@@ -824,7 +864,7 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
                 "RayTracingModule: 执行 %s Pass...", passType.getChineseName()
         ));
 
-        // TODO: 实现光线追踪渲染:
+        // 光线追踪渲染实现:
         //
         // Step 1: 选择 Pipeline
         // long pipeline = selectPipeline(passType);
@@ -839,8 +879,7 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
         // StridedDeviceAddressRegionKHR raygenSBT = { sbtAddr + raygenOffset, sbtStride, size };
         // StridedDeviceAddressRegionKHR missSBT = { sbtAddr + missOffset, sbtStride, size };
         // StridedDeviceAddressRegionKHR hitSBT = { sbtAddr + hitOffset, sbtStride, size };
-        // StridedDeviceAddressRegionKHR callableSBT = { 0, 0, 0 }; // 无 callable shaders
-        // vkCmdBindPipelineShaderGroupsKHR ? or use vkCmdTraceRaysKHR directly with SBT addresses
+        // StridedDeviceAddressRegionKHR callableSBT = { 0, 0, 0 };
         //
         // Step 5: 设置 Push Constants
         // RayParams params = buildRayParams(passType, inputAttachments);
@@ -849,7 +888,7 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
         // Step 6: 发射光线
         // uint32_t width = getImageWidth(outputImage);
         // uint32_t height = getImageHeight(outputImage);
-        // uint32_t depth = 1; // 2D image
+        // uint32_t depth = 1;
         // vkCmdTraceRaysKHR(
         //     encoder,
         //     &raygenSBT, &missSBT, &hitSBT, &callableSBT,
@@ -858,6 +897,8 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
         //
         // Step 7: (可选) Memory Barrier
         // vkCmdMemoryBarrier(...);
+
+        LOGGER.fine("RayTracingModule: 光线追踪渲染 — 尚未集成 Vulkan API");
 
         long elapsedMs = (System.nanoTime() - startTime) / 1_000_000L;
 

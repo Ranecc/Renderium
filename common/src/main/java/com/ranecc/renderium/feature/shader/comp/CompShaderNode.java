@@ -176,7 +176,11 @@ public class CompShaderNode extends AbstractPipelineNode {
             // 记录修改时间用于热重载检测
             lastModifiedTime = Files.getLastModifiedTime(compSourcePath).toMillis();
 
-            // TODO: 调用 Vulkan SDK 的 glslc 编译器
+            if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
+                LOGGER.fine("Vulkan guard active, skipping glslc compilation");
+                return false;
+            }
+            // Compile via Vulkan SDK glslc
             // 实际实现需要:
             // 1. 写入临时 .comp 文件
             // 2. 执行 glslc --target-env=vulkan1.2 -o output.spv input.comp

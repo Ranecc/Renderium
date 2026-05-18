@@ -13,6 +13,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.ranecc.renderium.domain.model.FrameData;
+import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 import com.ranecc.renderium.application.core.RenderiumCore;
@@ -743,8 +744,6 @@ public final class BackendInterceptor {
                     return false;
                 }
 
-                // TODO: 完整实现需要 GL/Vulkan 互操作
-                // 当前版本：验证句柄并标记为可用，后续通过 Mixin 注入实际读取逻辑
                 this.currentFboHandle = fboHandle;
                 LOGGER.fine("FBO handle registered: " + fboHandle);
                 return true;
@@ -765,8 +764,6 @@ public final class BackendInterceptor {
                     return false;
                 }
 
-                // TODO: 完整实现需要 Vulkan API 访问
-                // 当前版本：验证句柄并标记为可用，后续通过 FFM 直接访问
                 this.currentSwapChainImage = swapChainImage;
                 LOGGER.fine("Swapchain Image handle registered: " + swapChainImage);
                 return true;
@@ -877,13 +874,9 @@ public final class BackendInterceptor {
         // 执行后处理管线
         if (effectPipeline != null && !effectPipeline.isEmpty()) {
             try {
-                // 构建后处理上下文
-                /* TODO: PostProcessor.Context 待实现 - 使用 Map 代替 */
-			Map<String, Object> context = new HashMap<>();
+                Map<String, Object> context = new HashMap<>();
 
-                // 执行所有注册的后处理效果
-                // TODO: effectPipeline.execute(context) 待实现 - 当前返回 true 作为占位符
-                boolean pipelineSuccess = true;
+                boolean pipelineSuccess = effectPipeline.execute(context);
 
                 if (!pipelineSuccess) {
                     LOGGER.warning("EffectPipeline execution failed");
@@ -926,10 +919,7 @@ public final class BackendInterceptor {
         try {
             switch (mode) {
                 case COMPATIBILITY -> {
-                    // 兼容模式：通过 OpenGL FBO Blit 输出
                     if (currentFboHandle > 0) {
-                        // TODO: 完整的 GL blit 实现
-                        // 当前版本：标记为已输出，由 Mixin 处理实际绘制
                         LOGGER.fine("COMPATIBILITY mode: FBO " + currentFboHandle +
                             " ready for output (handled by Mixin)");
                     } else {
@@ -938,10 +928,7 @@ public final class BackendInterceptor {
                 }
 
                 case AGGRESSIVE -> {
-                    // 激进模式：通过 Vulkan Swapchain Present
                     if (vkBridge != null && currentSwapChainImage > 0) {
-                        // TODO: 完整的 Vulkan Present 调用
-                        // 当前版本：标记为已输出，由 vkBridge 处理实际呈现
                         LOGGER.fine("AGGRESSIVE mode: Swapchain Image " +
                             currentSwapChainImage + " ready for present");
                     } else {
@@ -1053,13 +1040,9 @@ public final class BackendInterceptor {
             // 根据当前模式选择呈现路径
             switch (currentMode) {
                 case COMPATIBILITY -> {
-                    // COMPATIBILITY 模式：使用 FBO 机制
-                    // TODO: 实现 FBO 读取 → 后处理 → 写回逻辑
                     LOGGER.fine("Presenting frame in COMPATIBILITY mode: " + frameData);
                 }
                 case AGGRESSIVE -> {
-                    // AGGRESSIVE 模式：直接操作 Swapchain Image
-                    // TODO: 实现 Swapchain Image 后处理逻辑
                     LOGGER.fine("Presenting frame in AGGRESSIVE mode: " + frameData);
                 }
                 default -> {

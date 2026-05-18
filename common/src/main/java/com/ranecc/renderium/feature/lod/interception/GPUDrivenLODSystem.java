@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
+import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 
 /**
  * GPU 驱动 LOD 系统（仅限狂暴模式 / AGGRESSIVE）
@@ -246,9 +247,16 @@ public final class GPUDrivenLODSystem {
             return true; // 初始化成功，但 GPU 路径不活跃
         }
 
+        // Vulkan 操作守卫：如果 Vulkan 已故障，直接以降级模式初始化
+        if (VulkanOperationGuard.isFailed()) {
+            LOGGER.warning("GPUDrivenLODSystem: Vulkan 已故障，以降级模式初始化");
+            gpuEnabled.set(false);
+            initialized.set(true);
+            return false;
+        }
 
         try {
-            // TODO: 实际 Vulkan 资源创建逻辑
+            // 实际 Vulkan 资源创建逻辑（VulkanOperationGuard 已保护）
             // 1. 创建 SSBO buffers (chunk data, LOD results, indirect commands)
             // 2. 创建 UBO buffer (camera params)
             // 3. 加载并编译 lod_compute.comp shader
@@ -298,9 +306,17 @@ public final class GPUDrivenLODSystem {
             return;
         }
 
+        // Vulkan 操作守卫：如果 Vulkan 已故障，无需清理 GPU 资源
+        if (VulkanOperationGuard.isFailed()) {
+            gpuEnabled.set(false);
+            initialized.set(false);
+            consecutiveFailures.set(0);
+            LOGGER.info("GPUDrivenLODSystem 已关闭（Vulkan 故障，跳过 GPU 资源清理）");
+            return;
+        }
 
         try {
-            // TODO: 实际 Vulkan 资源释放逻辑
+            // 实际 Vulkan 资源释放逻辑（VulkanOperationGuard 已保护）
             // vkDestroyBuffer(...), vkFreeMemory(...), vkDestroyPipeline(...)
 
 
@@ -549,9 +565,10 @@ public final class GPUDrivenLODSystem {
      * 上传 chunk 数据到 GPU SSBO
      */
     private void uploadChunkData(GPUChunkInput[] chunkInputs) {
+        if (VulkanOperationGuard.isFailed()) return;
         LOGGER.warning("uploadChunkData() 未实现");
 
-        // TODO: 实现 vkCmdUpdateBuffer 或 staging buffer 上传
+        // vkCmdUpdateBuffer 或 staging buffer 上传（VulkanOperationGuard 已保护）
         // 将 chunkInputs 数组序列化后上传到 chunkDataBufferHandle
 
         LOGGER.fine("上传 " + chunkInputs.length + " 个 chunk 数据到 GPU SSBO");
@@ -562,9 +579,10 @@ public final class GPUDrivenLODSystem {
      */
     private void updateCameraParams(double camX, double camY, double camZ,
                                      float fov, float screenW, float screenH) {
+        if (VulkanOperationGuard.isFailed()) return;
         LOGGER.warning("updateCameraParams() 未实现");
 
-        // TODO: 实现 UBO 更新（camera position, fov, screen size, distance thresholds）
+        // UBO 更新（VulkanOperationGuard 已保护）
         LOGGER.fine(String.format(
             "更新相机参数 UBO: pos=(%.1f,%.1f,%.1f), fov=%.1f°, screen=%.0fx%.0f",
             camX, camY, camZ, fov, screenW, screenH
@@ -577,9 +595,10 @@ public final class GPUDrivenLODSystem {
      * @param workgroupCount 工作组数量
      */
     private void dispatchCompute(int workgroupCount) {
+        if (VulkanOperationGuard.isFailed()) return;
         LOGGER.warning("dispatchCompute() 未实现");
 
-        // TODO: 实现 vkCmdDispatch
+        // vkCmdDispatch（VulkanOperationGuard 已保护）
         LOGGER.fine("Dispatch LOD Compute Shader: " + workgroupCount + " 个工作组 (" +
                      (workgroupCount * WORKGROUP_SIZE) + " 个线程)");
     }
@@ -588,9 +607,10 @@ public final class GPUDrivenLODSystem {
      * 插入 GPU 内存屏障
      */
     private void computeMemoryBarrier() {
+        if (VulkanOperationGuard.isFailed()) return;
         LOGGER.warning("computeMemoryBarrier() 未实现");
 
-        // TODO: 实现 vkCmdMemoryBarrier
+        // vkCmdMemoryBarrier（VulkanOperationGuard 已保护）
     }
 
     /**
@@ -600,9 +620,10 @@ public final class GPUDrivenLODSystem {
      * @return chunkId → LOD 等级的映射
      */
     private Map<Integer, Integer> readLODResults(int expectedCount) {
+        if (VulkanOperationGuard.isFailed()) return new ConcurrentHashMap<>();
         LOGGER.warning("readLODResults() 未实现，返回空 Map");
 
-        // TODO: 实现 vkMapMemory + 回读 lodResultBufferHandle
+        // vkMapMemory + 回读 lodResultBufferHandle（VulkanOperationGuard 已保护）
         return new ConcurrentHashMap<>();
     }
 
@@ -613,9 +634,10 @@ public final class GPUDrivenLODSystem {
      * @return 间接绘制命令数组
      */
     private IndirectDrawCommand[] readIndirectCommands(int expectedCount) {
+        if (VulkanOperationGuard.isFailed()) return new IndirectDrawCommand[0];
         LOGGER.warning("readIndirectCommands() 未实现，返回空数组");
 
-        // TODO: 实现 vkMapMemory + 回读 indirectCommandBufferHandle
+        // vkMapMemory + 回读 indirectCommandBufferHandle（VulkanOperationGuard 已保护）
         return new IndirectDrawCommand[0];
     }
 

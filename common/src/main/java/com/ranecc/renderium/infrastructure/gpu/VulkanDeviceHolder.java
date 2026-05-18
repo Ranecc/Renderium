@@ -70,7 +70,6 @@ public final class VulkanDeviceHolder {
 
     public void setQueue(long queue, int family) {
         this.vkQueue.set(queue);
-        this.vkDevice.set(queue);
         this.initialized.set(true);
         this.degraded.set(false);
     }

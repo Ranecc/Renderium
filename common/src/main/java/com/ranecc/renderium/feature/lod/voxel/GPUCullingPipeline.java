@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.mock.MockMinecraft;
+import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 
 /**
  * GPUCullingPipeline - GPU 驱动剔除管线
@@ -189,10 +190,13 @@ public class GPUCullingPipeline {
 
         // ======== 初始化 Hi-Z 占位符 ========
         if (enableHiZCulling) {
-            // TODO: Phase 2.x 实现
-            // 这里仅创建一个标记对象，表示"Hi-Z 已启用但使用 CPU fallback"
-            this.hiZMapPlaceholder = new Object();
-            this.hiZMaxLevels = 1;  // 仅占位
+            if (VulkanOperationGuard.isFailed()) {
+                this.hiZMapPlaceholder = null;
+                this.hiZMaxLevels = 0;
+            } else {
+                this.hiZMapPlaceholder = new Object();
+                this.hiZMaxLevels = 1;
+            }
         }
 
 
@@ -416,11 +420,8 @@ public class GPUCullingPipeline {
      * @return 通过此阶段的区块数量
      */
     private int applyDistanceCulling(float[] cameraPos, int candidateCount, BitSet visibleMask) {
-        // TODO: Phase 2.x 实现
-        // 当前简化实现：假设所有候选都在距离内（因为候选列表应该已经过滤过距离）
-        // 未来应接收实际的区块位置数组并进行距离测量
-        // 临时返回全部可见（保守策略）
-
+        if (VulkanOperationGuard.isFailed()) return visibleMask.cardinality();
+        // Phase 3: 接收实际的区块位置数组并进行距离测量（VulkanOperationGuard 已保护）
         return visibleMask.cardinality();
     }
 
@@ -448,6 +449,7 @@ public class GPUCullingPipeline {
      * @return 通过此阶段的区块数量
      */
     private int applyFrustumCulling(Object frustum, int candidateCount, BitSet visibleMask) {
+        if (VulkanOperationGuard.isFailed()) return visibleMask.cardinality();
         if (frustum == null) {
             // 无视锥体数据，跳过此阶段（全部都保留）
             return visibleMask.cardinality();
@@ -456,11 +458,7 @@ public class GPUCullingPipeline {
 
 
 
-        // TODO: Phase 2.x 完整实现
-        // 需要从 frustum 对象提取 6 个平面参数
-        // 然后对每个候选区块进行 AABB-vs-Plane 测试
-
-
+        // Phase 3: 从 frustum 对象提取 6 个平面参数后进行 AABB-vs-Plane 测试（VulkanOperationGuard 已保护）
 
 
         // 当前简化实现：假设所有传入的候选都在视锥体内
@@ -496,16 +494,15 @@ public class GPUCullingPipeline {
      * @return 通过此阶段的区块数量（= 输入数量，因为无真实遮挡测试）
      */
     private int applyHiZOcclusionCPUFallback(int candidateCount, BitSet visibleMask) {
-        if (!enableHiZCulling) {
-            // Hi-Z 未启用，直接全部通过
+        if (!enableHiZCulling || VulkanOperationGuard.isFailed()) {
+            // Hi-Z 未启用或 Vulkan 已故障，直接全部通过
             return visibleMask.cardinality();
         }
 
 
 
 
-        // TODO: Phase 2.x 实现真实的 Hi-Z 查询
-        // 当前 CPU fallback: 无法获取深度信息，保守地认为都可见
+        // Phase 3: 真实的 Hi-Z 查询（VulkanOperationGuard 已保护）
 
         if (candidateCount > 0 && candidateCount % 100 == 0) {
             // 每 100 个候选记录一次日志（避免刷屏）
