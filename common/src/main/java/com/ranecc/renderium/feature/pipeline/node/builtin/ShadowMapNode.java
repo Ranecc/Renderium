@@ -527,7 +527,7 @@ public class ShadowMapNode extends AbstractPipelineNode {
 
         float cascadeScale = (float) Math.pow(2.0, cascadeIndex);
         float splitNear = cascadeNear / cascadeScale;
-        float splitFar = Math.min(cascadeFar / cascadeScale, farPlane);
+        float splitFar = cascadeFar / cascadeScale;
         float cascadeDist = (splitFar - splitNear) * 0.5f;
 
         for (int i = 0; i < 12; i++) vp[i] = 0.0f;

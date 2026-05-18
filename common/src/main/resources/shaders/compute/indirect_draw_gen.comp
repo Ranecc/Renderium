@@ -146,6 +146,14 @@ layout(std140, binding = 4) uniform GeneratorParams {
     uint _padding;
 };
 
+// ==================== 输出 SSBO: 调试统计信息 ====================
+// Binding 5: 调试/统计数据输出
+// 存储每个 workgroup 级别的统计信息，用于性能分析和调试
+// layout: [totalVisible, workgroupCount, _pad0, _pad1]
+layout(std430, binding = 5) writeonly buffer DebugStatsOutput {
+    uint debugStats[];             // 调试统计数据
+};
+
 // ==================== Shared Memory: 工作组内部状态 ====================
 shared uint localVisibleMask[WORKGROUP_SIZE / 32];  // Subgroup 可见性位掩码
 shared uint localVisibleCount;                       // 本工作组可见数量

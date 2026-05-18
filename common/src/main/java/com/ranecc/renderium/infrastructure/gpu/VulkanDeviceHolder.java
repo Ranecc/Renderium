@@ -30,6 +30,12 @@ public final class VulkanDeviceHolder {
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean degraded = new AtomicBoolean(false);
 
+    /**
+     * Mojang VulkanDevice 对象引用（volatile 保证线程可见性）
+     * 用于下游通过反射获取 LWJGL VkDevice
+     */
+    private static volatile Object vulkanDeviceObj = null;
+
     private VulkanDeviceHolder() {}
 
     public static VulkanDeviceHolder getInstance() { return INSTANCE; }
@@ -43,7 +49,20 @@ public final class VulkanDeviceHolder {
     public long getVkDevice() { return vkDevice.get(); }
     public long getVkDeviceHandle() { return vkDevice.get(); }
     public long getVmaAllocator() { return vmaAllocator.get(); }
-    public Object getVulkanDevice() { return null; }
+    /**
+     * 获取 Mojang VulkanDevice 对象引用
+     *
+     * @return Mojang com.mojang.blaze3d.vulkan.VulkanDevice 对象，未初始化时返回 null
+     */
+    public Object getVulkanDevice() { return vulkanDeviceObj; }
+
+    /**
+     * 设置 Mojang VulkanDevice 对象引用
+     * 由 MixinRenderSystem 在 initRenderer 阶段调用
+     *
+     * @param obj Mojang VulkanDevice 实例
+     */
+    public void setVulkanDeviceObj(Object obj) { this.vulkanDeviceObj = obj; }
 
     public int getQueueFamily() { return 0; }
     public long getVkCommandPool() { return 0L; }

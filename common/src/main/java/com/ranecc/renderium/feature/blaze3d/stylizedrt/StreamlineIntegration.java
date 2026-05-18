@@ -446,12 +446,12 @@ public class StreamlineIntegration implements AutoCloseable {
             // 步骤 2: 注册 Vulkan 信息
             // 注意：这里使用默认队列参数（0），实际应从 Vulkan 配置获取
             boolean vulkanRegistered = vulkanBridge.setVulkanInfo(
-                    vkInstance,                           // VkInstance
-                    vkPhysicalDevice,                     // VkPhysicalDevice
-                    vkDevice,                             // VkDevice
-                    0L,                                   // VkComputeQueue（默认）
-                    0,                                    // 计算队列族索引（默认）
-                    0                                     // 图形队列族索引（默认）
+                    vkDevice,                             // VkDevice (param 1)
+                    vkInstance,                           // VkInstance (param 2)
+                    vkPhysicalDevice,                     // VkPhysicalDevice (param 3)
+                    0L,                                   // VkQueue computeQueue (param 4)
+                    0,                                    // computeQueueFamilyIndex (param 5)
+                    0                                     // graphicsQueueFamilyIndex (param 6)
             );
 
             if (!vulkanRegistered) {

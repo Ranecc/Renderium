@@ -215,19 +215,24 @@ public class CullingPipeline {
         VkDevice device = RenderiumVulkanBridge.getDevice();
         if (device == null) return;
         try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
-            // Descriptor Set Layout (5 bindings, matches indirect_draw_gen.comp layout)
+            // Descriptor Set Layout (6 bindings, matches indirect_draw_gen.comp layout)
             // binding=0: VisibilityInput SSBO
             // binding=1: ChunkMetaData SSBO
             // binding=2: IndirectDrawOutput SSBO
             // binding=3: DrawCountOutput SSBO
             // binding=4: GeneratorParams UBO
-            var bindings = VkDescriptorSetLayoutBinding.calloc(5, stack);
+            // binding=5: DebugStatsOutput SSBO
+            var bindings = VkDescriptorSetLayoutBinding.calloc(6, stack);
             for (int i = 0; i < 5; i++) {
                 bindings.get(i).binding(i)
                     .descriptorType(i < 4 ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
                     .descriptorCount(1)
                     .stageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
             }
+            bindings.get(5).binding(5)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .stageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
             var dsLayoutInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack)
                 .sType(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO)
                 .pBindings(bindings);

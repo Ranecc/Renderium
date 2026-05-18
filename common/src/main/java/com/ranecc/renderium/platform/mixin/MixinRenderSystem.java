@@ -56,6 +56,9 @@ public abstract class MixinRenderSystem {
         try {
             VulkanDevice vkDevice = (VulkanDevice) backendObj;
 
+            // 存储 Mojang VulkanDevice 对象引用（供 LWJGL VkDevice 获取使用）
+            VulkanDeviceHolder.getInstance().setVulkanDeviceObj(vkDevice);
+
             long vkDeviceHandle = vkDevice.vkDevice().address();
             long vmaAllocator   = vkDevice.vma();
             long gQueue = vkDevice.graphicsQueue().vkQueue().address();

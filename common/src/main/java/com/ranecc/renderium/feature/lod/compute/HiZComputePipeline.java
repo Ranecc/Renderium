@@ -56,8 +56,8 @@ public final class HiZComputePipeline {
     /** Vulkan 命令缓冲区使用：一次性提交 */
     private static final int VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT = 0x00000001;
 
-    /** Vulkan Pipeline 阶段标志：计算着色器 */
-    private static final int VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT = 0x00000200;
+    /** Vulkan Pipeline 阶段标志：计算着色器 (VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT = 0x00000800) */
+    private static final int VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT = 0x00000800;
 
     /** Vulkan 访问标志：着色器写入 */
     private static final int VK_ACCESS_SHADER_WRITE_BIT = 0x00200000;
@@ -89,8 +89,8 @@ public final class HiZComputePipeline {
     /** 默认超时时间（100毫秒，纳秒单位） */
     private static final long DEFAULT_FENCE_TIMEOUT_NS = 100_000_000L;
 
-    /** Vulkan 结构体类型：内存屏障 (VK_STRUCTURE_TYPE_MEMORY_BARRIER) */
-    private static final int VK_STRUCTURE_TYPE_MEMORY_BARRIER = 0;
+    /** Vulkan 结构体类型：内存屏障 (VK_STRUCTURE_TYPE_MEMORY_BARRIER = 4) */
+    private static final int VK_STRUCTURE_TYPE_MEMORY_BARRIER = 4;
 
     // ==================== Pipeline 缓存（首次创建后复用）====================
 

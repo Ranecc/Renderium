@@ -10,6 +10,8 @@ import com.ranecc.renderium.feature.chunk.build.ChunkBuildPipeline;
 import com.ranecc.renderium.feature.chunk.build.ChunkBuildTask;
 import com.ranecc.renderium.feature.chunk.build.ProgressiveMeshRefiner;
 import com.ranecc.renderium.feature.chunk.sort.TranslucentSortEngine;
+import com.ranecc.renderium.platform.bridge.mc.FrameDataSnapshot;
+import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -407,17 +409,30 @@ public class RenderiumCullingScheduler {
     }
 
     /**
-     * 构建 view-projection 矩阵。
+     * 构建 view-projection 矩阵（P × V，列主序，OpenGL 约定）。
      *
-     * <p>通过 detector 提供的相机位置和朝向构建 lookAt + perspective 矩阵。
-     * 当前为 CPU 端自建矩阵（非 MC RenderSystem 同步），
-     * 用于 L1 Frustum Culling 的视锥平面提取。
+     * <p>数据源优先级：
+     * <ol>
+     *   <li>LifecycleManager → FrameDataSnapshot：使用 MC 原生投影和视图矩阵，
+     *       包含 bobHurt/bobView/screenEffect 等变换，更精确</li>
+     *   <li>CameraMotionDetector 本地自建矩阵：当 FrameDataSnapshot 尚未填充时回退</li>
+     * </ol>
      *
-     * <p>数据链路: CameraMotionDetector.getCameraX/Y/Z() + getCurrentYaw/Pitch()
+     * <p>注意：FrameDataSnapshot 内部存储 view × projection，
+     * 此处取出分量后按 P × V 顺序重算，以匹配 extractFrustumPlanes 的 Gribb/Hartmann 约定。
      *
-     * @return 16-float 列主序 VP 矩阵
+     * @return 16-float 列主序 P × V 矩阵
      */
     private float[] buildViewProjectionMatrix() {
+        // 优先从 LifecycleManager 同步管线获取 MC 原生矩阵
+        FrameDataSnapshot fd = MCRenderBridge.getCurrentFrameData();
+        float[] projSrc = fd.getProjectionMatrix();
+        float[] viewSrc = fd.getViewMatrix();
+        if (!isIdentityMatrix(projSrc) && !isIdentityMatrix(viewSrc)) {
+            return multiplyMM(projSrc, viewSrc);
+        }
+
+        // 回退：基于 CameraMotionDetector 本地自建矩阵
         double camX = detector.getCameraX();
         double camY = detector.getCameraY();
         double camZ = detector.getCameraZ();
@@ -523,6 +538,19 @@ public class RenderiumCullingScheduler {
             }
         }
         return result;
+    }
+
+    /**
+     * 检测 4×4 列主序矩阵是否为单位矩阵。
+     *
+     * @param m 16-float 列主序矩阵
+     * @return true 如果矩阵等于 4×4 单位矩阵
+     */
+    private static boolean isIdentityMatrix(float[] m) {
+        return m[0] == 1.0f && m[1] == 0.0f && m[2] == 0.0f && m[3] == 0.0f
+            && m[4] == 0.0f && m[5] == 1.0f && m[6] == 0.0f && m[7] == 0.0f
+            && m[8] == 0.0f && m[9] == 0.0f && m[10] == 1.0f && m[11] == 0.0f
+            && m[12] == 0.0f && m[13] == 0.0f && m[14] == 0.0f && m[15] == 1.0f;
     }
 
     // ==================== 查询 API ====================

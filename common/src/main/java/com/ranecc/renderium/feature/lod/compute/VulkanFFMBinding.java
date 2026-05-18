@@ -159,6 +159,42 @@ public final class VulkanFFMBinding {
     /** vkDestroyFramebuffer: 销毁帧缓冲 */
     private static volatile MethodHandle VK_DESTROY_FRAMEBUFFER;
 
+    // ============ DescriptorPool / DescriptorSet ============
+
+    /** vkCreateDescriptorPool: 创建描述符池 */
+    private static volatile MethodHandle VK_CREATE_DESCRIPTOR_POOL;
+
+    /** vkDestroyDescriptorPool: 销毁描述符池 */
+    private static volatile MethodHandle VK_DESTROY_DESCRIPTOR_POOL;
+
+    /** vkAllocateDescriptorSets: 分配描述符集 */
+    private static volatile MethodHandle VK_ALLOCATE_DESCRIPTOR_SETS;
+
+    /** vkUpdateDescriptorSets: 更新描述符集写入 */
+    private static volatile MethodHandle VK_UPDATE_DESCRIPTOR_SETS;
+
+    /** vkFreeDescriptorSets: 释放描述符集 */
+    private static volatile MethodHandle VK_FREE_DESCRIPTOR_SETS;
+
+    // ============ GPU→CPU Readback ============
+
+    /** vkMapMemory: 映射设备内存 */
+    private static volatile MethodHandle VK_MAP_MEMORY;
+
+    /** vkUnmapMemory: 解除内存映射 */
+    private static volatile MethodHandle VK_UNMAP_MEMORY;
+
+    /** vkInvalidateMappedMemoryRanges: 使 CPU 缓存失效 */
+    private static volatile MethodHandle VK_INVALIDATE_MAPPED_MEMORY_RANGES;
+
+    /** vkFlushMappedMemoryRanges: 刷新 CPU 缓存 */
+    private static volatile MethodHandle VK_FLUSH_MAPPED_MEMORY_RANGES;
+
+    // ============ Buffer 操作 ============
+
+    /** vkCmdCopyBuffer: 缓冲区拷贝 */
+    private static volatile MethodHandle VK_CMD_COPY_BUFFER;
+
     // ==================== 加载状态 ====================
 
     /** FFM 方法是否已加载 */
@@ -215,6 +251,17 @@ public final class VulkanFFMBinding {
     public static MethodHandle getVkGetImageMemoryRequirements() { return VK_GET_IMAGE_MEMORY_REQUIREMENTS; }
     public static MethodHandle getVkCreateFramebuffer() { return VK_CREATE_FRAMEBUFFER; }
     public static MethodHandle getVkDestroyFramebuffer() { return VK_DESTROY_FRAMEBUFFER; }
+
+    public static MethodHandle getVkCreateDescriptorPool() { return VK_CREATE_DESCRIPTOR_POOL; }
+    public static MethodHandle getVkDestroyDescriptorPool() { return VK_DESTROY_DESCRIPTOR_POOL; }
+    public static MethodHandle getVkAllocateDescriptorSets() { return VK_ALLOCATE_DESCRIPTOR_SETS; }
+    public static MethodHandle getVkUpdateDescriptorSets() { return VK_UPDATE_DESCRIPTOR_SETS; }
+    public static MethodHandle getVkFreeDescriptorSets() { return VK_FREE_DESCRIPTOR_SETS; }
+    public static MethodHandle getVkMapMemory() { return VK_MAP_MEMORY; }
+    public static MethodHandle getVkUnmapMemory() { return VK_UNMAP_MEMORY; }
+    public static MethodHandle getVkInvalidateMappedMemoryRanges() { return VK_INVALIDATE_MAPPED_MEMORY_RANGES; }
+    public static MethodHandle getVkFlushMappedMemoryRanges() { return VK_FLUSH_MAPPED_MEMORY_RANGES; }
+    public static MethodHandle getVkCmdCopyBuffer() { return VK_CMD_COPY_BUFFER; }
 
     /** FFM 方法句柄是否已加载成功 */
     public static boolean isFfmLoaded() { return ffmLoaded; }
@@ -570,6 +617,75 @@ public final class VulkanFFMBinding {
             VK_DESTROY_FRAMEBUFFER = linker.downcallHandle(
                     vulkanLookup.find("vkDestroyFramebuffer").orElseThrow(),
                     FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_CREATE_DESCRIPTOR_POOL = linker.downcallHandle(
+                    vulkanLookup.find("vkCreateDescriptorPool").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG)
+            );
+
+            VK_DESTROY_DESCRIPTOR_POOL = linker.downcallHandle(
+                    vulkanLookup.find("vkDestroyDescriptorPool").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_ALLOCATE_DESCRIPTOR_SETS = linker.downcallHandle(
+                    vulkanLookup.find("vkAllocateDescriptorSets").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG)
+            );
+
+            VK_UPDATE_DESCRIPTOR_SETS = linker.downcallHandle(
+                    vulkanLookup.find("vkUpdateDescriptorSets").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG)
+            );
+
+            VK_FREE_DESCRIPTOR_SETS = linker.downcallHandle(
+                    vulkanLookup.find("vkFreeDescriptorSets").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG)
+            );
+
+            VK_MAP_MEMORY = linker.downcallHandle(
+                    vulkanLookup.find("vkMapMemory").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_UNMAP_MEMORY = linker.downcallHandle(
+                    vulkanLookup.find("vkUnmapMemory").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_INVALIDATE_MAPPED_MEMORY_RANGES = linker.downcallHandle(
+                    vulkanLookup.find("vkInvalidateMappedMemoryRanges").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG)
+            );
+
+            VK_FLUSH_MAPPED_MEMORY_RANGES = linker.downcallHandle(
+                    vulkanLookup.find("vkFlushMappedMemoryRanges").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG)
+            );
+
+            VK_CMD_COPY_BUFFER = linker.downcallHandle(
+                    vulkanLookup.find("vkCmdCopyBuffer").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG)
             );
 
             ffmLoaded = true;

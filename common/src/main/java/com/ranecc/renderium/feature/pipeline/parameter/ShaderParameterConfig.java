@@ -364,41 +364,36 @@ public final class ShaderParameterConfig {
      * @return boolean - true 表示成功上传，false 表示跳过或失败
      */
     private boolean uploadUniform(RenderContext context, String uniformName, ParameterKnob<?> knob) {
-        // 根据参数类型执行不同的 GPU 上传操作
         switch (knob.getType()) {
             case FLOAT -> {
-                float value = ((FloatKnob) knob).getRawValue();
+                float value = ((com.ranecc.renderium.feature.pipeline.parameter.impl.FloatKnob) knob).getRawValue();
                 if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
                     return true;
                 }
-                markDirty(uniformName);
                 return true;
             }
 
             case INT -> {
-                int value = ((IntKnob) knob).getRawValue();
+                int value = ((com.ranecc.renderium.feature.pipeline.parameter.impl.IntKnob) knob).getRawValue();
                 if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
                     return true;
                 }
-                markDirty(uniformName);
                 return true;
             }
 
             case BOOL -> {
-                boolean value = ((BoolKnob) knob).getRawValue();
+                boolean value = ((com.ranecc.renderium.feature.pipeline.parameter.impl.BoolKnob) knob).getRawValue();
                 if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
                     return true;
                 }
-                markDirty(uniformName);
                 return true;
             }
 
             case ENUM -> {
-                int index = ((EnumKnob) knob).getCurrentIndex();
+                int index = ((com.ranecc.renderium.feature.pipeline.parameter.impl.EnumKnob) knob).getCurrentIndex();
                 if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
                     return true;
                 }
-                markDirty(uniformName);
                 return true;
             }
 
