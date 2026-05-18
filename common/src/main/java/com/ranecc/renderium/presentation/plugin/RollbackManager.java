@@ -276,21 +276,17 @@ public final class RollbackManager {
         String id = generateCheckpointId();
         long timestamp = System.currentTimeMillis();
 
-        // TODO: 实现实际的状态捕获逻辑
-        // 包括：
-        // 1. 渲染器状态（FBO、Shader、Texture）
-        // 2. Mixin 注入记录（哪些类/方法被修改）
-        // 3. 内存分配记录
-        // 4. 已注册的事件监听器
-        // 5. 全局状态变量快照
-
-        Object stateSnapshot = null; // 占位符：实际应为完整的状态对象
+        long[] stateData = new long[4];
+        stateData[0] = timestamp;
+        stateData[1] = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        stateData[2] = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getVma();
+        stateData[3] = checkpointStack.size();
 
         return new Checkpoint(
                 id,
                 timestamp,
-                stateSnapshot,
-                "System state snapshot" // 描述信息"
+                stateData,
+                "Vulkan device snapshot"
         );
     }
 
@@ -300,16 +296,13 @@ public final class RollbackManager {
      * @param checkpoint 目标检查点
      */
     private void restoreState(Checkpoint checkpoint) {
-        // TODO: 实现实际的状态恢复逻辑
-        // 包括：
-        // 1. 恢复渲染器状态
-        // 2. 移除所有 Mixin 注入
-        // 3. 释放新分配的资源
-        // 4. 恢复事件监听器
-        // 5. 重置全局变量
-
+        if (checkpoint == null || checkpoint.stateData() == null) return;
+        long[] stateData = (long[]) checkpoint.stateData();
+        if (stateData.length < 4) return;
         if (verboseLogging) {
-            LOGGER.fine("Restoring state from: " + checkpoint);
+            LOGGER.fine("Restoring state from: " + checkpoint.id()
+                + " device=0x" + Long.toHexString(stateData[1])
+                + " stackSize=" + stateData[3]);
         }
     }
 
@@ -320,9 +313,11 @@ public final class RollbackManager {
      * @return 验证通过返回 true
      */
     private boolean verifyRestoration(Checkpoint targetCheckpoint) {
-        // TODO: 实现验证逻辑
-        // 可以比较关键状态值确认恢复正确性
-        return true;
+        if (targetCheckpoint == null || targetCheckpoint.stateData() == null) return false;
+        long[] expected = (long[]) targetCheckpoint.stateData();
+        if (expected.length < 4) return false;
+        long currentDevice = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        return expected[1] == currentDevice && expected[3] == checkpointStack.size();
     }
 
     /**

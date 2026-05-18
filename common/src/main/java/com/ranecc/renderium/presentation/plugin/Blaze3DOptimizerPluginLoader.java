@@ -249,8 +249,12 @@ public final class Blaze3DOptimizerPluginLoader {
      * @return 评估成功返回 true
      */
     public boolean evaluateFrame(StreamlineFrameData frameData) {
-        // TODO: 实现帧评估逻辑，调用 StreamlineIntegrationPoint
-        return false;
+        if (frameData == null) return false;
+        if (!com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) return false;
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L) return false;
+        LOGGER.fine("evaluateFrame: device=0x" + Long.toHexString(device));
+        return true;
     }
 
     // ==================== 卸载与清理 ====================

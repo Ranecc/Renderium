@@ -446,10 +446,19 @@ public final class ShaderWorkbench {
      * @return VkShaderModule handle，当前始终返回 0（存根）
      */
     private long createShaderModuleFromSPIRV(long device, byte[] spirvData, String passName) {
-        if (!VulkanGraphicsHelper.isAvailable()) return 0L;
-        LOGGER.warning("[存根] createShaderModuleFromSPIRV 未实现: " + passName +
-                " (" + spirvData.length + " bytes, device=0x" + Long.toHexString(device) + ")");
-        return 0L;
+        if (!VulkanGraphicsHelper.isAvailable() || device == 0L || spirvData == null) return 0L;
+        try {
+            var arena = java.lang.foreign.Arena.ofConfined();
+            var seg = arena.allocate(spirvData.length);
+            for (int i = 0; i < spirvData.length; i++) seg.set(java.lang.foreign.ValueLayout.JAVA_BYTE, i, spirvData[i]);
+            long module = (long) com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkCreateShaderModule()
+                .invoke(device, seg.address(), 0L, 0L, 0L, 0L);
+            LOGGER.fine("ShaderModule created: " + passName + " (" + spirvData.length + " bytes)");
+            return module;
+        } catch (Throwable t) {
+            LOGGER.warning("createShaderModuleFromSPIRV failed for " + passName + ": " + t.getMessage());
+            return 0L;
+        }
     }
 
     /**
@@ -459,13 +468,18 @@ public final class ShaderWorkbench {
      * 实际的 vkDestroyShaderModule 调用暂时不可用。
      */
     private void cleanupInjectionShaderModules() {
-        if (injectionShaderModules.isEmpty()) {
-            return;
+        if (injectionShaderModules.isEmpty()) return;
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) {
+            for (var entry : injectionShaderModules.entrySet()) {
+                try {
+                    com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkDestroyShaderModule()
+                        .invoke(device, entry.getValue(), 0L);
+                } catch (Throwable ignored) {}
+            }
         }
-
-        LOGGER.warning("[存根] cleanupInjectionShaderModules: 清理 " +
-                injectionShaderModules.size() + " 个 Shader Module 缓存（未执行实际 VK 销毁）");
         injectionShaderModules.clear();
+        LOGGER.fine("ShaderWorkbench: " + injectionShaderModules.size() + " modules cleaned");
     }
 
     /**

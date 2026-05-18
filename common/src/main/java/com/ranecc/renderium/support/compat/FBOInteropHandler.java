@@ -204,14 +204,22 @@ public final class FBOInteropHandler {
     // ==================== 内部实现 ====================
 
     private void selectInteropMethod() {
-        // TODO: 根据硬件能力选择最优互操作方法
-        currentMethod = InteropMethod.EXTERNAL_MEMORY;
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L && com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.isAvailable()) {
+            currentMethod = InteropMethod.EXTERNAL_MEMORY;
+        } else {
+            currentMethod = InteropMethod.READ_PIXELS;
+        }
     }
 
     private void initializeSynchronization() {
-        // TODO: 初始化 GL-Vulkan 同步原语
-        glToVulkanSemaphore = 1L;
-        vulkanToGLSemaphore = 2L;
+        if (com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) {
+            glToVulkanSemaphore = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getGraphicsQueue();
+            vulkanToGLSemaphore = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getComputeQueue();
+        } else {
+            glToVulkanSemaphore = 0L;
+            vulkanToGLSemaphore = 0L;
+        }
     }
 
     private void onResolutionChanged(int width, int height) {

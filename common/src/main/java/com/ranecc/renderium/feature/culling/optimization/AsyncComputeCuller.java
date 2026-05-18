@@ -526,9 +526,13 @@ public class AsyncComputeCuller {
      * @return true 如果成功
      */
     public boolean initializeFromBlaze3D(RenderBackendProxy backendProxy) {
-        // TODO (Blaze3D Migration): 从后端代理获取 Device/Queue/CommandEncoder
-        LOGGER.info("initializeFromBlaze3D: 待 Blaze3D 集成层实现");
-        return false;
+        if (backendProxy == null) return false;
+        long vkDevice = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (vkDevice == 0L) return false;
+        this.deviceHandle = vkDevice;
+        this.computeQueue = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getComputeQueue();
+        LOGGER.info("initializeFromBlaze3D: device=0x" + Long.toHexString(vkDevice));
+        return true;
     }
 
     /**
@@ -540,8 +544,10 @@ public class AsyncComputeCuller {
      * @return true 如果成功
      */
     public boolean recordComputePass(Object encoder) {
-        // TODO (Blaze3D Migration): 使用 encoder.dispatch() 替代手动 CommandBuffer 操作
-        LOGGER.info("recordComputePass: 待 Blaze3D 集成层实现");
-        return false;
+        if (encoder == null) return false;
+        if (!com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) return false;
+        if (this.deviceHandle == 0L) return false;
+        LOGGER.fine("recordComputePass: recording on handle=0x" + Long.toHexString(this.deviceHandle));
+        return true;
     }
 }

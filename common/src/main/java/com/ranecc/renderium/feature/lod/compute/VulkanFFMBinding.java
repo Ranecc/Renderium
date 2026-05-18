@@ -221,6 +221,23 @@ public final class VulkanFFMBinding {
     /** vkFreeCommandBuffers: 释放命令缓冲区 */
     private static volatile MethodHandle VK_FREE_COMMAND_BUFFERS;
 
+    // ============ Phase 4: Timeline Semaphore ============
+
+    /** vkCreateSemaphore: 创建信号量 */
+    private static volatile MethodHandle VK_CREATE_SEMAPHORE;
+
+    /** vkDestroySemaphore: 销毁信号量 */
+    private static volatile MethodHandle VK_DESTROY_SEMAPHORE;
+
+    /** vkWaitSemaphores: 等待时间线信号量 */
+    private static volatile MethodHandle VK_WAIT_SEMAPHORES;
+
+    /** vkSignalSemaphore: 信号时间线信号量 */
+    private static volatile MethodHandle VK_SIGNAL_SEMAPHORE;
+
+    /** vkGetSemaphoreCounterValue: 查询信号量计数器 */
+    private static volatile MethodHandle VK_GET_SEMAPHORE_COUNTER_VALUE;
+
     // ==================== 加载状态 ====================
 
     /** FFM 方法是否已加载 */

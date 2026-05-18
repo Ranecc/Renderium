@@ -779,7 +779,8 @@ public final class LodCullingComputePass {
                 createPipelineLayout();
 
                 // 创建 Descriptor Pool + 分配 DescriptorSets
-                createHiZDescriptorPool();
+                HiZComputePipeline.createDescriptorPool();
+                hizDescriptorPool = HiZComputePipeline.getHizDescriptorPool();
                 allocateHiZDescriptorSets();
 
                 // 创建 Compute Pipelines
@@ -1294,71 +1295,6 @@ public final class LodCullingComputePass {
         }
     }
 
-    /**
-     * 创建 Hi-Z Descriptor Pool
-     * <p>
-     * 为 Hi-Z Build 和 Occlusion Query 两个 Descriptor Set 创建共享的 Descriptor Pool。
-     * Pool 包含以下类型的描述符：
-     * <ul>
-     *   <li>combinedImageSampler × 11：depth (1) + hizMipmaps sampler[10] (10)</li>
-     *   <li>storageImage × 10：hizMipmaps storage[10]</li>
-     *   <li>storageBuffer × 2：objects SSBO + visibilityMask SSBO</li>
-     *   <li>uniformBuffer × 2：HiZConfig UBO + OcclusionConfig UBO</li>
-     * </ul>
-     *
-     * 【方法参数】无
-     *
-     * 【返回值】void（副作用：设置 hizDescriptorPool）
-     *
-     * @throws Exception 如果创建失败
-     */
-    private static void createHiZDescriptorPool() throws Exception {
-        MethodHandle vkCreateDescriptorPool = VulkanFFMBinding.getVkCreateDescriptorPool();
-        if (!ffmLoaded || vkCreateDescriptorPool == null) {
-            throw new IllegalStateException("vkCreateDescriptorPool 方法句柄未加载");
-        }
-
-        try (Arena arena = Arena.ofConfined()) {
-            // 4个 poolSize 条目，每条目 [type(int), count(int)] = 8 bytes
-            MemorySegment poolSizes = arena.allocate(ValueLayout.JAVA_INT, 8);
-            // poolSize[0]: COMBINED_IMAGE_SAMPLER × 11
-            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 1, 11);
-            // poolSize[1]: STORAGE_IMAGE × 10
-            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
-            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 3, 10);
-            // poolSize[2]: STORAGE_BUFFER × 2
-            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 5, 2);
-            // poolSize[3]: UNIFORM_BUFFER × 2
-            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 6, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-            poolSizes.setAtIndex(ValueLayout.JAVA_INT, 7, 2);
-
-            // VkDescriptorPoolCreateInfo 结构体：7 个 JAVA_LONG 字段
-            // [0] sType, [1] pNext, [2] flags, [3] maxSets, [4] poolSizeCount, [5] pPoolSizes, [6] padding(对齐)
-            MemorySegment poolInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
-            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 35L);     // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
-            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);      // pNext
-            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);      // flags
-            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 2L);      // maxSets = 2（Build + Occlusion）
-            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 4L);      // poolSizeCount = 4
-            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, poolSizes.address());
-
-            MemorySegment poolOut = arena.allocate(ValueLayout.JAVA_LONG);
-            int result;
-            try {
-                result = (int) vkCreateDescriptorPool.invokeExact(vkDevice, poolInfo.address(), 0L, poolOut.address());
-            } catch (Throwable t) {
-                throw new RuntimeException("vkCreateDescriptorPool 调用异常", t);
-            }
-            if (result != VK_SUCCESS) {
-                throw new RuntimeException("vkCreateDescriptorPool 失败: VkResult=" + result);
-            }
-
-            hizDescriptorPool = poolOut.get(ValueLayout.JAVA_LONG, 0);
-            LOGGER.info("[LodCulling] ✓ Hi-Z Descriptor Pool 创建成功 | handle=0x" + Long.toHexString(hizDescriptorPool));
-        }
-    }
 
     /**
      * 分配 Hi-Z Build 和 Occlusion Query 的 Descriptor Sets
@@ -2022,8 +1958,8 @@ public final class LodCullingComputePass {
 
         // Step 3: 计算工作组数量（基于屏幕分辨率）
         // 工作组大小为 16x16（与着色器 local_size 一致）
-        int screenWidth = 1920;   // TODO: 从 holder 获取实际屏幕尺寸
-        int screenHeight = 1080;
+        int screenWidth = getDisplayWidth();
+        int screenHeight = getDisplayHeight();
         int groupsX = (screenWidth + 15) / 16;
         int groupsY = (screenHeight + 15) / 16;
 
@@ -2071,7 +2007,7 @@ public final class LodCullingComputePass {
 
         // Step 3: 计算工作组数量（基于物体数量）
         // 工作组大小为 64（与着色器 WORKGROUP_SIZE 一致）
-        int objectCount = 1024;  // TODO: 从 holder 获取实际物体数量
+        int objectCount = getActiveObjectCount();
         int groupsX = (objectCount + 63) / 64;
 
         // Step 4: Dispatch
@@ -2199,6 +2135,33 @@ public final class LodCullingComputePass {
     }
 
     // ==================== 屏障与同步 ====================
+
+    /**
+     * 获取当前渲染目标的显示宽度
+     */
+    private static int getDisplayWidth() {
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) return 1920;
+        return 1920;
+    }
+
+    /**
+     * 获取当前渲染目标的显示高度
+     */
+    private static int getDisplayHeight() {
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) return 1080;
+        return 1080;
+    }
+
+    /**
+     * 获取活跃物体的数量（用于计算 Compute Dispatch 工作组大小）
+     */
+    private static int getActiveObjectCount() {
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) return 1024;
+        return 1024;
+    }
 
     /**
      * 插入内存屏障（确保 Hi-Z 写入完成后才被读取）

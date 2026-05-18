@@ -662,7 +662,7 @@ public class StaticGeometryCache implements AutoCloseable {
             // 3. 复制数据到静态缓冲
             if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) {
                 com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.copyBuffer(
-                    dynamicVertexBufferHandle, staticVertexBufferHandle, state.chunk.vertexCount);
+                    0L, dynamicVertexBufferHandle, staticVertexBufferHandle, state.chunk.vertexCount);
             }
 
             // 4. 更新状态
@@ -782,7 +782,7 @@ public class StaticGeometryCache implements AutoCloseable {
             if (staticVertexCount > 0 && staticIndexCount > 0) {
                 if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) {
                     com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.bindAndDrawIndexed(
-                        staticVertexBufferHandle, staticIndexBufferHandle, staticIndexCount);
+                        0L, staticVertexBufferHandle, staticIndexBufferHandle, staticIndexCount);
                 }
 
                 LOGGER.fine(String.format(
@@ -795,7 +795,7 @@ public class StaticGeometryCache implements AutoCloseable {
             if (dynamicVertexCount > 0 && dynamicIndexCount > 0) {
                 if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) {
                     com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.bindAndDrawIndexed(
-                        dynamicVertexBufferHandle, dynamicIndexBufferHandle, dynamicIndexCount);
+                        0L, dynamicVertexBufferHandle, dynamicIndexBufferHandle, dynamicIndexCount);
                 }
 
                 LOGGER.fine(String.format(

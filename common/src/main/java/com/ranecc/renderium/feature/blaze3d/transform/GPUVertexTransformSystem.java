@@ -185,6 +185,13 @@ public class GPUVertexTransformSystem implements AutoCloseable {
      */
     private long visibleChunkCountBufferHandle = 0L;
 
+    /** 缓冲区内存句柄（用于 uploadData 映射） */
+    private long globalVertexBufferMemory = 0L;
+    private long instanceTransformBufferMemory = 0L;
+    private long chunkMappingBufferMemory = 0L;
+    private long indirectDrawBufferMemory = 0L;
+    private long visibleChunkCountBufferMemory = 0L;
+
     // ==================== CPU 端缓冲区（用于准备数据） ====================
 
     /**
@@ -354,10 +361,15 @@ public class GPUVertexTransformSystem implements AutoCloseable {
             long[] ib = com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.createBuffer(256L * 1024, 8 | 2);
             long[] cb = com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.createBuffer(64 * 1024, 8 | 2);
             this.globalVertexBufferHandle = vb[0];
+            this.globalVertexBufferMemory = vb[1];
             this.instanceTransformBufferHandle = sb[0];
+            this.instanceTransformBufferMemory = sb[1];
             this.chunkMappingBufferHandle = mb[0];
+            this.chunkMappingBufferMemory = mb[1];
             this.indirectDrawBufferHandle = ib[0];
+            this.indirectDrawBufferMemory = ib[1];
             this.visibleChunkCountBufferHandle = cb[0];
+            this.visibleChunkCountBufferMemory = cb[1];
             LOGGER.fine("[GT1] GPU buffers created via VulkanFFM");
         } else {
             this.globalVertexBufferHandle = 1L;
@@ -635,9 +647,11 @@ public class GPUVertexTransformSystem implements AutoCloseable {
         indirectDrawDataBuffer.flip();
 
         if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) {
+            byte[] byteBuf = new byte[transformDataBuffer.remaining()];
+            transformDataBuffer.get(byteBuf);
             com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.uploadData(
                 com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.getDevice(),
-                0L, transformDataBuffer.array(), 0);
+                instanceTransformBufferMemory, byteBuf, 0);
         }
         // vkUnmapMemory(device, memory);
         //
@@ -931,11 +945,11 @@ public class GPUVertexTransformSystem implements AutoCloseable {
      */
     private void releaseGPUBuffers() throws Exception {
         if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) {
-            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(globalVertexBufferHandle, 0L);
-            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(instanceTransformBufferHandle, 0L);
-            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(chunkMappingBufferHandle, 0L);
-            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(indirectDrawBufferHandle, 0L);
-            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(visibleChunkCountBufferHandle, 0L);
+            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(globalVertexBufferHandle, globalVertexBufferMemory);
+            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(instanceTransformBufferHandle, instanceTransformBufferMemory);
+            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(chunkMappingBufferHandle, chunkMappingBufferMemory);
+            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(indirectDrawBufferHandle, indirectDrawBufferMemory);
+            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(visibleChunkCountBufferHandle, visibleChunkCountBufferMemory);
         }
 
         // 重置句柄
