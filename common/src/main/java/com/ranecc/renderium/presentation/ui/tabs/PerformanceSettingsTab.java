@@ -47,6 +47,22 @@ public class PerformanceSettingsTab extends Screen {
     /** 日志记录器 */
     private static final Logger LOGGER = LoggerFactory.getLogger("Renderium-PerformanceTab");
 
+    /**
+     * 按钮文本格式化器函数式接口
+     */
+    @FunctionalInterface
+    private interface ButtonTextFormatter {
+        String format(String label, boolean enabled);
+    }
+
+    /** 预定义的 ON/OFF 格式化器 */
+    private static final ButtonTextFormatter ON_OFF_FORMATTER =
+            (label, enabled) -> enabled ? (label + ": ON") : (label + ": OFF");
+
+    /** 预定义的复选框格式化器 */
+    private static final ButtonTextFormatter CHECKBOX_FORMATTER =
+            (label, enabled) -> enabled ? "[✓] " + label : "[ ] " + label;
+
     private final Screen parent;
     private final RenderiumConfig config;
 
