@@ -19,9 +19,12 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * 异步 Chunk 构建管道
- * <p>
- * 管理多线程的区块网格（mesh）构建任务，
+ * 异步 Chunk 构建管道 [DEPRECATED]
+ *
+ * <p><b>已废弃</b> — 请使用 {@code com.ranecc.renderium.feature.chunk.build.ChunkBuildPipeline} 替代。
+ * 新管线支持 PACELC 一致性分层 + 渐进式精炼 + 速度感知降级。
+ *
+ * <p>管理多线程的区块网格（mesh）构建任务，
  * 实现与渲染主线程完全解耦的异步构建流程。
  *
  * <h3>工作流程：</h3>
@@ -45,6 +48,7 @@ import java.util.logging.Logger;
  *   <li>上传带宽预算</li>
  * </ul>
  */
+@Deprecated
 public final class AsyncChunkBuildPipeline {
 
     private static final Logger LOGGER = Logger.getLogger(AsyncChunkBuildPipeline.class.getName());

@@ -62,9 +62,4 @@ __pycache__/
 cmake/
 .trae/
 local.properties
-common/src/main/resources/docs/api-reference.md
-common/src/main/resources/docs/interception-architecture.md
-common/src/main/resources/docs/troubleshooting.md
-common/src/main/resources/docs/v6-migration-guide.md
-common/src/main/resources/docs/voxel-lod-study.md
-common/src/main/resources/research/potential-field-rt-paper.md
+docs/

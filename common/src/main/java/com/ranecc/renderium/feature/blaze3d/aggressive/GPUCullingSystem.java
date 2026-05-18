@@ -36,6 +36,9 @@ public class GPUCullingSystem implements AutoCloseable {
     private static long pipelineLayout = 0L;
     private static byte[] FRUSTUM_CULLING_SPIRV;
 
+    /** 是否需要销毁 chunkBoundsBuffer/indirectArgsBuffer（外部创建标记） */
+    private static volatile boolean ownBuffers;
+
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean enabled = new AtomicBoolean(false);
     private volatile int registeredChunkCount;
@@ -167,14 +170,22 @@ public class GPUCullingSystem implements AutoCloseable {
         if (cullingPipeline != 0L) { vkDestroyPipeline(device, cullingPipeline, null); cullingPipeline = 0L; }
         if (cullingShaderModule != 0L) { vkDestroyShaderModule(device, cullingShaderModule, null); cullingShaderModule = 0L; }
         if (pipelineLayout != 0L) { vkDestroyPipelineLayout(device, pipelineLayout, null); pipelineLayout = 0L; }
+        if (chunkBoundsBuffer != 0L && ownBuffers) { vkDestroyBuffer(device, chunkBoundsBuffer, null); chunkBoundsBuffer = 0L; }
+        if (indirectArgsBuffer != 0L && ownBuffers) { vkDestroyBuffer(device, indirectArgsBuffer, null); indirectArgsBuffer = 0L; }
+        ownBuffers = false;
         FRUSTUM_CULLING_SPIRV = null;
     }
 
     private int getChunkIndex(int x, int y, int z) {
-        return ((x * 73856093) ^ (y * 19349669) ^ (z * 83492791)) & 0x7FFFFFFF % MAX_CHUNK_COUNT;
+        return ((x * 73856093 ^ y * 19349669 ^ z * 83492791) & 0x7FFFFFFF) % MAX_CHUNK_COUNT;
     }
 
-    protected float[][] extractFrustumPlanes(float[] vp) {
+    /**
+     * 从 view-projection 矩阵提取 6 个视锥平面 [a,b,c,d]。
+     * P-NA (Plane Normal Aligned) 法。作为唯一权威源供所有子系统调用。
+     * 正确性已由 tools/verify_frustum_culling.py 验证（360°旋转零误差）。
+     */
+    public static float[][] extractFrustumPlanes(float[] vp) {
         float[][] p = new float[6][4];
         p[0][0]=vp[3]+vp[0]; p[0][1]=vp[7]+vp[4]; p[0][2]=vp[11]+vp[8]; p[0][3]=vp[15]+vp[12];
         p[1][0]=vp[3]-vp[0]; p[1][1]=vp[7]-vp[4]; p[1][2]=vp[11]-vp[8]; p[1][3]=vp[15]-vp[12];

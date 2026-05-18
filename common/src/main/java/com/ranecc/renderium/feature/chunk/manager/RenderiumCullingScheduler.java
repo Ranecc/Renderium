@@ -4,6 +4,8 @@
 
 package com.ranecc.renderium.feature.chunk.manager;
 
+import com.ranecc.renderium.feature.blaze3d.aggressive.GPUCullingSystem;
+import com.ranecc.renderium.feature.blaze3d.aggressive.CullingPipeline;
 import com.ranecc.renderium.feature.chunk.build.ChunkBuildPipeline;
 import com.ranecc.renderium.feature.chunk.build.ChunkBuildTask;
 import com.ranecc.renderium.feature.chunk.build.ProgressiveMeshRefiner;
@@ -69,6 +71,9 @@ public class RenderiumCullingScheduler {
 
     /** 区块构建管线 */
     private final ChunkBuildPipeline buildPipeline;
+
+    /** GPU 三级剔除管线 */
+    private volatile CullingPipeline cullingPipeline;
 
     /** 透明面排序引擎 */
     private final TranslucentSortEngine sortEngine;
@@ -175,8 +180,18 @@ public class RenderiumCullingScheduler {
         }
 
         // ========== Phase 3: Culling L1 (Frustum + Distance) ==========
-        // 每帧执行。生成 bufferA
+        // 每帧执行。生成 bufferA（CPU 侧，用于构建调度决策）
         Set<Long> newBufferA = executeCullingL1();
+        // 通知 GPU 管线本帧相机数据
+        if (cullingPipeline != null) {
+            float[] vp = buildViewProjectionMatrix();
+            float[] camPos = new float[]{
+                (float) camX, (float) camY, (float) camZ
+            };
+            cullingPipeline.setVisibilityBufferA(0L); // 由 FrameGraph 注入点设置实际 buffer
+            cullingPipeline.setVisibilityBufferB(0L);
+            // 注意: executeFrame(VkCommandBuffer) 由 FrameGraph Mixin 注入点调用
+        }
 
         // ========== Phase 4: Culling L2 (Hi-Z Occlusion) ==========
         boolean skipL2 = budget.skipL2Occlusion() || detector.shouldSkipL2Occlusion();
@@ -237,7 +252,7 @@ public class RenderiumCullingScheduler {
             (float) detector.getCameraY(),
             (float) detector.getCameraZ()
         };
-        float[][] frustum = extractFrustumPlanesFromVP(vp);
+        float[][] frustum = GPUCullingSystem.extractFrustumPlanes(vp);
 
         float maxDist = (float) detector.getVisibleDistMax();
 
@@ -357,21 +372,6 @@ public class RenderiumCullingScheduler {
     // ==================== 视锥面提取 ====================
 
     /**
-     * 从 view-projection 矩阵提取 6 个视锥平面。
-     * 复用 GPUCullingSystem.extractFrustumPlanes() 的数学。
-     */
-    private static float[][] extractFrustumPlanesFromVP(float[] vp) {
-        float[][] p = new float[6][4];
-        p[0][0] = vp[3] + vp[0]; p[0][1] = vp[7] + vp[4]; p[0][2] = vp[11] + vp[8]; p[0][3] = vp[15] + vp[12];
-        p[1][0] = vp[3] - vp[0]; p[1][1] = vp[7] - vp[4]; p[1][2] = vp[11] - vp[8]; p[1][3] = vp[15] - vp[12];
-        p[2][0] = vp[3] + vp[1]; p[2][1] = vp[7] + vp[5]; p[2][2] = vp[11] + vp[9]; p[2][3] = vp[15] + vp[13];
-        p[3][0] = vp[3] - vp[1]; p[3][1] = vp[7] - vp[5]; p[3][2] = vp[11] - vp[9]; p[3][3] = vp[15] - vp[13];
-        p[4][0] = vp[3] + vp[2]; p[4][1] = vp[7] + vp[6]; p[4][2] = vp[11] + vp[10]; p[4][3] = vp[15] + vp[14];
-        p[5][0] = vp[3] - vp[2]; p[5][1] = vp[7] - vp[6]; p[5][2] = vp[11] - vp[10]; p[5][3] = vp[15] - vp[14];
-        return p;
-    }
-
-    /**
      * AABB-Frustum 相交测试（P-NA 法）。
      * 正确性已由 tools/verify_frustum_culling.py 验证。
      */
@@ -414,6 +414,12 @@ public class RenderiumCullingScheduler {
 
     /** @return 区块构建管线 */
     public ChunkBuildPipeline getBuildPipeline() { return buildPipeline; }
+
+    /** 注入 GPU 三级剔除管线 */
+    public void setCullingPipeline(CullingPipeline pipeline) { this.cullingPipeline = pipeline; }
+
+    /** @return GPU 剔除管线（可能为 null） */
+    public CullingPipeline getCullingPipeline() { return cullingPipeline; }
 
     /** @return 透明排序引擎 */
     public TranslucentSortEngine getSortEngine() { return sortEngine; }
