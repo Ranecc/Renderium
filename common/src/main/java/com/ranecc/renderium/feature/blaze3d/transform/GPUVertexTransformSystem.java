@@ -347,29 +347,26 @@ public class GPUVertexTransformSystem implements AutoCloseable {
      * @throws Exception 如果资源创建失败
      */
     private void createGPUBuffers() throws Exception {
-        // TODO: 实际集成时需要根据 GPU 后端 API 实现
-        //
-        // Vulkan 后端伪代码：
-        // globalVertexBufferHandle = vkCreateBuffer(..., USAGE_VERTEX_BUFFER | DEVICE_LOCAL, size);
-        // instanceTransformBufferHandle = vkCreateBuffer(..., USAGE_STORAGE_BUFFER | UPLOAD_FRIENDLY, size);
-        // chunkMappingBufferHandle = vkCreateBuffer(..., USAGE_STORAGE_BUFFER | UPLOAD_FRIENDLY, size);
-        // indirectDrawBufferHandle = vkCreateBuffer(..., USAGE_INDIRECT_BUFFER | DEVICE_LOCAL, size);
-        // visibleChunkCountBufferHandle = vkCreateBuffer(..., USAGE_STORAGE_BUFFER | UPLOAD_FRIENDLY, size);
-        //
-        // OpenGL 后端伪代码：
-        // globalVertexBufferHandle = glGenBuffers();
-        // glBindBuffer(GL_ARRAY_BUFFER, globalVertexBufferHandle);
-        // glBufferData(GL_ARRAY_BUFFER, size, null, GL_STATIC_DRAW);
-        // ... 其他缓冲类似
-
-        // 当前为占位实现，返回模拟句柄
-        globalVertexBufferHandle = 1L;
-        instanceTransformBufferHandle = 2L;
-        chunkMappingBufferHandle = 3L;
-        indirectDrawBufferHandle = 4L;
-        visibleChunkCountBufferHandle = 5L;
-
-        LOGGER.fine("[GT1] GPU 缓冲区已创建（占位实现）");
+        if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) {
+            long[] vb = com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.createBuffer(16L * 1024 * 1024, 3);
+            long[] sb = com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.createBuffer(4L * 1024 * 1024, 8 | 2);
+            long[] mb = com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.createBuffer(1L * 1024 * 1024, 8 | 2);
+            long[] ib = com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.createBuffer(256L * 1024, 8 | 2);
+            long[] cb = com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.createBuffer(64 * 1024, 8 | 2);
+            this.globalVertexBufferHandle = vb[0];
+            this.instanceTransformBufferHandle = sb[0];
+            this.chunkMappingBufferHandle = mb[0];
+            this.indirectDrawBufferHandle = ib[0];
+            this.visibleChunkCountBufferHandle = cb[0];
+            LOGGER.fine("[GT1] GPU buffers created via VulkanFFM");
+        } else {
+            this.globalVertexBufferHandle = 1L;
+            this.instanceTransformBufferHandle = 2L;
+            this.chunkMappingBufferHandle = 3L;
+            this.indirectDrawBufferHandle = 4L;
+            this.visibleChunkCountBufferHandle = 5L;
+            LOGGER.fine("[GT1] GPU buffers placeholder (guard mode)");
+        }
     }
 
     // ==================== 核心方法：帧数据准备 ====================
@@ -637,11 +634,11 @@ public class GPUVertexTransformSystem implements AutoCloseable {
         mappingDataBuffer.flip();
         indirectDrawDataBuffer.flip();
 
-        // TODO: 实际集成时替换为真实的 GPU 上传 API
-        //
-        // Vulkan 后端伪代码：
-        // void* mappedMemory = vkMapMemory(device, memory, offset, size, flags);
-        // memcpy(mappedMemory, transformDataBuffer.array(), transformSize);
+        if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) {
+            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.uploadData(
+                com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.getDevice(),
+                0L, transformDataBuffer.array(), 0);
+        }
         // vkUnmapMemory(device, memory);
         //
         // 或者使用 Staging Buffer + Transfer Queue（异步传输）
@@ -933,18 +930,13 @@ public class GPUVertexTransformSystem implements AutoCloseable {
      * @throws Exception 如果释放失败
      */
     private void releaseGPUBuffers() throws Exception {
-        // TODO: 实际集成时替换为真实的 GPU 资释放 API
-        //
-        // Vulkan 后端伪代码：
-        // if (globalVertexBufferHandle != 0) vkDestroyBuffer(device, globalVertexBufferHandle, nullptr);
-        // if (instanceTransformBufferHandle != 0) vkDestroyBuffer(device, instanceTransformBufferHandle, nullptr);
-        // if (chunkMappingBufferHandle != 0) vkDestroyBuffer(device, chunkMappingBufferHandle, nullptr);
-        // if (indirectDrawBufferHandle != 0) vkDestroyBuffer(device, indirectDrawBufferHandle, nullptr);
-        // if (visibleChunkCountBufferHandle != 0) vkDestroyBuffer(device, visibleChunkCountBufferHandle, nullptr);
-        //
-        // OpenGL 后端伪代码：
-        // int[] buffers = { (int) globalVertexBufferHandle, ... };
-        // glDeleteBuffers(buffers.length, buffers);
+        if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) {
+            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(globalVertexBufferHandle, 0L);
+            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(instanceTransformBufferHandle, 0L);
+            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(chunkMappingBufferHandle, 0L);
+            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(indirectDrawBufferHandle, 0L);
+            com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(visibleChunkCountBufferHandle, 0L);
+        }
 
         // 重置句柄
         globalVertexBufferHandle = 0L;

@@ -7,6 +7,7 @@ package com.ranecc.renderium.feature.blaze3d;
 import com.ranecc.renderium.domain.model.config.ShaderPipelineConfig;
 
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
+import com.ranecc.renderium.feature.blaze3d.shader.GlslangCompiler;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -581,26 +582,33 @@ public class ShaderPipelineOptimizer implements AutoCloseable {
      * @return SPIR-V 字节数组，失败返回 null
      */
     private byte[] compileGLSLtoSPIRV(String glslSource, int shaderType, String compileOptions) {
-        if (!com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.isAvailable()) {
-            LOGGER.fine("Vulkan not available, using stub SPIRV");
-            byte[] stub = new byte[4];
-            stub[0] = 0x03; stub[1] = 0x02; stub[2] = 0x23; stub[3] = 0x07;
-            return stub;
-        }
         if (glslSource == null || glslSource.isEmpty()) {
             LOGGER.warning("compileGLSLtoSPIRV: empty source");
             return null;
         }
-        String stageName = switch (shaderType) {
-            case 0 -> "vertex";
-            case 1 -> "fragment";
-            case 2 -> "compute";
-            default -> "unknown(" + shaderType + ")";
+        if (!com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.isAvailable()) {
+            LOGGER.fine("Vulkan not available, cannot compile GLSL to SPIRV");
+            return null;
+        }
+
+        GlslangCompiler.Stage stage = switch (shaderType) {
+            case 0 -> GlslangCompiler.Stage.VERTEX;
+            case 1 -> GlslangCompiler.Stage.FRAGMENT;
+            case 2 -> GlslangCompiler.Stage.COMPUTE;
+            default -> {
+                LOGGER.warning("compileGLSLtoSPIRV: unknown shaderType=" + shaderType);
+                yield null;
+            }
         };
-        LOGGER.fine("compileGLSLtoSPIRV: " + stageName + " shader, " + glslSource.length() + " bytes, options: " + (compileOptions != null ? compileOptions : "default"));
-        byte[] stub = new byte[4];
-        stub[0] = 0x03; stub[1] = 0x02; stub[2] = 0x23; stub[3] = 0x07;
-        return stub;
+        if (stage == null) return null;
+
+        try {
+            GlslangCompiler compiler = GlslangCompiler.initialize();
+            return compiler.compile(glslSource, stage);
+        } catch (Exception e) {
+            LOGGER.warning("compileGLSLtoSPIRV failed for stage " + stage + ": " + e.getMessage());
+            return null;
+        }
     }
 
     private long createPipelineVariant(long basePipeline, byte[] specializationData, int mapEntries) {

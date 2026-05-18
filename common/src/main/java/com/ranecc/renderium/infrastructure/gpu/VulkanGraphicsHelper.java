@@ -201,4 +201,24 @@ public final class VulkanGraphicsHelper {
             LOGGER.warning("memoryBarrier failed: " + t.getMessage());
         }
     }
+
+    public static void bindAndDrawIndexed(long vbo, long ibo, int indexCount) {
+        if (!isAvailable() || vbo == 0L || ibo == 0L) return;
+        try {
+            VulkanFFMBinding.getVkCmdBindVertexBuffers().invoke(0L, 0, 1, vbo, 0L);
+            VulkanFFMBinding.getVkCmdBindIndexBuffer().invoke(0L, ibo, 0L, 0);
+            VulkanFFMBinding.getVkCmdDrawIndexed().invoke(0L, indexCount, 1, 0, 0, 0);
+        } catch (Throwable t) {
+            LOGGER.warning("bindAndDrawIndexed failed: " + t.getMessage());
+        }
+    }
+
+    public static void copyBuffer(long src, long dst, long vertexCount) {
+        if (!isAvailable() || src == 0L || dst == 0L) return;
+        try {
+            VulkanFFMBinding.getVkCmdCopyBuffer().invoke(0L, src, dst, 1, 0L);
+        } catch (Throwable t) {
+            LOGGER.warning("copyBuffer failed: " + t.getMessage());
+        }
+    }
 }

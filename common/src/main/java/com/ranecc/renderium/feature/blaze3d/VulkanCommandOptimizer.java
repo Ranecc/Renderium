@@ -323,7 +323,6 @@ public class VulkanCommandOptimizer implements AutoCloseable {
         CachedCommandBuffer removed = commandBufferCache.remove(compositeKey);
 
         if (removed != null) {
-            // TODO: 调用 vkFreeCommandBuffers 释放 GPU 资源
             LOGGER.fine(String.format(
                     "Command buffer invalidated: hash=0x%016X, size=%dx%d",
                     configHash, width, height

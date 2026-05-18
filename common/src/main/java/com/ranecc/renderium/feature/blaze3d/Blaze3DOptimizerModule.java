@@ -10,6 +10,7 @@ import com.ranecc.renderium.feature.module.ModuleMetadata;
 import com.ranecc.renderium.feature.module.ModuleCategory;
 import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
 import com.ranecc.renderium.platform.bridge.mc.VulkanCommandBatcher;
+import com.ranecc.renderium.platform.hook.OptimizerRegistry;
 
 import com.ranecc.renderium.feature.blaze3d.VersionAdapter;
 import com.ranecc.renderium.feature.blaze3d.MethodSignature;
@@ -456,6 +457,8 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         try {
             // 启用所有优化器子组件
             frameGraphOptimizer.enable();
+            // 将帧图优化器注册到全局 Mixin Hook 注册表
+            OptimizerRegistry.setFrameGraphOptimizer(frameGraphOptimizer);
             vulkanCommandOptimizer.enable();
             vulkanCommandBatcher.enable();
             memoryOptimizer.enable();
@@ -527,6 +530,8 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         resourceStatsReady = false;
 
         safeDispose(frameGraphOptimizer);
+        // 从全局 Mixin Hook 注册表中注销
+        OptimizerRegistry.setFrameGraphOptimizer(null);
         safeDispose(vulkanCommandOptimizer);
         safeDispose(memoryOptimizer);
         safeDispose(shaderPipelineOptimizer);

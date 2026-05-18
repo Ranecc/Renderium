@@ -195,6 +195,32 @@ public final class VulkanFFMBinding {
     /** vkCmdCopyBuffer: 缓冲区拷贝 */
     private static volatile MethodHandle VK_CMD_COPY_BUFFER;
 
+    /** vkCmdBindVertexBuffers: 绑定顶点缓冲 */
+    private static volatile MethodHandle VK_CMD_BIND_VERTEX_BUFFERS;
+
+    /** vkCmdBindIndexBuffer: 绑定索引缓冲 */
+    private static volatile MethodHandle VK_CMD_BIND_INDEX_BUFFER;
+
+    /** vkCmdDrawIndexed: 索引绘制 */
+    private static volatile MethodHandle VK_CMD_DRAW_INDEXED;
+
+    // ============ Buffer 基础操作 ============
+
+    /** vkCreateBuffer: 创建缓冲区 */
+    private static volatile MethodHandle VK_CREATE_BUFFER;
+
+    /** vkDestroyBuffer: 销毁缓冲区 */
+    private static volatile MethodHandle VK_DESTROY_BUFFER;
+
+    /** vkGetBufferMemoryRequirements: 获取缓冲区内存需求 */
+    private static volatile MethodHandle VK_GET_BUFFER_MEMORY_REQUIREMENTS;
+
+    /** vkBindBufferMemory: 绑定缓冲区内存 */
+    private static volatile MethodHandle VK_BIND_BUFFER_MEMORY;
+
+    /** vkFreeCommandBuffers: 释放命令缓冲区 */
+    private static volatile MethodHandle VK_FREE_COMMAND_BUFFERS;
+
     // ==================== 加载状态 ====================
 
     /** FFM 方法是否已加载 */
@@ -262,6 +288,14 @@ public final class VulkanFFMBinding {
     public static MethodHandle getVkInvalidateMappedMemoryRanges() { return VK_INVALIDATE_MAPPED_MEMORY_RANGES; }
     public static MethodHandle getVkFlushMappedMemoryRanges() { return VK_FLUSH_MAPPED_MEMORY_RANGES; }
     public static MethodHandle getVkCmdCopyBuffer() { return VK_CMD_COPY_BUFFER; }
+    public static MethodHandle getVkCmdBindVertexBuffers() { return VK_CMD_BIND_VERTEX_BUFFERS; }
+    public static MethodHandle getVkCmdBindIndexBuffer() { return VK_CMD_BIND_INDEX_BUFFER; }
+    public static MethodHandle getVkCmdDrawIndexed() { return VK_CMD_DRAW_INDEXED; }
+    public static MethodHandle getVkCreateBuffer() { return VK_CREATE_BUFFER; }
+    public static MethodHandle getVkDestroyBuffer() { return VK_DESTROY_BUFFER; }
+    public static MethodHandle getVkGetBufferMemoryRequirements() { return VK_GET_BUFFER_MEMORY_REQUIREMENTS; }
+    public static MethodHandle getVkBindBufferMemory() { return VK_BIND_BUFFER_MEMORY; }
+    public static MethodHandle getVkFreeCommandBuffers() { return VK_FREE_COMMAND_BUFFERS; }
 
     /** FFM 方法句柄是否已加载成功 */
     public static boolean isFfmLoaded() { return ffmLoaded; }
@@ -686,6 +720,60 @@ public final class VulkanFFMBinding {
                             ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
                             ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
                             ValueLayout.JAVA_LONG)
+            );
+
+            VK_CMD_BIND_VERTEX_BUFFERS = linker.downcallHandle(
+                    vulkanLookup.find("vkCmdBindVertexBuffers").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG)
+            );
+
+            VK_CMD_BIND_INDEX_BUFFER = linker.downcallHandle(
+                    vulkanLookup.find("vkCmdBindIndexBuffer").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT)
+            );
+
+            VK_CMD_DRAW_INDEXED = linker.downcallHandle(
+                    vulkanLookup.find("vkCmdDrawIndexed").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_INT, ValueLayout.JAVA_INT)
+            );
+
+            VK_CREATE_BUFFER = linker.downcallHandle(
+                    vulkanLookup.find("vkCreateBuffer").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_DESTROY_BUFFER = linker.downcallHandle(
+                    vulkanLookup.find("vkDestroyBuffer").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_GET_BUFFER_MEMORY_REQUIREMENTS = linker.downcallHandle(
+                    vulkanLookup.find("vkGetBufferMemoryRequirements").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_BIND_BUFFER_MEMORY = linker.downcallHandle(
+                    vulkanLookup.find("vkBindBufferMemory").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_FREE_COMMAND_BUFFERS = linker.downcallHandle(
+                    vulkanLookup.find("vkFreeCommandBuffers").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG)
             );
 
             ffmLoaded = true;

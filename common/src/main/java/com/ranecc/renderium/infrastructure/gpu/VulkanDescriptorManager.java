@@ -55,13 +55,12 @@ public final class VulkanDescriptorManager {
             sizeStruct.set(java.lang.foreign.ValueLayout.JAVA_INT, 24, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
             sizeStruct.set(java.lang.foreign.ValueLayout.JAVA_INT, 28, 100000);
 
-            var createInfo = arena.allocate(16);
-            createInfo.set(java.lang.foreign.ValueLayout.JAVA_INT, 0, 0);
-            createInfo.set(java.lang.foreign.ValueLayout.JAVA_INT, 4, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
-            createInfo.set(java.lang.foreign.ValueLayout.JAVA_INT, 8, 200000);
-            createInfo.set(java.lang.foreign.ValueLayout.JAVA_LONG, 8, sizeStruct.address());
-            createInfo.set(java.lang.foreign.ValueLayout.JAVA_INT, 8, 200000);
-            createInfo.set(java.lang.foreign.ValueLayout.ADDRESS, 8, sizeStruct);
+            var createInfo = arena.allocate(32);
+            createInfo.set(java.lang.foreign.ValueLayout.JAVA_INT,  0, 0);     // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
+            createInfo.set(java.lang.foreign.ValueLayout.JAVA_INT,  4, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);  // flags
+            createInfo.set(java.lang.foreign.ValueLayout.JAVA_INT,  8, 200000); // maxSets
+            createInfo.set(java.lang.foreign.ValueLayout.JAVA_INT, 12, 4);       // poolSizeCount = 4 entries in sizeStruct
+            createInfo.set(java.lang.foreign.ValueLayout.ADDRESS, 16, sizeStruct); // pPoolSizes
 
             long[] outPool = new long[1];
             int result = (int) VulkanFFMBinding.getVkCreateDescriptorPool()

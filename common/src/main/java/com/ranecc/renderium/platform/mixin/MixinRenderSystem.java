@@ -66,19 +66,47 @@ public abstract class MixinRenderSystem {
 
             VulkanDeviceHolder.getInstance().set(vkDeviceHandle, vmaAllocator, gQueue, cQueue);
 
+            // 通过 LWJGL Pointer.parent 反射链获取 vkPhysicalDevice / vkInstance 真实句柄
+            long vkPhysicalDeviceHandle;
+            long vkInstanceHandle;
+            try {
+                Object lwjglDevice = vkDevice.vkDevice();
+                Class<?> pointerClass = Class.forName("org.lwjgl.system.Pointer");
+                java.lang.reflect.Method getParent = pointerClass.getDeclaredMethod("getParent");
+                getParent.setAccessible(true);
+                java.lang.reflect.Method addressMethod = pointerClass.getMethod("address");
+
+                Object physDev = getParent.invoke(lwjglDevice);
+                if (physDev != null) {
+                    vkPhysicalDeviceHandle = (long) addressMethod.invoke(physDev);
+                    Object instance = getParent.invoke(physDev);
+                    vkInstanceHandle = instance != null
+                        ? (long) addressMethod.invoke(instance)
+                        : 0L;
+                } else {
+                    vkPhysicalDeviceHandle = 0L;
+                    vkInstanceHandle = 0L;
+                }
+
+                if (vkInstanceHandle == 0L || vkPhysicalDeviceHandle == 0L) {
+                    LOGGER.warning("LWJGL Pointer.getParent() 返回 null，"
+                        + "vkInstance/vkPhysicalDevice 句柄不可用（Streamline 部分功能可能受限）");
+                    vkPhysicalDeviceHandle = vkDeviceHandle;
+                    vkInstanceHandle = vkDeviceHandle;
+                }
+            } catch (Exception e) {
+                LOGGER.warning("无法通过 Pointer.parent 反射获取 vkInstance/vkPhysicalDevice: "
+                    + e.getMessage());
+                vkPhysicalDeviceHandle = vkDeviceHandle;
+                vkInstanceHandle = vkDeviceHandle;
+            }
+
             try {
                 StreamlineIntegration streamline = new StreamlineIntegration();
-                // TODO: 无法从 Mojang VulkanDevice 获取 vkInstance / vkPhysicalDevice 句柄
-                // 当前使用 vkDeviceHandle 作为占位值。当 VulkanDevice 暴露这些句柄后，
-                // 应修正为: streamline.initialize(vkInstance, vkPhysicalDevice, vkDeviceHandle)
-                long vkInstanceStub = vkDeviceHandle;
-                long vkPhysicalDeviceStub = vkDeviceHandle;
-                LOGGER.warning("vkInstance/vkPhysicalDevice 句柄不可用，"
-                    + "使用 vkDeviceHandle 占位（Streamline 部分功能可能受限）");
-                streamline.initialize(vkInstanceStub, vkPhysicalDeviceStub, vkDeviceHandle);
+                streamline.initialize(vkInstanceHandle, vkPhysicalDeviceHandle, vkDeviceHandle);
                 LOGGER.info(String.format(
-                    "Renderium: VulkanDevice 句柄提取成功 [device=0x%X, vma=0x%X, gQ=0x%X, compQ=0x%X]",
-                    vkDeviceHandle, vmaAllocator, gQueue, cQueue));
+                    "Renderium: Vulkan 句柄提取成功 [device=0x%X, physDev=0x%X, instance=0x%X, vma=0x%X, gQ=0x%X, compQ=0x%X]",
+                    vkDeviceHandle, vkPhysicalDeviceHandle, vkInstanceHandle, vmaAllocator, gQueue, cQueue));
             } catch (Exception slEx) {
                 LOGGER.warning("Streamline SDK 初始化失败: " + slEx.getMessage());
             }

@@ -1096,20 +1096,24 @@ public class VmaMemoryBudget implements AutoCloseable {
         notifyListeners(oldStatus, newStatus, ratio);
     }
 
-    /**
-     * 执行警告级别的清理
-     */
     private void performWarningCleanup() {
         LOGGER.info("[警告清理] 开始清理非关键资源...");
-        // TODO: 实现具体的清理逻辑（如释放缓存、卸载远距离纹理等）
+        if (com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) {
+            long vma = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getVma();
+            if (vma != 0L) {
+                com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.markFailed(new Throwable("VMA Budget warning threshold crossed"));
+            }
+        }
     }
 
-    /**
-     * 执行紧急级别的清理
-     */
     private void performEmergencyCleanup() {
         LOGGER.severe("[紧急清理] 强制释放所有可回收资源！");
-        // TODO: 实现强制清理逻辑（释放所有非必要资源、清除缓存等）
+        if (com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) {
+            long vma = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getVma();
+            if (vma != 0L) {
+                com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.markFailed(new Throwable("VMA Budget critical threshold crossed"));
+            }
+        }
     }
 
     /**
@@ -1131,9 +1135,10 @@ public class VmaMemoryBudget implements AutoCloseable {
      * 模拟使用率查询（TODO: 替换为真实 VMA 查询）
      */
     private float simulateUsageQuery() {
-        // 简单模拟：基于历史数据生成合理的波动值
-        // 实际实现应调用 Vma.vmaGetBudget()
-        return 0.6f + (float) (Math.random() * 0.3);  // 60%-90% 之间波动
+        long totalUsage = totalBytesAllocated.get() - totalBytesFreed.get();
+        long effectiveBudget = Math.max(memoryBudgetLimit, 1L);
+        float ratio = (float) totalUsage / (float) effectiveBudget;
+        return Math.min(Math.max(ratio, 0.0f), 1.0f);
     }
 
     // ==================== 内部工具方法 ====================

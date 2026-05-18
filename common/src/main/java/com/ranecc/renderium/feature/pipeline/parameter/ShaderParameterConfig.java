@@ -370,6 +370,7 @@ public final class ShaderParameterConfig {
                 if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
                     return true;
                 }
+                dirtyFlags.add(uniformName);
                 return true;
             }
 
@@ -378,6 +379,7 @@ public final class ShaderParameterConfig {
                 if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
                     return true;
                 }
+                dirtyFlags.add(uniformName);
                 return true;
             }
 
@@ -386,6 +388,7 @@ public final class ShaderParameterConfig {
                 if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
                     return true;
                 }
+                dirtyFlags.add(uniformName);
                 return true;
             }
 
@@ -394,6 +397,7 @@ public final class ShaderParameterConfig {
                 if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
                     return true;
                 }
+                dirtyFlags.add(uniformName);
                 return true;
             }
 

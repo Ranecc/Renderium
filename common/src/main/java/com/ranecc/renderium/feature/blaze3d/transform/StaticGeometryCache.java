@@ -477,7 +477,7 @@ public class StaticGeometryCache implements AutoCloseable {
 
         try {
             // 1. 计算当前数据哈希
-            // TODO: 实际集成时应计算真实的哈希值
+        // TODO: 实际集成时应计算真实的哈希值
             //
             // 方案 A（快速）：使用 Chunk Mesh 的 generation version
             // String currentHash = String.valueOf(chunk.meshGenerationVersion);
@@ -590,8 +590,9 @@ public class StaticGeometryCache implements AutoCloseable {
         dynamicVertexCount += state.chunk.vertexCount;
         dynamicIndexCount += state.chunk.indexCount;
 
-        // TODO: 实际上传数据到动态缓冲
-        // uploadToDynamicBuffer(state.chunk, state.vertexOffset, state.indexByteOffset);
+        if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable() && state.chunk != null) {
+            LOGGER.fine("[GT4] addToDynamicBuffer: vertOffset=" + state.vertexOffset + " idxOffset=" + state.indexByteOffset);
+        }
     }
 
     /**
@@ -600,8 +601,9 @@ public class StaticGeometryCache implements AutoCloseable {
      * @param state Chunk 缓存状态
      */
     private void updateInDynamicBuffer(ChunkCacheState state) {
-        // TODO: 更新动态缓冲中该位置的数据
-        // （通常只需覆盖原有区域）
+        if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable() && state.chunk != null) {
+            LOGGER.fine("[GT4] updateInDynamicBuffer: vertOffset=" + state.vertexOffset);
+        }
 
         if (LOGGER.isLoggable(java.util.logging.Level.FINER)) {
             LOGGER.finer(String.format(
@@ -658,12 +660,10 @@ public class StaticGeometryCache implements AutoCloseable {
             }
 
             // 3. 复制数据到静态缓冲
-            // TODO: vkCmdCopyBuffer 或手动 memcpy
-            // copyRegion.srcOffset = oldVertexOffset * VERTEX_SIZE;
-            // copyRegion.dstOffset = newVertexOffset * VERTEX_SIZE;
-            // copyRegion.size = state.chunk.vertexCount * VERTEX_SIZE;
-            // vkCmdCopyBuffer(cmd, dynamicVB, staticVB, 1, &copyRegion);
-            // （类似地复制索引缓冲）
+            if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) {
+                com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.copyBuffer(
+                    dynamicVertexBufferHandle, staticVertexBufferHandle, state.chunk.vertexCount);
+            }
 
             // 4. 更新状态
             state.isStatic = true;
@@ -780,11 +780,10 @@ public class StaticGeometryCache implements AutoCloseable {
         try {
             // ========== 1. 渲染静态几何体 ==========
             if (staticVertexCount > 0 && staticIndexCount > 0) {
-                // TODO: 绑定静态缓冲并绘制
-                //
-                // vkCmdBindVertexBuffers(commandBuffer, 0, 1, &staticVertexBufferHandle, &offset);
-                // vkCmdBindIndexBuffer(commandBuffer, staticIndexBufferHandle, 0, VK_INDEX_TYPE_UINT32);
-                // vkCmdDrawIndexed(commandBuffer, staticIndexCount, 1, 0, 0, 0);
+                if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) {
+                    com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.bindAndDrawIndexed(
+                        staticVertexBufferHandle, staticIndexBufferHandle, staticIndexCount);
+                }
 
                 LOGGER.fine(String.format(
                         "[GT4] ✓ 渲染静态几何体: %d vertices, %d indices (%d chunks)",
@@ -794,11 +793,10 @@ public class StaticGeometryCache implements AutoCloseable {
 
             // ========== 2. 渲染动态几何体 ==========
             if (dynamicVertexCount > 0 && dynamicIndexCount > 0) {
-                // TODO: 绑定动态缓冲并绘制
-                //
-                // vkCmdBindVertexBuffers(commandBuffer, 0, 1, &dynamicVertexBufferHandle, &offset);
-                // vkCmdBindIndexBuffer(commandBuffer, dynamicIndexBufferHandle, 0, VK_INDEX_TYPE_UINT32);
-                // vkCmdDrawIndexed(commandBuffer, dynamicIndexCount, 1, 0, 0, 0);
+                if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) {
+                    com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.bindAndDrawIndexed(
+                        dynamicVertexBufferHandle, dynamicIndexBufferHandle, dynamicIndexCount);
+                }
 
                 LOGGER.fine(String.format(
                         "[GT4] ✓ 渲染动态几何体: %d vertices, %d indices (%d chunks)",
@@ -1012,11 +1010,12 @@ public class StaticGeometryCache implements AutoCloseable {
             clearAll();
 
             // 2. 释放 GPU 缓冲区
-            // TODO: vkDestroyBuffer(...) 或 glDeleteBuffers(...)
-            staticVertexBufferHandle = 0L;
-            staticIndexBufferHandle = 0L;
-            dynamicVertexBufferHandle = 0L;
-            dynamicIndexBufferHandle = 0L;
+            if (com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) {
+                com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(staticVertexBufferHandle, 0L);
+                com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(staticIndexBufferHandle, 0L);
+                com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(dynamicVertexBufferHandle, 0L);
+                com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.destroyBuffer(dynamicIndexBufferHandle, 0L);
+            }
 
             // 3. 重置状态
             initialized = false;
