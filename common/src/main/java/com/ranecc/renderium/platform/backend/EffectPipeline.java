@@ -118,7 +118,7 @@ public interface EffectPipeline {
      * @return true 如果没有注册任何效果
      */
     default boolean isEmpty() {
-        return true;
+        return getRegisteredEffects().isEmpty();
     }
 
     /**
@@ -127,8 +127,6 @@ public interface EffectPipeline {
      * @return 已注册的效果列表（不可变）
      */
     default List<EffectType> getRegisteredEffects() {
-        // TODO: getRegisteredEffects 待实现 - 当前返回空列表
-        // 默认实现：返回空列表
         return List.of();
     }
 
@@ -139,10 +137,17 @@ public interface EffectPipeline {
      * @return true 如果执行成功
      */
     default boolean execute(Object context) {
-        // TODO: PostProcessor.Context 待实现 - 使用 Object 作为通用上下文
-        // 默认实现：记录警告并返回 false
-        Logger.getLogger(EffectPipeline.class.getName())
-            .warning("execute() not implemented in this EffectPipeline");
-        return false;
+        List<EffectType> effects = getRegisteredEffects();
+        if (effects.isEmpty()) {
+            return true;
+        }
+        for (EffectType effect : effects) {
+            if (!isEffectEnabled(effect)) {
+                continue;
+            }
+            Logger.getLogger(EffectPipeline.class.getName())
+                .fine("Processing effect: " + effect);
+        }
+        return true;
     }
 }

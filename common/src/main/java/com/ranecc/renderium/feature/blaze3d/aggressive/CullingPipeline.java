@@ -8,7 +8,6 @@ package com.ranecc.renderium.feature.blaze3d.aggressive;
 import com.ranecc.renderium.feature.lod.compute.HiZComputePipeline;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.*;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -196,14 +195,18 @@ public class CullingPipeline {
             var smCI = VkShaderModuleCreateInfo.calloc(stack)
                 .sType(VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO).pCode(spirvBuf);
             var smPtr = stack.mallocLong(1);
-            if (vkCreateShaderModule(device, smCI, null, smPtr) != VK_SUCCESS) return;
+            if (vkCreateShaderModule(device, smCI, null, smPtr) != VK_SUCCESS) {
+                vkDestroyPipelineLayout(device, indirectGenPipelineLayout, null);
+                indirectGenPipelineLayout = 0L;
+                return;
+            }
             long shaderModule = smPtr.get(0);
 
             // Compute Pipeline
             var stage = VkPipelineShaderStageCreateInfo.calloc(stack)
                 .sType(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO)
                 .stage(VK_SHADER_STAGE_COMPUTE_BIT).module(shaderModule)
-                .pName(org.lwjgl.system.MemoryUtil.memUTF8("main"));
+                .pName(stack.UTF8("main"));
             var ci = VkComputePipelineCreateInfo.calloc(1, stack)
                 .sType(VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO)
                 .stage(stage).layout(indirectGenPipelineLayout);

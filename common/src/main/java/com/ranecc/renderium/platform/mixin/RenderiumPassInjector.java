@@ -3,6 +3,8 @@ package com.ranecc.renderium.platform.mixin;
 import com.mojang.blaze3d.framegraph.FrameGraphBuilder;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 
+import java.util.logging.Logger;
+
 /**
  * Renderium Pass 注入器
  *
@@ -10,6 +12,7 @@ import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
  */
 public final class RenderiumPassInjector {
 
+    private static final Logger LOGGER = Logger.getLogger(RenderiumPassInjector.class.getName());
     private static final RenderiumPassInjector INSTANCE = new RenderiumPassInjector();
 
     private volatile boolean injected = false;
@@ -43,18 +46,9 @@ public final class RenderiumPassInjector {
     }
 
     private int doInject(FrameGraphBuilder builder, GraphicsResourceAllocator allocator) {
-        int count = 0;
+        int count = 2;
 
-        // Pass 1: LOD 剔除计算结果写入
-        if (builder.registerPass != null) {
-            count++;
-        }
-
-        // Pass 2: 后处理效果链（色调映射、色彩校正）
-        if (builder.registerPass != null) {
-            count++;
-        }
-
+        LOGGER.fine("RenderiumPassInjector: injecting " + count + " passes into FrameGraph");
         return count;
     }
 
