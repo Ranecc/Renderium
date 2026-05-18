@@ -1,14 +1,12 @@
 package com.ranecc.renderium.feature.pipeline;
 
+import java.util.EnumSet;
+import java.util.Set;
+
 public class RenderExtension {
 
     private String name;
     private boolean enabled;
-
-    public RenderExtension(String name) {
-        this.name = name;
-        this.enabled = true;
-    }
 
     public enum Capability {
         ADVANCED_CULLING,
@@ -16,8 +14,27 @@ public class RenderExtension {
         COMPUTE_BASED_LIGHTING
     }
 
+    private final EnumSet<Capability> supportedCapabilities = EnumSet.noneOf(Capability.class);
+
+    public RenderExtension(String name) {
+        this.name = name;
+        this.enabled = true;
+    }
+
     public boolean isSupported(Capability capability) {
-        return false;
+        return supportedCapabilities.contains(capability);
+    }
+
+    public void setCapability(Capability capability, boolean supported) {
+        if (supported) {
+            supportedCapabilities.add(capability);
+        } else {
+            supportedCapabilities.remove(capability);
+        }
+    }
+
+    public Set<Capability> getSupportedCapabilities() {
+        return EnumSet.copyOf(supportedCapabilities);
     }
 
     public boolean isEnabled() {
@@ -32,7 +49,9 @@ public class RenderExtension {
         this.enabled = enabled;
     }
 
-    public void initialize() {}
+    public void initialize() {
+        supportedCapabilities.clear();
+    }
 
     public boolean onFrameBegin(int frameNumber, float deltaTime) { return true; }
     public void onFrameEnd() {}

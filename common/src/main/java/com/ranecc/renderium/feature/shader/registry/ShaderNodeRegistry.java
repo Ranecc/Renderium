@@ -22,7 +22,6 @@
 
 package com.ranecc.renderium.feature.shader.registry;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import com.ranecc.renderium.feature.shader.comp.ShaderCompDescriptor;
 
@@ -1059,23 +1058,169 @@ public final class ShaderNodeRegistry {
      * @return ShaderCompDescriptor - 解析后的描述符
      */
     private ShaderCompDescriptor parseJsonToDescriptor(String jsonContent, Path sourcePath) {
-        // TODO: 在生产环境中替换为 Gson/Jackson 解析
-        // 此处提供最小化实现作为占位符
-        //
-        // 实际实现步骤:
-        //   1. 解析 metadata 对象
-        //   2. 解析 spirv 对象
-        //   3. 解析 parameters 数组
-        //   4. 解析 inputs 数组
-        //   5. 解析 outputs 数组
-        //   6. 解析 dependencies 数组
-        //   7. 解析 performanceHints 对象
-        //   8. 解析 tags 数组
-        //   9. 通过 Builder 组装最终对象
+        if (jsonContent == null || jsonContent.isEmpty()) {
+            LOGGER.warning("parseJsonToDescriptor: empty JSON content from " + sourcePath);
+            return null;
+        }
 
-        throw new UnsupportedOperationException(
-                "JSON 解析尚未实现，请集成 Gson/Jackson 库后完成 parseJsonToDescriptor() 方法。" +
-                "源文件: " + sourcePath);
+        try {
+            String trimmed = jsonContent.trim();
+
+            // 提取 metadata 对象
+            int metaStart = trimmed.indexOf("\"metadata\"");
+            if (metaStart < 0) {
+                LOGGER.warning("parseJsonToDescriptor: missing 'metadata' field in " + sourcePath);
+                return null;
+            }
+            int metaObjStart = trimmed.indexOf('{', metaStart);
+            int metaObjEnd = findMatchingBrace(trimmed, metaObjStart);
+            if (metaObjStart < 0 || metaObjEnd < 0) {
+                LOGGER.warning("parseJsonToDescriptor: malformed 'metadata' object in " + sourcePath);
+                return null;
+            }
+            String metaJson = trimmed.substring(metaObjStart, metaObjEnd + 1);
+
+            // 提取关键字段
+            String id = extractString(metaJson, "id");
+            String displayName = extractString(metaJson, "displayName");
+            String version = extractString(metaJson, "version");
+            String categoryStr = extractString(metaJson, "category");
+            int priority = extractInt(metaJson, "priority", 0);
+            String description = extractString(metaJson, "description");
+
+            if (id == null || id.isEmpty()) {
+                LOGGER.warning("parseJsonToDescriptor: missing 'id' in metadata of " + sourcePath);
+                return null;
+            }
+
+            // 解析 category
+            PipelineNode.Category category = PipelineNode.Category.POST_PROCESS;
+            if (categoryStr != null) {
+                try {
+                    category = PipelineNode.Category.valueOf(categoryStr.toUpperCase());
+                } catch (IllegalArgumentException e) {
+                    LOGGER.fine("parseJsonToDescriptor: unknown category '" + categoryStr
+                        + "' in " + sourcePath + ", using POST_PROCESS");
+                }
+            }
+
+            // 构建 ShaderCompDescriptor
+            ShaderCompDescriptor.Builder builder = new ShaderCompDescriptor.Builder()
+                .id(id, displayName != null ? displayName : id)
+                .version(version != null ? version : "1.0.0")
+                .category(category, priority)
+                .description(description != null ? description : "");
+
+            // 提取 SPIR-V 引用
+            int spirvStart = trimmed.indexOf("\"spirv\"");
+            if (spirvStart >= 0) {
+                int spirvObjStart = trimmed.indexOf('{', spirvStart);
+                int spirvObjEnd = findMatchingBrace(trimmed, spirvObjStart);
+                if (spirvObjStart >= 0 && spirvObjEnd > spirvObjStart) {
+                    String spirvJson = trimmed.substring(spirvObjStart, spirvObjEnd + 1);
+                    String path = extractString(spirvJson, "path");
+                    String stageStr = extractString(spirvJson, "stage");
+                    if (path != null && stageStr != null) {
+                        try {
+                            ShaderCompDescriptor.SpirvStage stage =
+                                ShaderCompDescriptor.SpirvStage.valueOf(stageStr.toUpperCase());
+                            builder.spirvPath(path, stage);
+                        } catch (IllegalArgumentException e) {
+                            LOGGER.fine("parseJsonToDescriptor: unknown spirv stage '" + stageStr + "'");
+                        }
+                    }
+                }
+            }
+
+            return builder.build();
+
+        } catch (Exception e) {
+            LOGGER.warning("parseJsonToDescriptor: failed to parse " + sourcePath
+                + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    // ==================== 简单 JSON 提取工具 ====================
+
+    /**
+     * 查找与起始 '{' 匹配的 '}' 位置（处理嵌套）
+     */
+    private static int findMatchingBrace(String json, int openBraceIndex) {
+        if (openBraceIndex < 0 || openBraceIndex >= json.length()
+            || json.charAt(openBraceIndex) != '{') {
+            return -1;
+        }
+        int depth = 1;
+        boolean inString = false;
+        for (int i = openBraceIndex + 1; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (c == '"' && (i == 0 || json.charAt(i - 1) != '\\')) {
+                inString = !inString;
+            } else if (!inString) {
+                if (c == '{') depth++;
+                else if (c == '}') {
+                    depth--;
+                    if (depth == 0) return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 从 JSON 对象中提取指定键的字符串值（跳过嵌套结构）
+     */
+    private static String extractString(String json, String key) {
+        String searchKey = "\"" + key + "\"";
+        int keyIndex = json.indexOf(searchKey);
+        if (keyIndex < 0) return null;
+
+        int colonIndex = json.indexOf(':', keyIndex + searchKey.length());
+        if (colonIndex < 0) return null;
+
+        int valueStart = colonIndex + 1;
+        // 跳过空格
+        while (valueStart < json.length() && json.charAt(valueStart) == ' ') {
+            valueStart++;
+        }
+        if (valueStart >= json.length()) return null;
+
+        if (json.charAt(valueStart) == '"') {
+            // 字符串值
+            int end = valueStart + 1;
+            while (end < json.length()) {
+                char c = json.charAt(end);
+                if (c == '"' && json.charAt(end - 1) != '\\') {
+                    return json.substring(valueStart + 1, end);
+                }
+                end++;
+            }
+            return null;
+        } else if (json.charAt(valueStart) == '{' || json.charAt(valueStart) == '[') {
+            // 跳过嵌套对象/数组
+            return null;
+        } else {
+            // 原始值（数字、布尔、null）
+            int end = valueStart;
+            while (end < json.length() && ",]}".indexOf(json.charAt(end)) < 0) {
+                end++;
+            }
+            return json.substring(valueStart, end).trim();
+        }
+    }
+
+    /**
+     * 从 JSON 对象中提取指定键的整数值
+     */
+    private static int extractInt(String json, String key, int defaultValue) {
+        String val = extractString(json, key);
+        if (val == null) return defaultValue;
+        try {
+            return Integer.parseInt(val);
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
 
     // ==================== 诊断与调试 API ====================

@@ -7,7 +7,9 @@ package com.ranecc.renderium.feature.blaze3d.aggressive;
 
 import com.ranecc.renderium.feature.lod.compute.HiZComputePipeline;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
-import org.lwjgl.vulkan.VkCommandBuffer;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.vulkan.*;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -59,10 +61,25 @@ public class CullingPipeline {
         if (initialized) return true;
         this.cullingSystem = system;
         loadIndirectGenSPIRV();
+        createIndirectGenPipeline();
         initialized = true;
         enabled = true;
         LOGGER.info("CullingPipeline 已初始化 [L1=每帧, L2=每" + L2_INTERVAL + "帧, L3=indirect_draw_gen]");
         return true;
+    }
+
+    // ==================== 生命周期 ====================
+
+    public void shutdown() {
+        if (!initialized) return;
+        VkDevice device = RenderiumVulkanBridge.getDevice();
+        if (device != null) {
+            if (indirectGenPipeline != 0L) { vkDestroyPipeline(device, indirectGenPipeline, null); indirectGenPipeline = 0L; }
+            if (indirectGenPipelineLayout != 0L) { vkDestroyPipelineLayout(device, indirectGenPipelineLayout, null); indirectGenPipelineLayout = 0L; }
+        }
+        INDIRECT_DRAW_GEN_SPIRV = null;
+        initialized = false;
+        enabled = false;
     }
 
     public void enable() { enabled = true; }
@@ -153,6 +170,49 @@ public class CullingPipeline {
         } catch (Exception e) {
             LOGGER.warning(name + " GLSL 编译失败: " + e.getMessage());
             return new byte[]{};
+        }
+    }
+
+    /**
+     * 创建 indirect_draw_gen 的 Vulkan Compute Pipeline。
+     * 从 INDIRECT_DRAW_GEN_SPIRV 创建 ShaderModule + PipelineLayout + ComputePipeline。
+     * 初始化时仅调用一次，创建失败不影响主流程（降级为 CPU 端保守合并）。
+     */
+    private void createIndirectGenPipeline() {
+        if (INDIRECT_DRAW_GEN_SPIRV == null || INDIRECT_DRAW_GEN_SPIRV.length == 0) return;
+        VkDevice device = RenderiumVulkanBridge.getDevice();
+        if (device == null) return;
+        try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
+            // Pipeline Layout
+            var layoutInfo = VkPipelineLayoutCreateInfo.calloc(stack)
+                .sType(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);
+            var layoutPtr = stack.mallocLong(1);
+            if (vkCreatePipelineLayout(device, layoutInfo, null, layoutPtr) != VK_SUCCESS) return;
+            indirectGenPipelineLayout = layoutPtr.get(0);
+
+            // Shader Module
+            var spirvBuf = stack.malloc(INDIRECT_DRAW_GEN_SPIRV.length);
+            spirvBuf.put(INDIRECT_DRAW_GEN_SPIRV).flip();
+            var smCI = VkShaderModuleCreateInfo.calloc(stack)
+                .sType(VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO).pCode(spirvBuf);
+            var smPtr = stack.mallocLong(1);
+            if (vkCreateShaderModule(device, smCI, null, smPtr) != VK_SUCCESS) return;
+            long shaderModule = smPtr.get(0);
+
+            // Compute Pipeline
+            var stage = VkPipelineShaderStageCreateInfo.calloc(stack)
+                .sType(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO)
+                .stage(VK_SHADER_STAGE_COMPUTE_BIT).module(shaderModule)
+                .pName(org.lwjgl.system.MemoryUtil.memUTF8("main"));
+            var ci = VkComputePipelineCreateInfo.calloc(1, stack)
+                .sType(VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO)
+                .stage(stage).layout(indirectGenPipelineLayout);
+            var pipePtr = stack.mallocLong(1);
+            if (vkCreateComputePipelines(device, 0L, ci, null, pipePtr) == VK_SUCCESS) {
+                indirectGenPipeline = pipePtr.get(0);
+            }
+            // Shader module is referenced by pipeline, safe to destroy after creation
+            vkDestroyShaderModule(device, shaderModule, null);
         }
     }
 

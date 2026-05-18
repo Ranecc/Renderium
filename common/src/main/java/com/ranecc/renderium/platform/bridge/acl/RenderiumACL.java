@@ -11,6 +11,8 @@
 
 package com.ranecc.renderium.platform.bridge.acl;
 
+import com.ranecc.renderium.feature.blaze3d.aggressive.CullingPipeline;
+import com.ranecc.renderium.feature.blaze3d.aggressive.GPUCullingSystem;
 import com.ranecc.renderium.feature.chunk.build.ChunkBuildPipeline;
 import com.ranecc.renderium.feature.chunk.build.ChunkBuildTask;
 import com.ranecc.renderium.feature.chunk.manager.RenderSectionManager;
@@ -92,11 +94,18 @@ public final class RenderiumACL {
         // 启动多线程 Worker 池
         buildPipeline.start();
 
+        // 初始化 GPU 三级剔除管线（L1 Frustum + L2 Hi-Z + L3 IndirectDraw）
+        GPUCullingSystem gpuCulling = GPUCullingSystem.getInstance();
+        gpuCulling.initialize();
+        CullingPipeline cullPipeline = new CullingPipeline();
+        cullPipeline.initialize(gpuCulling);
+        scheduler.setCullingPipeline(cullPipeline);
+
         // 注册 Zoom API
         RenderiumZoomAPI.init(scheduler.getDetector());
 
         this.initialized = true;
-        LOGGER.info("RenderiumACL 初始化完成: " + (cpuCores) + " worker(s)");
+        LOGGER.info("RenderiumACL 初始化完成: " + (cpuCores) + " worker(s), CullingPipeline 已注入");
     }
 
     // ==================== 单例 ====================

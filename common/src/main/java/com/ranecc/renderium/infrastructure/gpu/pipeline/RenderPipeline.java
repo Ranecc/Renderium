@@ -354,16 +354,75 @@ public final class RenderPipeline {
     }
 
     /**
-     * 从位域状态快照创建 RenderPipeline
-     * <p>
-     * 用于 {@link com.renderium.compatibility.StateSnapshot} 的快速转换。
+     * Pipeline 状态位掩码定义
      *
-     * @param stateBits  位域状态数组
+     * <p>stateBits[0]: 混合+深度+模板+光栅化状态 (32bit each)
+     * <pre>
+     * Bit  0: blendEnabled
+     * Bit  1: depthTestEnabled
+     * Bit  2: depthWriteEnabled
+     * Bit  3: stencilTestEnabled
+     * Bit  4: cullFaceEnabled
+     * Bit  5: polygonOffsetEnabled
+     * Bit  6: colorWriteR
+     * Bit  7: colorWriteG
+     * Bit  8: colorWriteB
+     * Bit  9: colorWriteA
+     * Bits 16-19: blendEquationRgb
+     * Bits 20-23: blendEquationAlpha
+     * Bits 24-27: blendSrcRgb
+     * Bits 28-31: blendDstRgb
+     * </pre>
+     *
+     * stateBits[1]: 深度比较+剔除模式+前面模式+多边形模式
+     * stateBits[2]: programId (程序 ID)
+     */
+    private static final int BIT_BLEND_ENABLED = 1 << 0;
+    private static final int BIT_DEPTH_TEST_ENABLED = 1 << 1;
+    private static final int BIT_DEPTH_WRITE_ENABLED = 1 << 2;
+    private static final int BIT_STENCIL_TEST_ENABLED = 1 << 3;
+    private static final int BIT_CULL_FACE_ENABLED = 1 << 4;
+    private static final int BIT_POLYGON_OFFSET_ENABLED = 1 << 5;
+
+    /**
+     * 从位域状态快照创建 RenderPipeline
+     *
+     * @param stateBits  位域状态数组 [3]
      * @param programId  着色器程序 ID
      * @return 新的 RenderPipeline 实例
      */
     public static RenderPipeline fromStateBits(long[] stateBits, int programId) {
-        throw new UnsupportedOperationException("RenderPipeline.fromStateBits() 未实现");
+        if (stateBits == null || stateBits.length < 3) {
+            throw new IllegalArgumentException("stateBits must be a non-null array of length >= 3");
+        }
+
+        long word0 = stateBits[0];
+        long word1 = stateBits[1];
+        long word2 = stateBits[2];
+
+        Builder builder = new Builder()
+            .withBlendEnabled((word0 & BIT_BLEND_ENABLED) != 0)
+            .withDepthTestEnabled((word0 & BIT_DEPTH_TEST_ENABLED) != 0)
+            .withDepthWriteEnabled((word0 & BIT_DEPTH_WRITE_ENABLED) != 0)
+            .withStencilTestEnabled((word0 & BIT_STENCIL_TEST_ENABLED) != 0)
+            .withCullFaceEnabled((word0 & BIT_CULL_FACE_ENABLED) != 0)
+            .withPolygonOffsetEnabled((word0 & BIT_POLYGON_OFFSET_ENABLED) != 0)
+            .withColorWriteR((word0 & (1 << 6)) != 0)
+            .withColorWriteG((word0 & (1 << 7)) != 0)
+            .withColorWriteB((word0 & (1 << 8)) != 0)
+            .withColorWriteA((word0 & (1 << 9)) != 0)
+            .withBlendEquationRgb((int) ((word0 >> 16) & 0xF))
+            .withBlendEquationAlpha((int) ((word0 >> 20) & 0xF))
+            .withBlendSrcRgb((int) ((word0 >> 24) & 0xF))
+            .withBlendDstRgb((int) ((word0 >> 28) & 0xF))
+            .withDepthCompareOp((int) (word1 & 0x7))
+            .withCullFaceMode((int) ((word1 >> 4) & 0x7))
+            .withFrontFaceMode((int) ((word1 >> 8) & 0x1))
+            .withPolygonMode((int) ((word1 >> 12) & 0x3))
+            .withTexture2DBinding((int) ((word2 >> 32) & 0xFFFFFFFFL))
+            .withProgramId(programId);
+
+        return builder.build();
     }
 
     /**

@@ -32,6 +32,6 @@ public abstract class MixinChunkManagerACL {
     private void onChunkUnload(LevelChunk chunk, CallbackInfo ci) {
         RenderiumACL acl = RenderiumACL.getInstance();
         if (!acl.isReady()) return;
-        acl.onChunkRemoved(chunk.getPos().x(), 0, chunk.getPos().z());
+        acl.onChunkRemoved(chunk.getPos().x(), 0, chunk.getPos().z()); // chunkY=0: MC 1.18+ 区块为2D(x,z), 无y分量
     }
 }
