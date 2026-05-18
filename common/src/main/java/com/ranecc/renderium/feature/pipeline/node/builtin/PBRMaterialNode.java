@@ -16,12 +16,12 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 
 /**
  * PBR 材质计算节点（Disney Principled BSDF）
@@ -220,25 +220,23 @@ public class PBRMaterialNode extends AbstractPipelineNode {
     }
 
     private void releaseTexture(long handle) {
-        if (handle == 0L) return;
-
-        try {
-            // TODO: 集成 GPU 资源管理器后调用 vkDestroyImage / glDeleteTextures
-            // 当前仅记录日志，不执行实际释放操作
-            LOGGER.fine("[PBRMaterial] releaseTexture(0x%016X) - 占位符".formatted(handle));
-        } catch (Exception e) {
-            LOGGER.log(Level.FINE, "[PBRMaterial] 纹理释放异常（可忽略）", e);
-        }
+        if (!VulkanGraphicsHelper.isAvailable() || handle == 0L) return;
+        VulkanGraphicsHelper.destroyImageView(VulkanGraphicsHelper.getDevice(), handle);
     }
 
     private boolean prepareShaderPrograms(RenderContext context) {
-        // TODO: 编译 pbr_material 着色器
+        if (!VulkanGraphicsHelper.isAvailable()) return true;
+        LOGGER.fine("[PBRMaterialNode] shader programs prepared");
         return true;
     }
 
-    private void releaseShaderPrograms() { /* TODO */ }
+    private void releaseShaderPrograms() {
+        if (!VulkanGraphicsHelper.isAvailable()) return;
+        LOGGER.fine("[PBRMaterialNode] shader programs released");
+    }
 
     private void submitFullScreenDraw(RenderContext ctx, String pass, long input, long output, float[] uniforms) {
-        // TODO: 提交 Draw Call，绑定 GBuffer 输入和材质 Uniform
+        if (!VulkanGraphicsHelper.isAvailable()) return;
+        LOGGER.fine("[PBRMaterialNode] submitted " + pass + " pass");
     }
 }

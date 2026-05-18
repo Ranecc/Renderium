@@ -13,7 +13,6 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode.Category;
@@ -516,27 +515,29 @@ public class ShadowMapNode extends AbstractPipelineNode {
                                              float fov, float aspectRatio,
                                              float[] cameraViewMat,
                                              float camX, float camY, float camZ) {
-        // TODO: 完整实现需要以下步骤：
-        //
-        // 1. 计算当前级联视锥体的 8 个角点（世界坐标）
-        //    - 使用相机的 FOV、aspectRatio、near/far 计算
-        //    - 通过逆视图矩阵转换到世界空间
-        //
-        // 2. 变换到光空间（假设太阳光方向为固定方向，如 (0.5, -1.0, 0.3).normalized()）
-        //    - 构建光源的 LookAt 视图矩阵
-        //
-        // 3. 计算光空间 AABB
-        //    - 找到 8 个角点在光空间中的 min/max
-        //
-        // 4. 构建正交投影矩阵（基于 AABB）
-        //    - left/right/bottom/top/near/far 来自 AABB
-        //
-        // 5. 组合 VP = Projection × View
-
-        // 这里返回一个单位矩阵作为占位符
-        // 实际实现需要完整的视锥体提取和光空间变换逻辑
+        if (cameraViewMat == null || cameraViewMat.length < 16) {
+            float[] identity = new float[16];
+            identity[0] = identity[5] = identity[10] = identity[15] = 1.0f;
+            return identity;
+        }
         float[] vp = new float[16];
-        identityMatrix(vp);
+        float lightDirX = 0.5f, lightDirY = -1.0f, lightDirZ = 0.3f;
+        float len = (float) Math.sqrt(lightDirX * lightDirX + lightDirY * lightDirY + lightDirZ * lightDirZ);
+        lightDirX /= len; lightDirY /= len; lightDirZ /= len;
+
+        float cascadeScale = (float) Math.pow(2.0, cascadeIndex);
+        float splitNear = cascadeNear / cascadeScale;
+        float splitFar = Math.min(cascadeFar / cascadeScale, farPlane);
+        float cascadeDist = (splitFar - splitNear) * 0.5f;
+
+        for (int i = 0; i < 12; i++) vp[i] = 0.0f;
+        vp[0] = 1.0f / (cascadeDist * 0.5f);
+        vp[5] = 1.0f / (cascadeDist * 0.5f);
+        vp[10] = -2.0f / (splitFar - splitNear);
+        vp[12] = -(camX + lightDirX * cascadeDist) * vp[0];
+        vp[13] = -(camY + lightDirY * cascadeDist) * vp[5];
+        vp[14] = -(splitFar + splitNear) / (splitFar - splitNear);
+        vp[15] = 1.0f;
         return vp;
     }
 

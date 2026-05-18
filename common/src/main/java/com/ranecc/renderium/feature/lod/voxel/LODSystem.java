@@ -7,7 +7,6 @@
 
 package com.ranecc.renderium.feature.lod.voxel;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 
 import java.util.BitSet;

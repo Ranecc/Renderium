@@ -3,7 +3,6 @@
 
 package com.ranecc.renderium.feature.renderopt;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.domain.model.TranslucentFaceData;
 
 import java.util.logging.Logger;

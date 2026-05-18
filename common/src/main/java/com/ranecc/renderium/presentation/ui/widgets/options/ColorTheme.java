@@ -3,7 +3,6 @@
 
 package com.ranecc.renderium.presentation.ui.widgets.options;
 
-import com.ranecc.renderium.None;
 
 /**
  * 颜色主题配置。

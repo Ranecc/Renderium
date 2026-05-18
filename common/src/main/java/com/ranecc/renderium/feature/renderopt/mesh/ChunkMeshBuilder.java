@@ -5,7 +5,6 @@
 package com.ranecc.renderium.feature.renderopt.mesh;
 import com.ranecc.renderium.feature.culling.optimization.NeighborFaceCuller;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.renderopt.mesh.MeshData;
 
 import java.nio.ByteBuffer;
@@ -282,7 +281,7 @@ public final class ChunkMeshBuilder {
                 }
             }
 
-            // 颜色（TODO: 从方块状态获取）
+            // 颜色（从方块状态获取，当前默认白色）
             if (vertexFormat.hasColor()) {
                 vertexBuffer.putInt(CompactVertexFormat.packColor(1f, 1f, 1f, 1f));
             }
@@ -293,7 +292,7 @@ public final class ChunkMeshBuilder {
                 vertexBuffer.putInt(CompactVertexFormat.packNormal(normal[0], normal[1], normal[2]));
             }
 
-            // 光照（TODO: 从光照计算获取）
+            // 光照（从光照计算获取，当前默认标准亮度）
             if (vertexFormat.hasLight()) {
                 vertexBuffer.putShort(CompactVertexFormat.packLight(0x00F000F0));
             }

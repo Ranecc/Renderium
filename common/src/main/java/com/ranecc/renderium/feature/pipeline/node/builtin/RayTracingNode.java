@@ -22,7 +22,6 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
-import com.ranecc.renderium.None;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;

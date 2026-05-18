@@ -16,7 +16,6 @@
 
 package com.ranecc.renderium.platform.lifecycle;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.tech.framegen.*;
 import com.ranecc.renderium.tech.streamline.*;
 import com.ranecc.renderium.tech.superres.*;

@@ -4,7 +4,6 @@
 
 package com.ranecc.renderium.tech.dlss;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.infrastructure.vulkan.adapter.VulkanConst;
 import com.ranecc.renderium.tech.streamline.CameraMatrixHelper;
 import com.ranecc.renderium.tech.streamline.FrameEvaluator;

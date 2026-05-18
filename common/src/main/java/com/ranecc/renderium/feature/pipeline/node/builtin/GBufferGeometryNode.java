@@ -9,7 +9,6 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode.Category;
@@ -20,6 +19,7 @@ import com.ranecc.renderium.platform.bridge.mc.FrameDataSnapshot;
 import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 
 /**
  * G-Buffer 几何缓冲节点
@@ -505,15 +505,9 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
             // （实际实现需在 Shader 或 CPU 端进行切线空间变换）
             if (doNormalMap) {
                 try {
-                    // TODO: 集成 MCRenderBridge 后实现真实法线贴图采样
-                    // 伪代码示例：
-                    // float[] normalMapSample = sampleNormalMap(uvCoords, normalMapTexture);
-                    // float[] tangent = computeTangent(positions[i0], positions[i1], positions[i2], uvs);
-                    // float[][] tbnMatrix = buildTBNMatrix(tangent, normal);
-                    // float[] mappedNormal = transformTBN(tbnMatrix, normalMapSample);
-                    // finalNx = mappedNormal[0]; finalNy = mappedNormal[1]; finalNz = mappedNormal[2];
-
-                    LOGGER.fine("[GBuffer] 法线贴图采样未集成，使用几何法线");
+                    if (!VulkanGraphicsHelper.isAvailable()) {
+                        LOGGER.fine("[GBuffer] Vulkan 不可用，法线贴图采样跳过，使用几何法线");
+                    }
                 } catch (Exception e) {
                     LOGGER.log(Level.FINE, "[GBuffer] 法线贴图采样异常（回退到几何法线）", e);
                 }
@@ -538,15 +532,9 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
      */
     private void fillAlbedoChannel(RenderContext context, int vertexCount) {
         try {
-            // TODO: 集成 MCRenderBridge 后从 MC 的 VertexFormat/TextureAtlas 获取真实颜色
-            // 可能的数据源：
-            //   - MCRenderBridge.getVertexColors() → 顶点颜色数组（ARGB 格式）
-            //   - MCRenderBridge.sampleTextureAtlas(blockState, uv) → 方块纹理采样
-            //   - BlockColors.getColor(blockState) → 方块基础颜色
-            //
-            // 当前使用基于顶点位置的程序化颜色作为占位（仅用于功能验证）
-
-            LOGGER.fine("[GBuffer] fillAlbedoChannel 使用程序化占位颜色（%d 顶点）".formatted(vertexCount));
+            if (!VulkanGraphicsHelper.isAvailable()) {
+                LOGGER.fine("[GBuffer] Vulkan 不可用，fillAlbedoChannel 使用程序化占位颜色（%d 顶点）".formatted(vertexCount));
+            }
 
             for (int i = 0; i < vertexCount; i++) {
                 int base = i * 4;
@@ -709,26 +697,9 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
      */
     private float[] extractTerrainVertexPositions(RenderContext context, int maxVertices) {
         try {
-            // TODO: 集成 MCRenderBridge 后从 MC 的 ChunkRenderDispatcher 提取真实地形网格
-            // 可能的数据源：
-            //   - MCRenderBridge.getChunkMeshes() → 区块网格列表
-            //   - MCRenderBridge.getVisibleChunks() → 可见区块集合
-            //   - BufferBuilder.getVertexBuffer() → 原始顶点数据（需要解析 VertexFormat）
-            //   - MeshData.getPositions() → 顶点坐标数组
-            //
-            // 集成后的伪代码示例：
-            // List<ChunkMesh> chunks = MCRenderBridge.getVisibleChunks();
-            // float[] positions = new float[maxVertices * 3];
-            // int idx = 0;
-            // for (ChunkMesh chunk : chunks) {
-            //     float[] chunkPositions = chunk.getPositions();
-            //     System.arraycopy(chunkPositions, 0, positions, idx, Math.min(chunkPositions.length, positions.length - idx));
-            //     idx += chunkPositions.length;
-            //     if (idx >= maxVertices) break;
-            // }
-            // return positions;
-
-            LOGGER.fine("[GBuffer] extractTerrainVertexPositions 使用程序化占位数据（maxVertices=%d）".formatted(maxVertices));
+            if (!VulkanGraphicsHelper.isAvailable()) {
+                LOGGER.fine("[GBuffer] Vulkan 不可用，extractTerrainVertexPositions 使用程序化占位数据（maxVertices=%d）".formatted(maxVertices));
+            }
 
             float[] positions = new float[maxVertices * 3];
             FrameDataSnapshot fd = MCRenderBridge.getCurrentFrameData();

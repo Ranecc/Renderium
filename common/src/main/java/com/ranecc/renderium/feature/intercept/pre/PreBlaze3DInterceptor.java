@@ -10,7 +10,6 @@ import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
 import com.ranecc.renderium.feature.culling.core.CullingContext;
 import com.ranecc.renderium.feature.intercept.handler.ModOutputHandler;
 
-import com.ranecc.renderium.None;
 
 /**
  * 前拦截层接口（Pre-Blaze3D Interceptor）

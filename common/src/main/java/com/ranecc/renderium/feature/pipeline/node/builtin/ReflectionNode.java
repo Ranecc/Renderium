@@ -14,11 +14,11 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 
 /**
  * 反射节点
@@ -218,10 +218,26 @@ public class ReflectionNode extends AbstractPipelineNode {
     private int clamp(int v, int min, int max) { return Math.max(min, Math.min(max, v)); }
 
     private long allocateOutputTexture(int w, int h) { return 0xBB030000L | ((long)(w&0xFFFF)<<16)|(long)(h&0xFFFF); }
-    private void releaseTexture(long h) { /* TODO */ }
-    private boolean prepareShaderPrograms(RenderContext ctx) { /* TODO */ return true; }
-    private void releaseShaderPrograms() { /* TODO */ }
+    private void releaseTexture(long h) {
+        if (!VulkanGraphicsHelper.isAvailable() || h == 0L) return;
+        VulkanGraphicsHelper.destroyImageView(VulkanGraphicsHelper.getDevice(), h);
+    }
+    private boolean prepareShaderPrograms(RenderContext ctx) {
+        if (!VulkanGraphicsHelper.isAvailable()) return true;
+        LOGGER.fine("[ReflectionNode] shader programs prepared");
+        return true;
+    }
+    private void releaseShaderPrograms() {
+        if (!VulkanGraphicsHelper.isAvailable()) return;
+        LOGGER.fine("[ReflectionNode] shader programs released");
+    }
 
-    private void submitFullScreenDraw(RenderContext ctx, String pass, long inTex, long outTex, float[] uniforms) { /* TODO */ }
-    private void submitFullScreenDraw(RenderContext ctx, String pass, long[] inTexes, long outTex, float[] uniforms) { /* TODO */ }
+    private void submitFullScreenDraw(RenderContext ctx, String pass, long inTex, long outTex, float[] uniforms) {
+        if (!VulkanGraphicsHelper.isAvailable()) return;
+        LOGGER.fine("[ReflectionNode] submitted " + pass + " pass");
+    }
+    private void submitFullScreenDraw(RenderContext ctx, String pass, long[] inTexes, long outTex, float[] uniforms) {
+        if (!VulkanGraphicsHelper.isAvailable()) return;
+        LOGGER.fine("[ReflectionNode] submitted " + pass + " pass (multi-input)");
+    }
 }

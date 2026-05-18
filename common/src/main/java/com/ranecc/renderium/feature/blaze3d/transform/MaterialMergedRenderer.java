@@ -5,7 +5,6 @@
 package com.ranecc.renderium.feature.blaze3d.transform;
 import com.ranecc.renderium.domain.model.ChunkRenderData;
 
-import com.ranecc.renderium.None;
 import java.util.*;
 import java.util.logging.Logger;
 

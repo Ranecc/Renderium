@@ -5,7 +5,6 @@ package com.ranecc.renderium.feature.pipeline.node;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 
-import com.ranecc.renderium.None;
 
 /**
  * 渲染管线节点接口

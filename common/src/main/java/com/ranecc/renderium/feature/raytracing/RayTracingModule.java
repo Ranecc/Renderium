@@ -13,7 +13,6 @@
 
 package com.ranecc.renderium.feature.raytracing;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.module.ModuleContext;
 import com.ranecc.renderium.feature.module.ModuleMetadata;
 import com.ranecc.renderium.feature.module.ModuleCategory;

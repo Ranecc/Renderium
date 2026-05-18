@@ -16,7 +16,6 @@
 
 package com.ranecc.renderium.feature.pipeline.strategy;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.pipeline.BfsOcclusionEngine;
 import com.ranecc.renderium.infrastructure.nativeLib.RenderiumAccelerator;
 import java.util.logging.Level;

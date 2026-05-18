@@ -3,7 +3,6 @@
 
 package com.ranecc.renderium.infrastructure.gpu.pipeline;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.renderopt.GLStateSnapshot;
 
 /**

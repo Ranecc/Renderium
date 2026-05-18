@@ -1,6 +1,5 @@
 package com.ranecc.renderium.feature.shader;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 import com.ranecc.renderium.domain.model.config.RenderiumConfigSnapshot;
 /**

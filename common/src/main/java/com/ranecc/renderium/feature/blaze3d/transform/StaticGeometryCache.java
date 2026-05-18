@@ -5,11 +5,12 @@
 package com.ranecc.renderium.feature.blaze3d.transform;
 import com.ranecc.renderium.domain.model.ChunkRenderData;
 
-import com.ranecc.renderium.None;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
+
+import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 
 /**
  * 静态几何体缓存 🏔️
@@ -401,22 +402,12 @@ public class StaticGeometryCache implements AutoCloseable {
         this.gpuDeviceRef = gpuDevice;
 
         try {
-            // TODO: 创建 GPU 缓冲区
-            //
-            // Vulkan 静态缓冲：
-            // VkBufferCreateInfo staticVBufInfo = {};
-            // staticVBufInfo.size = maxStaticVertices * VERTEX_SIZE;
-            // staticVBufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-            // staticVBufInfo.memoryPropertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            // vkCreateBuffer(device, &staticVBufInfo, nullptr, &staticVertexBufferHandle);
-            //
-            // Vulkan 动态缓冲（使用 Ring Buffer 或 Host Visible）：
-            // VkBufferCreateInfo dynVBufInfo = {};
-            // dynVBufInfo.size = maxDynamicVertices * VERTEX_SIZE;
-            // dynVBufInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-            // dynVBufInfo.memoryPropertyFlags =
-            //     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            // vkCreateBuffer(device, &dynVBufInfo, nullptr, &dynamicVertexBufferHandle);
+            if (VulkanOperationGuard.isFailed()) {
+                LOGGER.fine("[GT4] init 跳过: GPU 不可用");
+                return;
+            }
+
+            LOGGER.fine("[GT4] 创建 GPU 缓冲区（集成阶段需替换为真实 vkCreateBuffer 调用）");
 
             // 占位实现
             staticVertexBufferHandle = 5000L;

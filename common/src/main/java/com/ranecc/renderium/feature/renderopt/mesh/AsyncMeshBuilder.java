@@ -4,7 +4,6 @@
 
 package com.ranecc.renderium.feature.renderopt.mesh;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.renderopt.mesh.MeshData;
 import com.ranecc.renderium.domain.constant.ConfigConstants;
 

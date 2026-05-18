@@ -8,7 +8,6 @@ package com.ranecc.renderium.feature.blaze3d.modern;
 
 import com.ranecc.renderium.domain.model.ChunkRenderData;
 
-import com.ranecc.renderium.None;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;

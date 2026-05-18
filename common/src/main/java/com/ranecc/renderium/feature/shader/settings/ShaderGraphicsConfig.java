@@ -14,7 +14,6 @@
 
 package com.ranecc.renderium.feature.shader.settings;
 
-import com.ranecc.renderium.None;
 
 import java.util.Objects;
 import java.util.logging.Level;

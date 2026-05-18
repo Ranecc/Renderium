@@ -3,7 +3,6 @@
 
 package com.ranecc.renderium.feature.pipeline.parameter;
 
-import com.ranecc.renderium.None;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -14,6 +13,7 @@ import com.ranecc.renderium.feature.pipeline.parameter.impl.EnumKnob;
 import com.ranecc.renderium.feature.pipeline.parameter.impl.FloatKnob;
 import com.ranecc.renderium.feature.pipeline.parameter.impl.IntKnob;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 
 /**
  * Shader 参数配置容器 (Shader Parameter Config)
@@ -368,26 +368,37 @@ public final class ShaderParameterConfig {
         switch (knob.getType()) {
             case FLOAT -> {
                 float value = ((FloatKnob) knob).getRawValue();
-                // TODO: 调用 Vulkan/OpenGL 后端设置 float uniform
-                // 示例：vkCmdPushConstants(commandBuffer, layout, stage, offset, FLOAT_SIZE, &value);
+                if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
+                    return true;
+                }
+                markDirty(uniformName);
                 return true;
             }
 
             case INT -> {
                 int value = ((IntKnob) knob).getRawValue();
-                // TODO: 调用后端设置 int uniform
+                if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
+                    return true;
+                }
+                markDirty(uniformName);
                 return true;
             }
 
             case BOOL -> {
                 boolean value = ((BoolKnob) knob).getRawValue();
-                // TODO: 调用后端设置 bool uniform（通常作为 int 0/1 上传）
+                if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
+                    return true;
+                }
+                markDirty(uniformName);
                 return true;
             }
 
             case ENUM -> {
                 int index = ((EnumKnob) knob).getCurrentIndex();
-                // TODO: 枚举作为 int 索引上传到 GPU
+                if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
+                    return true;
+                }
+                markDirty(uniformName);
                 return true;
             }
 

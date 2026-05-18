@@ -10,7 +10,6 @@ import com.ranecc.renderium.domain.model.InterceptedFrameData;
 import com.ranecc.renderium.domain.model.FrameData;
 import com.ranecc.renderium.platform.backend.EffectPipeline;
 
-import com.ranecc.renderium.None;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;

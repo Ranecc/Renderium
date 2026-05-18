@@ -34,6 +34,8 @@ public class GPUCullingSystem implements AutoCloseable {
     protected static long indirectArgsBuffer = 0L;
     private static long cullingShaderModule = 0L;
     private static long pipelineLayout = 0L;
+    /** frustum_culling.comp 的 4 个 binding: SSBO(0/1/2) + UBO(3) */
+    private static long descriptorSetLayout = 0L;
     private static byte[] FRUSTUM_CULLING_SPIRV;
 
     /** 是否需要销毁 chunkBoundsBuffer/indirectArgsBuffer（外部创建标记） */
@@ -121,8 +123,15 @@ public class GPUCullingSystem implements AutoCloseable {
 
     private void compileGLSL(String source) {
         try {
-            Class<?> cc = Class.forName("com.ranecc.renderium.feature.lod.compute.GlslangCompiler");
-            FRUSTUM_CULLING_SPIRV = (byte[]) cc.getMethod("compile", String.class, String.class).invoke(null, source, "frustum_culling");
+            Class<?> compilerClass = Class.forName("com.ranecc.renderium.feature.blaze3d.shader.GlslangCompiler");
+            java.lang.reflect.Method initialize = compilerClass.getMethod("initialize");
+            Object compiler = initialize.invoke(null);
+            java.lang.reflect.Method compile = compilerClass.getMethod("compile", String.class, Enum.class);
+
+            Class<?> stageClass = Class.forName("com.ranecc.renderium.feature.blaze3d.shader.GlslangCompiler$Stage");
+            Object computeStage = Enum.valueOf((Class<Enum>) stageClass, "COMPUTE");
+
+            FRUSTUM_CULLING_SPIRV = (byte[]) compile.invoke(compiler, source, computeStage);
         } catch (Exception e) { LOGGER.warning("GLSL 编译失败: " + e.getMessage()); }
     }
 
@@ -133,8 +142,39 @@ public class GPUCullingSystem implements AutoCloseable {
         VkDevice device = RenderiumVulkanBridge.getDevice();
         if (device == null) return;
         try (MemoryStack stack = MemoryStack.stackPush()) {
+            // === VkDescriptorSetLayout: 4 个 binding 对应 frustum_culling.comp ===
+            // binding=0: SSBO (ChunkBounds)     binding=1: SSBO (VisibilityOutput)
+            // binding=2: SSBO (VisibleChunkCounter)  binding=3: UBO (CameraData)
+            var bindings = VkDescriptorSetLayoutBinding.calloc(4, stack);
+            bindings.get(0).binding(0)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .stageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
+            bindings.get(1).binding(1)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .stageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
+            bindings.get(2).binding(2)
+                .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .stageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
+            bindings.get(3).binding(3)
+                .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                .descriptorCount(1)
+                .stageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
+            var dsLayoutInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack)
+                .sType(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO)
+                .pBindings(bindings);
+            var dsLayoutPtr = stack.mallocLong(1);
+            if (vkCreateDescriptorSetLayout(device, dsLayoutInfo, null, dsLayoutPtr) == VK_SUCCESS)
+                descriptorSetLayout = dsLayoutPtr.get(0);
+
+            // === PipelineLayout 绑定 descriptorSetLayout ===
+            var setLayoutPtr = stack.mallocLong(1).put(0, descriptorSetLayout);
             var layoutInfo = VkPipelineLayoutCreateInfo.calloc(stack)
-                .sType(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);
+                .sType(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO)
+                .setLayoutCount(1)
+                .pSetLayouts(setLayoutPtr);
             var layoutPtr = stack.mallocLong(1);
             if (vkCreatePipelineLayout(device, layoutInfo, null, layoutPtr) == VK_SUCCESS)
                 pipelineLayout = layoutPtr.get(0);
@@ -161,6 +201,26 @@ public class GPUCullingSystem implements AutoCloseable {
                 if (vkCreateComputePipelines(device, 0L, ci, null, pipePtr) == VK_SUCCESS)
                     cullingPipeline = pipePtr.get(0);
             }
+
+            // === VkBuffer: chunkBoundsBuffer (AABB, 每个 chunk 2×vec4 = 32 字节) ===
+            var boundsBufInfo = VkBufferCreateInfo.calloc(stack)
+                .sType(VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO)
+                .size(MAX_CHUNK_COUNT * 32L)
+                .usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+            var bufPtr1 = stack.mallocLong(1);
+            if (vkCreateBuffer(device, boundsBufInfo, null, bufPtr1) == VK_SUCCESS)
+                chunkBoundsBuffer = bufPtr1.get(0);
+
+            // === VkBuffer: indirectArgsBuffer (indirect draw, 每个 chunk 20 字节) ===
+            var indirectBufInfo = VkBufferCreateInfo.calloc(stack)
+                .sType(VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO)
+                .size(MAX_CHUNK_COUNT * 20L)
+                .usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+            var bufPtr2 = stack.mallocLong(1);
+            if (vkCreateBuffer(device, indirectBufInfo, null, bufPtr2) == VK_SUCCESS)
+                indirectArgsBuffer = bufPtr2.get(0);
+
+            ownBuffers = true;
         }
     }
 
@@ -170,6 +230,7 @@ public class GPUCullingSystem implements AutoCloseable {
         if (cullingPipeline != 0L) { vkDestroyPipeline(device, cullingPipeline, null); cullingPipeline = 0L; }
         if (cullingShaderModule != 0L) { vkDestroyShaderModule(device, cullingShaderModule, null); cullingShaderModule = 0L; }
         if (pipelineLayout != 0L) { vkDestroyPipelineLayout(device, pipelineLayout, null); pipelineLayout = 0L; }
+        if (descriptorSetLayout != 0L) { vkDestroyDescriptorSetLayout(device, descriptorSetLayout, null); descriptorSetLayout = 0L; }
         if (chunkBoundsBuffer != 0L && ownBuffers) { vkDestroyBuffer(device, chunkBoundsBuffer, null); chunkBoundsBuffer = 0L; }
         if (indirectArgsBuffer != 0L && ownBuffers) { vkDestroyBuffer(device, indirectArgsBuffer, null); indirectArgsBuffer = 0L; }
         ownBuffers = false;

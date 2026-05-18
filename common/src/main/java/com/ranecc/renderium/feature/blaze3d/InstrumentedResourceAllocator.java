@@ -8,7 +8,6 @@ package com.ranecc.renderium.feature.blaze3d;
 
 // 注意：使用 Renderium 提供的适配接口
 // 在 26.2+ 中，这个接口会委托给 Mojang 的官方实现
-import com.ranecc.renderium.None;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;

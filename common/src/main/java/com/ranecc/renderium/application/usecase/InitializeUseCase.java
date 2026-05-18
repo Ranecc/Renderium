@@ -1,11 +1,15 @@
 package com.ranecc.renderium.application.usecase;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 import com.ranecc.renderium.domain.service.scheduling.AdaptivePathSelector;
+import com.ranecc.renderium.feature.blaze3d.Blaze3DOptimizerModule;
+import com.ranecc.renderium.feature.module.ModuleContext;
+import com.ranecc.renderium.feature.module.ModuleRegistry;
 import com.ranecc.renderium.infrastructure.config.ConfigManager;
 import com.ranecc.renderium.infrastructure.nativeLib.RenderiumAccelerator;
 import com.ranecc.renderium.platform.hook.HookManager;
 import com.ranecc.renderium.platform.hook.OptimizerRegistry;
 
+import java.nio.file.Path;
 import java.util.logging.Logger;
 
 /**
@@ -20,6 +24,7 @@ import java.util.logging.Logger;
  *   <li><b>初始化加速器</b>：创建 RenderiumAccelerator 实例并初始化原生库</li>
  *   <li><b>创建调度器</b>：实例化 AdaptivePathSelector 并注入加速器</li>
  *   <li><b>注册优化器</b>：通过 HookManager 注册平台钩子</li>
+ *   <li><b>桥接 Blaze3D 优化器</b>：构建 ModuleContext 并初始化 Blaze3DOptimizerModule</li>
  * </ol>
  *
  * <h3>设计约束</h3>
@@ -72,7 +77,7 @@ public class InitializeUseCase {
         if (config == null) {
             throw new RuntimeException("Failed to load configuration, aborting initialization");
         }
-        LOGGER.info("Step 1/4: Configuration loaded successfully");
+        LOGGER.info("Step 1/5: Configuration loaded successfully");
 
         // Step 2: 初始化原生加速器（关键步骤）
         accelerator = initializeAccelerator(deviceHandle);
@@ -80,16 +85,20 @@ public class InitializeUseCase {
             LOGGER.warning("Native accelerator not available, using Java fallback");
             // 不抛出异常，允许纯 Java 模式运行
         } else {
-            LOGGER.info("Step 2/4: Native accelerator initialized: " + accelerator.getVersion());
+            LOGGER.info("Step 2/5: Native accelerator initialized: " + accelerator.getVersion());
         }
 
         // Step 3: 创建自适应路径选择器
         scheduler = createScheduler(accelerator);
-        LOGGER.info("Step 3/4: Adaptive path selector created");
+        LOGGER.info("Step 3/5: Adaptive path selector created");
 
         // Step 4: 注册平台优化器钩子
         registerOptimizers(config);
-        LOGGER.info("Step 4/4: Platform optimizers registered");
+        LOGGER.info("Step 4/5: Platform optimizers registered");
+
+        // Step 5: 桥接 Blaze3D 优化器模块初始化
+        initializeBlazeOptimizer(config, deviceHandle);
+        LOGGER.info("Step 5/5: Blaze3D optimizer module initialized");
 
         LOGGER.info("=== Renderium Initialization Complete ===");
     }
@@ -231,6 +240,76 @@ public class InitializeUseCase {
 
         } catch (Exception e) {
             LOGGER.warning("Failed to register some optimizers: " + e.getMessage());
+            // 不抛出异常，允许系统在降级模式下运行
+        }
+    }
+
+    /**
+     * Step 5: 桥接 Blaze3D 优化器模块初始化
+     *
+     * <p>构建 {@link ModuleContext} 上下文，并按标准生命周期
+     * {@code canLoad → load → initialize → enable} 完成
+     * {@link Blaze3DOptimizerModule} 的初始化和激活。
+     *
+     * <p>该模块负责 Blaze3D 渲染引擎内部的 FrameGraph、
+     * Vulkan Command、Memory 和 Shader Pipeline 优化。
+     * 初始化失败不会中断整体流程（允许降级运行）。
+     *
+     * <h4>方法签名</h4>
+     * <ul>
+     *   <li><b>参数：</b>config - 已加载的全局配置；deviceHandle - 图形设备句柄</li>
+     *   <li><b>返回值：</b>void</li>
+     * </ul>
+     *
+     * @param config       已加载的全局配置实例
+     * @param deviceHandle 图形设备句柄（Vulkan Device 等，可为 null）
+     */
+    private void initializeBlazeOptimizer(RenderiumConfig config, Object deviceHandle) {
+        try {
+            // 构建 ModuleContext：为 Blaze3DOptimizerModule 提供运行时依赖注入
+            Path gameDir = Path.of(System.getProperty("user.dir", "."));
+            Path configDir = gameDir.resolve(".renderium");
+
+            ModuleContext moduleContext = new ModuleContext(
+                    config,                             // 全局配置
+                    ModuleRegistry.getInstance(),       // 模块注册表单例
+                    gameDir,                            // 游戏运行目录
+                    configDir,                          // 配置目录
+                    "compatible"                        // 默认兼容模式
+            );
+
+            // 将设备句柄注入到 ModuleContext，供 Vulkan 相关子系统使用
+            if (deviceHandle != null) {
+                moduleContext.setGpuDevice(deviceHandle);
+            }
+
+            // 创建 Blaze3DOptimizerModule 实例并按生命周期执行
+            Blaze3DOptimizerModule blazeModule = new Blaze3DOptimizerModule();
+
+            if (!blazeModule.canLoad(moduleContext)) {
+                LOGGER.warning("Blaze3DOptimizerModule cannot load in current environment");
+                return;
+            }
+
+            if (!blazeModule.load(moduleContext)) {
+                LOGGER.warning("Blaze3DOptimizerModule load phase failed");
+                return;
+            }
+
+            if (!blazeModule.initialize(moduleContext)) {
+                LOGGER.warning("Blaze3DOptimizerModule initialize phase failed");
+                return;
+            }
+
+            if (!blazeModule.enable()) {
+                LOGGER.warning("Blaze3DOptimizerModule enable phase failed");
+                return;
+            }
+
+            LOGGER.info("Blaze3DOptimizerModule bridge initialized successfully");
+
+        } catch (Exception e) {
+            LOGGER.warning("Failed to bridge Blaze3D optimizer initialization: " + e.getMessage());
             // 不抛出异常，允许系统在降级模式下运行
         }
     }

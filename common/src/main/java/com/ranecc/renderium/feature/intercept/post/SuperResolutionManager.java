@@ -3,7 +3,6 @@
 
 package com.ranecc.renderium.feature.intercept.post;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
-import com.ranecc.renderium.None;
 
 
 import java.util.*;

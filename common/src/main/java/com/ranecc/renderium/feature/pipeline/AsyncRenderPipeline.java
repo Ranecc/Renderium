@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.pipeline.RenderExtension;
 import com.ranecc.renderium.feature.pipeline.BfsOcclusionEngine;
 

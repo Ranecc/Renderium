@@ -8,7 +8,6 @@ import com.ranecc.renderium.feature.culling.core.CullingContext;
 import com.ranecc.renderium.feature.culling.optimization.NeighborFaceCuller;
 import com.ranecc.renderium.feature.culling.optimization.HeightmapOcclusionCuller;
 import com.ranecc.renderium.feature.culling.optimization.AsyncComputeCuller;
-import com.ranecc.renderium.None;
 
 import java.util.ArrayList;
 import java.util.BitSet;

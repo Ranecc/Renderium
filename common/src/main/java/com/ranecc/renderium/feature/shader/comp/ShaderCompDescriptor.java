@@ -25,7 +25,6 @@
 
 package com.ranecc.renderium.feature.shader.comp;
 
-import com.ranecc.renderium.None;
 
 import java.util.*;
 import java.util.logging.Logger;

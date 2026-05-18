@@ -9,7 +9,6 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-import com.ranecc.renderium.None;
 import java.util.function.Function;
 import com.ranecc.renderium.infrastructure.config.structure.OptionImpact;
 public final class FloatOption implements SearchableOption {

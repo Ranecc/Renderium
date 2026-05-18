@@ -13,7 +13,6 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
-import com.ranecc.renderium.None;
 
 import org.lwjgl.vulkan.VK10;
 

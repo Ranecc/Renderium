@@ -3,7 +3,6 @@
 
 package com.ranecc.renderium.feature.renderopt;
 
-import com.ranecc.renderium.None;
 
 import java.util.List;
 import java.util.logging.Logger;

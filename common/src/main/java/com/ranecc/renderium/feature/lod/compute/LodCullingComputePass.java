@@ -1,6 +1,5 @@
 package com.ranecc.renderium.feature.lod.compute;
 
-import com.ranecc.renderium.None;
 
 import java.io.IOException;
 import java.io.InputStream;

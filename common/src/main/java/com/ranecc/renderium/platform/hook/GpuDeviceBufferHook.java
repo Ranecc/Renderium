@@ -3,7 +3,6 @@
 
 package com.ranecc.renderium.platform.hook;
 
-import com.ranecc.renderium.None;
 
 /**
  * Functional interface for GpuDevice buffer creation optimization.

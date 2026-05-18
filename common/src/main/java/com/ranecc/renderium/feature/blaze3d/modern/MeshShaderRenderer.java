@@ -9,7 +9,6 @@
 package com.ranecc.renderium.feature.blaze3d.modern;
 import com.ranecc.renderium.domain.model.ChunkRenderData;
 
-import com.ranecc.renderium.None;
 import org.joml.Matrix4f;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;

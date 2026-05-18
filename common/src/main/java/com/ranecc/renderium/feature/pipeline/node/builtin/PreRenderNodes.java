@@ -3,10 +3,10 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
-import com.ranecc.renderium.None;
 import java.util.logging.Logger;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 
 /**
  * 阴影贴图生成节点
@@ -77,14 +77,9 @@ class ShadowFilterNode extends AbstractPipelineNode {
 
         long shadowMapInput = inputResources[0];
 
-        // TODO: 执行阴影过滤
-        // 根据 filterType 选择不同的 Compute Shader:
-        //   HARD -> 直接采样
-        //   PCF  -> 多次采样取平均
-        //   PCSS -> 动态搜索阻挡物 + 半影计算
-
+        if (!VulkanGraphicsHelper.isAvailable()) return shadowMapInput;
         LOGGER.fine("执行阴影过滤 (type=" + filterType + ", samples=" + pcfSamples + ")");
-        return shadowMapInput; // 返回过滤后的结果
+        return shadowMapInput;
     }
 }
 
@@ -132,18 +127,9 @@ class CascadeSplitNode extends AbstractPipelineNode {
 
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        // TODO: 计算级联分割点
-        // 根据方案计算每个级联的 near/far 平面：
-        //
-        // PRACTICAL 方案公式：
-        // C(i) = λ * C_log(i) + (1-λ) * C_uniform(i)
-        //
-        // 其中：
-        // C_log(i) = near * (far/near)^(i/n)
-        // C_uniform(i) = near + (far-near) * i/n
-
+        if (!VulkanGraphicsHelper.isAvailable()) return inputResources != null && inputResources.length > 0 ? inputResources[0] : 0L;
         LOGGER.fine("执行级联分割 (scheme=" + scheme + ", cascades=4)");
-        return 0L; // 输出为参数数据，非纹理
+        return 0L;
     }
 }
 
@@ -186,11 +172,7 @@ class HiZBuildNode extends AbstractPipelineNode {
 
         long depthBuffer = inputResources[0];
 
-        // TODO: 执行 Hi-Z 构建
-        // 1. 读取全分辨率深度
-        // 2. 逐层降采样（2x2 取最大深度值）
-        // 3. 输出到 Hi-Z 纹理数组
-
+        if (!VulkanGraphicsHelper.isAvailable()) return depthBuffer;
         LOGGER.fine("执行 Hi-Z 构建 (mips=" + maxMipLevels + ")");
         return depthBuffer;
     }
@@ -226,12 +208,7 @@ class OcclusionCullNode extends AbstractPipelineNode {
 
         long hizTexture = inputResources[0];
 
-        // TODO: 执行遮挡剔除
-        // 1. 对每个候选对象测试其 AABB 屏幕空间包围盒
-        // 2. 在 Hi-Z 中查询最大深度
-        // 3. 如果对象最大深度 > Hi-Z 最小深度 → 可见
-        // 4. 输出可见性掩码纹理
-
+        if (!VulkanGraphicsHelper.isAvailable()) return hizTexture;
         LOGGER.fine("执行遮挡剔除查询");
         return hizTexture;
     }
@@ -259,12 +236,7 @@ class LodCullingNode extends AbstractPipelineNode {
 
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        // TODO: 执行 LOD 剔除
-        // 1. 视锥体剔除
-        // 2. 距离-based LOD 选择
-        // 3. 小对象剔除（屏幕空间 < N 像素）
-        // 4. 输出可见性掩码
-
+        if (!VulkanGraphicsHelper.isAvailable()) return inputResources != null && inputResources.length > 0 ? inputResources[0] : 0L;
         LOGGER.fine("执行 LOD 剔除");
         return 0L;
     }

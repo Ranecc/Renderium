@@ -19,7 +19,6 @@
 
 package com.ranecc.renderium.feature.shader.comp;
 
-import com.ranecc.renderium.None;  // 导入 PipelineNode 接口（包含 Category 枚举）
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

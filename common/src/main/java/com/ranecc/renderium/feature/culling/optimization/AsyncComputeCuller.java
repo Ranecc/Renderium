@@ -5,7 +5,6 @@
 package com.ranecc.renderium.feature.culling.optimization;
 import com.ranecc.renderium.tech.stub.renderbackendproxy.RenderBackendProxy;
 
-import com.ranecc.renderium.None;
 
 import java.util.BitSet;
 import java.util.concurrent.ConcurrentHashMap;

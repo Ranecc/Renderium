@@ -6,7 +6,6 @@
 
 package com.ranecc.renderium.feature.shader.factory;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 import com.ranecc.renderium.infrastructure.vulkan.adapter.VulkanConst;
 

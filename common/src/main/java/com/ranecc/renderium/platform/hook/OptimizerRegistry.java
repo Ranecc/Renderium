@@ -4,7 +4,6 @@
 
 package com.ranecc.renderium.platform.hook;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.blaze3d.MemoryOptimizer;
 import com.ranecc.renderium.feature.blaze3d.ShaderPipelineOptimizer;
 import com.ranecc.renderium.feature.blaze3d.VulkanCommandOptimizer;

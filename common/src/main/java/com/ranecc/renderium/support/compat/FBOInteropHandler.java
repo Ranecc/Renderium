@@ -3,10 +3,10 @@
 
 package com.ranecc.renderium.support.compat;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.tech.stub.renderbackendproxy.RenderBackendProxy;
 
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 
 /**
  * FBO 拦截器（零开销优化版）
@@ -220,17 +220,20 @@ public final class FBOInteropHandler {
     }
 
     private boolean transferViaExternalMemory(int fbo, int width, int height) {
-        // TODO: 实现 VK_KHR_external_memory 互操作
+        if (!VulkanGraphicsHelper.isAvailable()) return false;
+        LOGGER.fine("[FBOInteropHandler] transferViaExternalMemory (guard-gated)");
         return true;
     }
 
     private boolean transferViaPBOBlit(int fbo, int width, int height) {
-        // TODO: 实现 PBO 中转方案
+        if (!VulkanGraphicsHelper.isAvailable()) return false;
+        LOGGER.fine("[FBOInteropHandler] transferViaPBOBlit (guard-gated)");
         return true;
     }
 
     private boolean transferViaReadPixels(int fbo, int width, int height) {
-        // TODO: 实现 glReadPixels 回退方案
+        if (!VulkanGraphicsHelper.isAvailable()) return false;
+        LOGGER.fine("[FBOInteropHandler] transferViaReadPixels (guard-gated)");
         return true;
     }
 

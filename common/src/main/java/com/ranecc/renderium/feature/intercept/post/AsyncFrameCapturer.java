@@ -4,7 +4,6 @@
 package com.ranecc.renderium.feature.intercept.post;
 import com.ranecc.renderium.domain.model.FrameCaptureContext;
 
-import com.ranecc.renderium.None;
 
 import java.nio.ByteBuffer;
 import java.util.concurrent.*;

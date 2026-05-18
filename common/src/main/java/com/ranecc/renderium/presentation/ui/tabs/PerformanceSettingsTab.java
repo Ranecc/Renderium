@@ -195,13 +195,13 @@ public class PerformanceSettingsTab extends Screen {
             int centerX, int y, int width, int height,
             boolean enabled, String label,
             Consumer<Boolean> setter) {
-        String displayText = enabled ? (label + ": ON") : (label + ": OFF");
+        String displayText = ON_OFF_FORMATTER.format(label, enabled);
         Button button = MCAbstract.buttonBuilder(centerX - width / 2, y, width, height)
                 .text(displayText)
                 .onClick(btn -> {
                     boolean newState = !enabled;
                     setter.accept(newState);
-                    btn.setMessage(MCAbstract.text(newState ? (label + ": ON") : (label + ": OFF")));
+                    btn.setMessage(MCAbstract.text(ON_OFF_FORMATTER.format(label, newState)));
                 })
                 .build();
         addRenderableWidget(button);
@@ -222,15 +222,13 @@ public class PerformanceSettingsTab extends Screen {
             int centerX, int y, int width, int height,
             String label, boolean enabled,
             Consumer<Boolean> setter) {
-        String prefix = enabled ? "[✓] " : "[ ] ";
-        String displayText = prefix + label;
+        String displayText = CHECKBOX_FORMATTER.format(label, enabled);
         Button button = MCAbstract.buttonBuilder(centerX - width / 2, y, width, height)
                 .text(displayText)
                 .onClick(btn -> {
                     boolean newState = !enabled;
                     setter.accept(newState);
-                    String newPrefix = newState ? "[✓] " : "[ ] ";
-                    btn.setMessage(MCAbstract.text(newPrefix + label));
+                    btn.setMessage(MCAbstract.text(CHECKBOX_FORMATTER.format(label, newState)));
                 })
                 .build();
         addRenderableWidget(button);

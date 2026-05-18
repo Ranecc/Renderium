@@ -7,7 +7,6 @@ import com.ranecc.renderium.platform.backend.EffectParameters;
 import com.ranecc.renderium.domain.enums.EffectType;
 import com.ranecc.renderium.platform.backend.EffectPipeline;
 
-import com.ranecc.renderium.None;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;

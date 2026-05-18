@@ -4,7 +4,6 @@
 package com.ranecc.renderium.presentation.plugin;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 
-import com.ranecc.renderium.None;
 
 import java.io.Reader;
 import java.nio.file.Files;

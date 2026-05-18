@@ -9,7 +9,6 @@ package com.ranecc.renderium.feature.blaze3d.modern;
 
 import com.ranecc.renderium.feature.blaze3d.aggressive.GPUCullingSystem;
 
-import com.ranecc.renderium.None;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.atomic.AtomicLong;

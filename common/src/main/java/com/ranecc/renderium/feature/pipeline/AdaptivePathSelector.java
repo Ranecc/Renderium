@@ -14,7 +14,6 @@
 
 package com.ranecc.renderium.feature.pipeline;
 
-import com.ranecc.renderium.None;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.nativeLib.RenderiumAccelerator;

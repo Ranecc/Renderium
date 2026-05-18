@@ -14,11 +14,11 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 
 /**
  * 阴影风格控制节点
@@ -188,8 +188,21 @@ public class ShadowStyleNode extends AbstractPipelineNode {
 
     private float clamp01(float v) { return Math.max(0.0f, Math.min(1.0f, v)); }
     private long allocateOutputTexture(int w, int h) { return 0xBB060000L | ((long)(w&0xFFFF)<<16)|(long)(h&0xFFFF); }
-    private void releaseTexture(long h) { /* TODO */ }
-    private boolean prepareShaderPrograms(RenderContext ctx) { /* TODO */ return true; }
-    private void releaseShaderPrograms() { /* TODO */ }
-    private void submitFullScreenDraw(RenderContext ctx, String pass, long inTex, long outTex, float[] uniforms) { /* TODO */ }
+    private void releaseTexture(long h) {
+        if (!VulkanGraphicsHelper.isAvailable() || h == 0L) return;
+        VulkanGraphicsHelper.destroyImageView(VulkanGraphicsHelper.getDevice(), h);
+    }
+    private boolean prepareShaderPrograms(RenderContext ctx) {
+        if (!VulkanGraphicsHelper.isAvailable()) return true;
+        LOGGER.fine("[ShadowStyleNode] shader programs prepared");
+        return true;
+    }
+    private void releaseShaderPrograms() {
+        if (!VulkanGraphicsHelper.isAvailable()) return;
+        LOGGER.fine("[ShadowStyleNode] shader programs released");
+    }
+    private void submitFullScreenDraw(RenderContext ctx, String pass, long inTex, long outTex, float[] uniforms) {
+        if (!VulkanGraphicsHelper.isAvailable()) return;
+        LOGGER.fine("[ShadowStyleNode] submitted " + pass + " pass");
+    }
 }

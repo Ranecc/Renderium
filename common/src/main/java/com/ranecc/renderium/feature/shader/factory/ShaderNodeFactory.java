@@ -23,7 +23,6 @@ import com.ranecc.renderium.feature.pipeline.parameter.impl.BoolKnob;
 import com.ranecc.renderium.feature.pipeline.parameter.impl.EnumKnob;
 import com.ranecc.renderium.feature.pipeline.parameter.impl.FloatKnob;
 import com.ranecc.renderium.feature.pipeline.parameter.impl.IntKnob;
-import com.ranecc.renderium.None;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;

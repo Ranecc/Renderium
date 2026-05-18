@@ -39,6 +39,7 @@ public class CullingPipeline {
     // ==================== IndirectDraw Pipeline ====================
     private static long indirectGenPipeline = 0L;
     private static long indirectGenPipelineLayout = 0L;
+    private static long indirectGenDescriptorSetLayout = 0L;
     private static byte[] INDIRECT_DRAW_GEN_SPIRV;
 
     // ==================== 相机运动检测 ====================
@@ -75,6 +76,7 @@ public class CullingPipeline {
         if (device != null) {
             if (indirectGenPipeline != 0L) { vkDestroyPipeline(device, indirectGenPipeline, null); indirectGenPipeline = 0L; }
             if (indirectGenPipelineLayout != 0L) { vkDestroyPipelineLayout(device, indirectGenPipelineLayout, null); indirectGenPipelineLayout = 0L; }
+            if (indirectGenDescriptorSetLayout != 0L) { vkDestroyDescriptorSetLayout(device, indirectGenDescriptorSetLayout, null); indirectGenDescriptorSetLayout = 0L; }
         }
         INDIRECT_DRAW_GEN_SPIRV = null;
         initialized = false;
@@ -162,14 +164,45 @@ public class CullingPipeline {
         }
     }
 
+    /**
+     * 通过反射调用 GlslangCompiler 将 GLSL 源码编译为 SPIR-V。
+     * indirect_draw_gen 为 compute shader，固定使用 COMPUTE stage。
+     *
+     * @param source GLSL 源码
+     * @param name   着色器名称（用于日志）
+     * @return SPIR-V 字节码，编译失败返回空数组
+     */
     private static byte[] compileGLSL(String source, String name) {
         try {
-            Class<?> cc = Class.forName("com.ranecc.renderium.feature.lod.compute.GlslangCompiler");
-            return (byte[]) cc.getMethod("compile", String.class, String.class).invoke(null, source, name);
+            // Step 1: 加载 GlslangCompiler 类并获取单例实例
+            Class<?> compilerClass = Class.forName(
+                    "com.ranecc.renderium.feature.blaze3d.shader.GlslangCompiler");
+            java.lang.reflect.Method initialize = compilerClass.getMethod("initialize");
+            Object compiler = initialize.invoke(null);
+
+            // Step 2: 获取 compile(String, Stage) 方法
+            java.lang.reflect.Method compileMethod = compilerClass.getMethod(
+                    "compile", String.class, Enum.class);
+
+            // Step 3: 反射获取 COMPUTE Stage 枚举值
+            Class<?> stageClass = Class.forName(
+                    "com.ranecc.renderium.feature.blaze3d.shader.GlslangCompiler$Stage");
+            Object computeStage = Enum.valueOf(
+                    (Class<Enum>) stageClass, "COMPUTE");
+
+            // Step 4: 执行编译 compile(source, COMPUTE)
+            byte[] spirv = (byte[]) compileMethod.invoke(compiler, source, computeStage);
+
+            if (spirv != null && spirv.length > 0) {
+                LOGGER.info(name + " GLSL 编译成功 (" + spirv.length + " bytes)");
+                return spirv;
+            }
+        } catch (ClassNotFoundException e) {
+            LOGGER.warning(name + " GlslangCompiler 类未找到: " + e.getMessage());
         } catch (Exception e) {
             LOGGER.warning(name + " GLSL 编译失败: " + e.getMessage());
-            return new byte[]{};
         }
+        return new byte[]{};
     }
 
     /**
@@ -182,9 +215,32 @@ public class CullingPipeline {
         VkDevice device = RenderiumVulkanBridge.getDevice();
         if (device == null) return;
         try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
-            // Pipeline Layout
+            // Descriptor Set Layout (5 bindings, matches indirect_draw_gen.comp layout)
+            // binding=0: VisibilityInput SSBO
+            // binding=1: ChunkMetaData SSBO
+            // binding=2: IndirectDrawOutput SSBO
+            // binding=3: DrawCountOutput SSBO
+            // binding=4: GeneratorParams UBO
+            var bindings = VkDescriptorSetLayoutBinding.calloc(5, stack);
+            for (int i = 0; i < 5; i++) {
+                bindings.get(i).binding(i)
+                    .descriptorType(i < 4 ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                    .descriptorCount(1)
+                    .stageFlags(VK_SHADER_STAGE_COMPUTE_BIT);
+            }
+            var dsLayoutInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack)
+                .sType(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO)
+                .pBindings(bindings);
+            var dsLayoutPtr = stack.mallocLong(1);
+            if (vkCreateDescriptorSetLayout(device, dsLayoutInfo, null, dsLayoutPtr) != VK_SUCCESS) return;
+            indirectGenDescriptorSetLayout = dsLayoutPtr.get(0);
+
+            // Pipeline Layout (binds the descriptor set layout)
+            var setLayoutPtr = stack.mallocLong(1).put(0, indirectGenDescriptorSetLayout);
             var layoutInfo = VkPipelineLayoutCreateInfo.calloc(stack)
-                .sType(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);
+                .sType(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO)
+                .setLayoutCount(1)
+                .pSetLayouts(setLayoutPtr);
             var layoutPtr = stack.mallocLong(1);
             if (vkCreatePipelineLayout(device, layoutInfo, null, layoutPtr) != VK_SUCCESS) return;
             indirectGenPipelineLayout = layoutPtr.get(0);

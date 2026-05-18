@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 
 /**
  * Renderium Vulkan 光影工作台。
@@ -445,6 +446,7 @@ public final class ShaderWorkbench {
      * @return VkShaderModule handle，当前始终返回 0（存根）
      */
     private long createShaderModuleFromSPIRV(long device, byte[] spirvData, String passName) {
+        if (!VulkanGraphicsHelper.isAvailable()) return 0L;
         LOGGER.warning("[存根] createShaderModuleFromSPIRV 未实现: " + passName +
                 " (" + spirvData.length + " bytes, device=0x" + Long.toHexString(device) + ")");
         return 0L;

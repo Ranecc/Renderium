@@ -9,7 +9,6 @@ import com.ranecc.renderium.domain.model.FrameCaptureContext;
 import com.ranecc.renderium.domain.model.InterceptedFrameData;
 import com.ranecc.renderium.domain.model.FrameData;
 
-import com.ranecc.renderium.None;
 
 
 /**

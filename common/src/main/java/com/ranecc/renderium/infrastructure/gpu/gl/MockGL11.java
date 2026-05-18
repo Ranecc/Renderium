@@ -4,7 +4,6 @@
 
 package com.ranecc.renderium.infrastructure.gpu.gl;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.pipeline.CommandBuffer;
 import com.ranecc.renderium.feature.pipeline.core.RenderPipeline;
 import com.ranecc.renderium.feature.renderopt.GLStateSnapshot;

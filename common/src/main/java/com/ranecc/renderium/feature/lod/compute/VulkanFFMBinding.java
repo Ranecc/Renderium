@@ -109,6 +109,56 @@ public final class VulkanFFMBinding {
     /** vkCreateDescriptorSetLayout: 创建描述符集布局 */
     private static volatile MethodHandle VK_CREATE_DESCRIPTOR_SET_LAYOUT;
 
+    // ============ 新增: 图形管线函数 ============
+
+    /** vkCreateGraphicsPipelines: 创建图形管线 */
+    private static volatile MethodHandle VK_CREATE_GRAPHICS_PIPELINES;
+
+    /** vkCmdDraw: 绘制非索引几何体 */
+    private static volatile MethodHandle VK_CMD_DRAW;
+
+    /** vkCreateRenderPass: 创建渲染通道 */
+    private static volatile MethodHandle VK_CREATE_RENDER_PASS;
+
+    /** vkDestroyRenderPass: 销毁渲染通道 */
+    private static volatile MethodHandle VK_DESTROY_RENDER_PASS;
+
+    /** vkCmdBeginRenderPass: 开始渲染通道 */
+    private static volatile MethodHandle VK_CMD_BEGIN_RENDER_PASS;
+
+    /** vkCmdEndRenderPass: 结束渲染通道 */
+    private static volatile MethodHandle VK_CMD_END_RENDER_PASS;
+
+    /** vkCreateImage: 创建图像 */
+    private static volatile MethodHandle VK_CREATE_IMAGE;
+
+    /** vkDestroyImage: 销毁图像 */
+    private static volatile MethodHandle VK_DESTROY_IMAGE;
+
+    /** vkCreateImageView: 创建图像视图 */
+    private static volatile MethodHandle VK_CREATE_IMAGE_VIEW;
+
+    /** vkDestroyImageView: 销毁图像视图 */
+    private static volatile MethodHandle VK_DESTROY_IMAGE_VIEW;
+
+    /** vkAllocateMemory: 分配设备内存 */
+    private static volatile MethodHandle VK_ALLOCATE_MEMORY;
+
+    /** vkFreeMemory: 释放设备内存 */
+    private static volatile MethodHandle VK_FREE_MEMORY;
+
+    /** vkBindImageMemory: 绑定图像和内存 */
+    private static volatile MethodHandle VK_BIND_IMAGE_MEMORY;
+
+    /** vkGetImageMemoryRequirements: 获取内存需求 */
+    private static volatile MethodHandle VK_GET_IMAGE_MEMORY_REQUIREMENTS;
+
+    /** vkCreateFramebuffer: 创建帧缓冲 */
+    private static volatile MethodHandle VK_CREATE_FRAMEBUFFER;
+
+    /** vkDestroyFramebuffer: 销毁帧缓冲 */
+    private static volatile MethodHandle VK_DESTROY_FRAMEBUFFER;
+
     // ==================== 加载状态 ====================
 
     /** FFM 方法是否已加载 */
@@ -148,6 +198,23 @@ public final class VulkanFFMBinding {
     public static MethodHandle getVkDestroyCommandPool() { return VK_DESTROY_COMMAND_POOL; }
     public static MethodHandle getVkCreatePipelineLayout() { return VK_CREATE_PIPELINE_LAYOUT; }
     public static MethodHandle getVkCreateDescriptorSetLayout() { return VK_CREATE_DESCRIPTOR_SET_LAYOUT; }
+
+    public static MethodHandle getVkCreateGraphicsPipelines() { return VK_CREATE_GRAPHICS_PIPELINES; }
+    public static MethodHandle getVkCmdDraw() { return VK_CMD_DRAW; }
+    public static MethodHandle getVkCreateRenderPass() { return VK_CREATE_RENDER_PASS; }
+    public static MethodHandle getVkDestroyRenderPass() { return VK_DESTROY_RENDER_PASS; }
+    public static MethodHandle getVkCmdBeginRenderPass() { return VK_CMD_BEGIN_RENDER_PASS; }
+    public static MethodHandle getVkCmdEndRenderPass() { return VK_CMD_END_RENDER_PASS; }
+    public static MethodHandle getVkCreateImage() { return VK_CREATE_IMAGE; }
+    public static MethodHandle getVkDestroyImage() { return VK_DESTROY_IMAGE; }
+    public static MethodHandle getVkCreateImageView() { return VK_CREATE_IMAGE_VIEW; }
+    public static MethodHandle getVkDestroyImageView() { return VK_DESTROY_IMAGE_VIEW; }
+    public static MethodHandle getVkAllocateMemory() { return VK_ALLOCATE_MEMORY; }
+    public static MethodHandle getVkFreeMemory() { return VK_FREE_MEMORY; }
+    public static MethodHandle getVkBindImageMemory() { return VK_BIND_IMAGE_MEMORY; }
+    public static MethodHandle getVkGetImageMemoryRequirements() { return VK_GET_IMAGE_MEMORY_REQUIREMENTS; }
+    public static MethodHandle getVkCreateFramebuffer() { return VK_CREATE_FRAMEBUFFER; }
+    public static MethodHandle getVkDestroyFramebuffer() { return VK_DESTROY_FRAMEBUFFER; }
 
     /** FFM 方法句柄是否已加载成功 */
     public static boolean isFfmLoaded() { return ffmLoaded; }
@@ -399,6 +466,110 @@ public final class VulkanFFMBinding {
                             ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG,
                             ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG
                     )
+            );
+
+            // ============ 图形管线函数 ============
+
+            VK_CREATE_GRAPHICS_PIPELINES = linker.downcallHandle(
+                    vulkanLookup.find("vkCreateGraphicsPipelines").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_CMD_DRAW = linker.downcallHandle(
+                    vulkanLookup.find("vkCmdDraw").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_INT, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_INT)
+            );
+
+            VK_CREATE_RENDER_PASS = linker.downcallHandle(
+                    vulkanLookup.find("vkCreateRenderPass").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_DESTROY_RENDER_PASS = linker.downcallHandle(
+                    vulkanLookup.find("vkDestroyRenderPass").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_CMD_BEGIN_RENDER_PASS = linker.downcallHandle(
+                    vulkanLookup.find("vkCmdBeginRenderPass").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG)
+            );
+
+            VK_CMD_END_RENDER_PASS = linker.downcallHandle(
+                    vulkanLookup.find("vkCmdEndRenderPass").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG)
+            );
+
+            VK_CREATE_IMAGE = linker.downcallHandle(
+                    vulkanLookup.find("vkCreateImage").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_DESTROY_IMAGE = linker.downcallHandle(
+                    vulkanLookup.find("vkDestroyImage").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_CREATE_IMAGE_VIEW = linker.downcallHandle(
+                    vulkanLookup.find("vkCreateImageView").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG)
+            );
+
+            VK_DESTROY_IMAGE_VIEW = linker.downcallHandle(
+                    vulkanLookup.find("vkDestroyImageView").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_ALLOCATE_MEMORY = linker.downcallHandle(
+                    vulkanLookup.find("vkAllocateMemory").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG)
+            );
+
+            VK_FREE_MEMORY = linker.downcallHandle(
+                    vulkanLookup.find("vkFreeMemory").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_BIND_IMAGE_MEMORY = linker.downcallHandle(
+                    vulkanLookup.find("vkBindImageMemory").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_GET_IMAGE_MEMORY_REQUIREMENTS = linker.downcallHandle(
+                    vulkanLookup.find("vkGetImageMemoryRequirements").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG)
+            );
+
+            VK_CREATE_FRAMEBUFFER = linker.downcallHandle(
+                    vulkanLookup.find("vkCreateFramebuffer").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG)
+            );
+
+            VK_DESTROY_FRAMEBUFFER = linker.downcallHandle(
+                    vulkanLookup.find("vkDestroyFramebuffer").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
             );
 
             ffmLoaded = true;

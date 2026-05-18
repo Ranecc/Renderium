@@ -65,7 +65,14 @@ public abstract class MixinRenderSystem {
 
             try {
                 StreamlineIntegration streamline = new StreamlineIntegration();
-                streamline.initialize(vkDeviceHandle, vmaAllocator, gQueue);
+                // TODO: 无法从 Mojang VulkanDevice 获取 vkInstance / vkPhysicalDevice 句柄
+                // 当前使用 vkDeviceHandle 作为占位值。当 VulkanDevice 暴露这些句柄后，
+                // 应修正为: streamline.initialize(vkInstance, vkPhysicalDevice, vkDeviceHandle)
+                long vkInstanceStub = vkDeviceHandle;
+                long vkPhysicalDeviceStub = vkDeviceHandle;
+                LOGGER.warning("vkInstance/vkPhysicalDevice 句柄不可用，"
+                    + "使用 vkDeviceHandle 占位（Streamline 部分功能可能受限）");
+                streamline.initialize(vkInstanceStub, vkPhysicalDeviceStub, vkDeviceHandle);
                 LOGGER.info(String.format(
                     "Renderium: VulkanDevice 句柄提取成功 [device=0x%X, vma=0x%X, gQ=0x%X, compQ=0x%X]",
                     vkDeviceHandle, vmaAllocator, gQueue, cQueue));

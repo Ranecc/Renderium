@@ -10,8 +10,6 @@
 
 package com.ranecc.renderium.feature.shader.settings;
 
-import com.ranecc.renderium.None;
-
 import java.util.logging.Logger;
 
 /**
@@ -33,26 +31,23 @@ public final class ShaderSettingsRegistrar {
     private ShaderSettingsRegistrar() {}
 
     /**
-     * 注册所有光影设置选项到构建器
-     *
-     * 【方法参数】
-     * @param builder None - 渲染配置构建器（受版本兼容性限制，目前使用 None 占位）
+     * 注册所有光影设置选项到构建器（占位入口）
      *
      * 【调用时机】
      * 在 VideoSettingsBridge.initialize() 或 RendererVideoOptionsRegistrar.registerAll() 中调用
      *
+     * 【说明】
+     * 当前为无参数占位版本，仅输出日志。
+     * 待 RendererConfigBuilder API 就绪后，
+     * 将以此方法为入口注册完整的光影设置页。
+     *
      * 【示例】
      * <pre>
      * RendererVideoOptionsRegistrar.registerAll(builder, vanillaOpts, sodiumOpts);
-     * ShaderSettingsRegistrar.registerOptions(builder);  // 添加光影页
+     * ShaderSettingsRegistrar.registerOptions();  // 添加光影页
      * </pre>
      */
-    public static void registerOptions(None builder) {
-        if (builder == null) {
-            LOGGER.warning("ShaderSettingsRegistrar: builder 为 null，跳过注册");
-            return;
-        }
-
+    public static void registerOptions() {
         LOGGER.info("ShaderSettingsRegistrar: 光影设置选项注册已启动");
         LOGGER.fine("ShaderSettingsRegistrar: 当前版本仅提供占位注册入口，" +
                 "完整配置页将在后续版本中通过 RendererConfigBuilder API 注册");

@@ -287,9 +287,11 @@ public class RenderiumCullingScheduler {
      * @return 通过 Hi-Z 测试的 chunk 集合，null 表示不可用
      */
     private Set<Long> executeCullingL2() {
-        // 占位: 若无 L2 数据可用，返回 null（L3 将只用 L1 结果）
-        // GPU 侧: 此方法应 dispatch Hi-Z compute shader
-        return null; // 占位 — 等待 GPU Compute Shader 就绪
+        // L2 Hi-Z 遮挡剔除由 GPU 端 CullingPipeline 执行
+        // GPU 结果通过同步 fence + staging buffer 回读到 CPU
+        // 当前：GPU 端 Buffer 已创建（Batch 2），DescriptorPool + 回读链路待后续补充
+        // TODO: 实现 vkCmdCopyBuffer + fence wait + CPU readback 链路
+        return null; // 待 GPU readback 就绪后返回 bufferB 数据
     }
 
     /**
@@ -364,9 +366,23 @@ public class RenderiumCullingScheduler {
     // ==================== 排序调度 ====================
 
     private void dispatchSortWithBudget(long budgetNs) {
-        // 由 TranslucentSortEngine 自主决策（内部已做面数检查）
-        // 这里仅做预算门控
-        if (budgetNs < 50_000L) return; // < 0.05ms 不值得
+        if (budgetNs < 50_000L) return;
+        if (sortEngine == null) return;
+
+        Set<Long> visibleChunks = getVisibleChunks();
+        if (visibleChunks == null || visibleChunks.isEmpty()) return;
+
+        // TranslucentSortEngine.sort() 需要 TranslucentQuad[] 作为输入
+        // 当前 SectionInfo 仅存储方块数据(int[][][] blocks)，未缓存构建产出的面片
+        // 透明面片由 ChunkBuildPipeline 构建阶段产出（GreedyMesher.MergedQuad），
+        // 需通过 RenderSectionManager 补充 translucentQuads 字段桥接
+        // TODO: SectionInfo 增加 translucentQuads 字段，BuildPipeline 产出时写入
+        sortEngine.sort(
+            new TranslucentSortEngine.TranslucentQuad[0],
+            detector.getCameraX(), detector.getCameraY(), detector.getCameraZ(),
+            detector.getCurrentYaw(), detector.getCurrentPitch(),
+            false
+        );
     }
 
     // ==================== 视锥面提取 ====================
@@ -391,14 +407,122 @@ public class RenderiumCullingScheduler {
     }
 
     /**
-     * 构建 view-projection 矩阵（简化版）。
-     * 生产环境应从 MC RenderSystem 获取。
+     * 构建 view-projection 矩阵。
+     *
+     * <p>通过 detector 提供的相机位置和朝向构建 lookAt + perspective 矩阵。
+     * 当前为 CPU 端自建矩阵（非 MC RenderSystem 同步），
+     * 用于 L1 Frustum Culling 的视锥平面提取。
+     *
+     * <p>数据链路: CameraMotionDetector.getCameraX/Y/Z() + getCurrentYaw/Pitch()
+     *
+     * @return 16-float 列主序 VP 矩阵
      */
     private float[] buildViewProjectionMatrix() {
-        float[] vp = new float[16];
-        java.util.Arrays.fill(vp, 0f);
-        vp[0] = vp[5] = vp[10] = vp[15] = 1.0f; // identity placeholder
-        return vp;
+        double camX = detector.getCameraX();
+        double camY = detector.getCameraY();
+        double camZ = detector.getCameraZ();
+        double yaw = detector.getCurrentYaw();
+        double pitch = detector.getCurrentPitch();
+        double farPlane = detector.getVisibleDistMax() * 16.0;
+
+        float[] view = buildLookAtMatrix(camX, camY, camZ, yaw, pitch);
+        float[] proj = buildPerspectiveMatrix(70.0f, 16.0f / 9.0f, 0.05f, (float) farPlane);
+        return multiplyMM(proj, view);
+    }
+
+    // ==================== 矩阵工具方法 ====================
+
+    /**
+     * 构建 lookAt 视图矩阵 (列主序, OpenGL 约定)。
+     *
+     * @param camX/Y/Z 相机世界坐标
+     * @param yaw      偏航角 (°)
+     * @param pitch    俯仰角 (°)
+     * @return 4x4 列主序视图矩阵
+     */
+    private static float[] buildLookAtMatrix(double camX, double camY, double camZ,
+                                              double yaw, double pitch) {
+        double yawRad = Math.toRadians(yaw);
+        double pitchRad = Math.toRadians(pitch);
+
+        double cosYaw = Math.cos(yawRad), sinYaw = Math.sin(yawRad);
+        double cosPitch = Math.cos(pitchRad), sinPitch = Math.sin(pitchRad);
+
+        // 前向向量 (Minecraft: Y-up, X-east, Z-south, yaw=0 指向 Z-)
+        double fx = -sinYaw * cosPitch;
+        double fy = -sinPitch;
+        double fz = cosYaw * cosPitch;
+        double fLen = Math.sqrt(fx * fx + fy * fy + fz * fz);
+        fx /= fLen; fy /= fLen; fz /= fLen;
+
+        // 上向量 (世界 Y+)
+        double ux = 0.0, uy = 1.0, uz = 0.0;
+
+        // 右向量 = up × forward  (注意: 叉积后再取反以匹配 OpenGL lookAt)
+        double rx = uy * fz - uz * fy;
+        double ry = uz * fx - ux * fz;
+        double rz = ux * fy - uy * fx;
+        double rLen = Math.sqrt(rx * rx + ry * ry + rz * rz);
+        rx /= rLen; ry /= rLen; rz /= rLen;
+
+        // 重新计算正交上向量 = forward × right
+        ux = fy * rz - fz * ry;
+        uy = fz * rx - fx * rz;
+        uz = fx * ry - fy * rx;
+
+        float[] m = new float[16];
+        // 列主序
+        m[0] = (float) rx;  m[4] = (float) ux;  m[8]  = (float) fx;  m[12] = 0f;
+        m[1] = (float) ry;  m[5] = (float) uy;  m[9]  = (float) fy;  m[13] = 0f;
+        m[2] = (float) rz;  m[6] = (float) uz;  m[10] = (float) fz;  m[14] = 0f;
+        m[3] = 0f;          m[7] = 0f;          m[11] = 0f;           m[15] = 1f;
+
+        // 平移: -R^T * eye
+        m[12] = -(float)(rx * camX + ry * camY + rz * camZ);
+        m[13] = -(float)(ux * camX + uy * camY + uz * camZ);
+        m[14] = -(float)(fx * camX + fy * camY + fz * camZ);
+
+        return m;
+    }
+
+    /**
+     * 构建透视投影矩阵 (列主序, OpenGL 约定, 右手系)。
+     *
+     * @param fovDegrees 垂直视场角 (°)
+     * @param aspect     宽高比
+     * @param near       近裁剪面
+     * @param far        远裁剪面
+     * @return 4x4 列主序投影矩阵
+     */
+    private static float[] buildPerspectiveMatrix(float fovDegrees, float aspect,
+                                                   float near, float far) {
+        float f = 1.0f / (float) Math.tan(Math.toRadians(fovDegrees) / 2.0);
+        float nf = 1.0f / (near - far);
+
+        float[] m = new float[16];
+        m[0] = f / aspect;  m[4] = 0f;  m[8]  = 0f;            m[12] = 0f;
+        m[1] = 0f;          m[5] = f;   m[9]  = 0f;            m[13] = 0f;
+        m[2] = 0f;          m[6] = 0f;  m[10] = (far + near) * nf;  m[14] = 2f * far * near * nf;
+        m[3] = 0f;          m[7] = 0f;  m[11] = -1f;           m[15] = 0f;
+
+        return m;
+    }
+
+    /**
+     * 4x4 矩阵乘法 (列主序): result = lhs × rhs。
+     */
+    private static float[] multiplyMM(float[] lhs, float[] rhs) {
+        float[] result = new float[16];
+        for (int col = 0; col < 4; col++) {
+            for (int row = 0; row < 4; row++) {
+                float sum = 0f;
+                for (int k = 0; k < 4; k++) {
+                    sum += lhs[k * 4 + row] * rhs[col * 4 + k];
+                }
+                result[col * 4 + row] = sum;
+            }
+        }
+        return result;
     }
 
     // ==================== 查询 API ====================

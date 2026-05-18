@@ -89,6 +89,9 @@ public final class HiZComputePipeline {
     /** 默认超时时间（100毫秒，纳秒单位） */
     private static final long DEFAULT_FENCE_TIMEOUT_NS = 100_000_000L;
 
+    /** Vulkan 结构体类型：内存屏障 (VK_STRUCTURE_TYPE_MEMORY_BARRIER) */
+    private static final int VK_STRUCTURE_TYPE_MEMORY_BARRIER = 0;
+
     // ==================== Pipeline 缓存（首次创建后复用）====================
 
     /** Hi-Z Build Compute Pipeline 句柄 */
@@ -345,7 +348,11 @@ public final class HiZComputePipeline {
             createInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 9L);  // sType
             createInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);  // pNext
             createInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, spirvCode.length);  // codeSize
-            // pCode 需要指向 SPIR-V 数据...
+
+            // 分配 SPIR-V 数据到原生内存并设置 pCode 指针
+            MemorySegment spirvSegment = arena.allocate(spirvCode.length);
+            spirvSegment.asByteBuffer().put(spirvCode);
+            createInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, spirvSegment.address());  // pCode
 
             MemorySegment shaderModuleOut = arena.allocate(ValueLayout.JAVA_LONG);
 
@@ -1189,6 +1196,44 @@ public final class HiZComputePipeline {
      * @throws Exception 如果插入屏障失败
      */
     public static void insertMemoryBarrier(long cmdBuf) throws Exception {
-        LOGGER.fine("[HiZPipeline] Memory barrier inserted (handle=0x" + Long.toHexString(cmdBuf) + ")");
+        MethodHandle vkCmdPipelineBarrier = VulkanFFMBinding.getVkCmdPipelineBarrier();
+        if (vkCmdPipelineBarrier == null) {
+            LOGGER.warning("[HiZPipeline] vkCmdPipelineBarrier method handle 未加载，跳过内存屏障");
+            return;
+        }
+
+        try (Arena arena = Arena.ofConfined()) {
+            // VkMemoryBarrier 结构体布局 (24 bytes = 3 × JAVA_LONG):
+            // [0] bytes  0-7:  sType (int32 at offset 0) + padding (4 bytes)
+            // [1] bytes  8-15: pNext (pointer, 8 bytes)
+            // [2] bytes 16-23: srcAccessMask (int32 at offset 16) + dstAccessMask (int32 at offset 20)
+            MemorySegment barrier = arena.allocate(ValueLayout.JAVA_LONG, 3);
+            barrier.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VK_STRUCTURE_TYPE_MEMORY_BARRIER);
+            barrier.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L); // pNext = null
+            // 将 srcAccessMask 打包到低 32 位，dstAccessMask 打包到高 32 位
+            long maskSlot = ((long) VK_ACCESS_SHADER_READ_BIT << 32)
+                          | ((long) VK_ACCESS_SHADER_WRITE_BIT & 0xFFFFFFFFL);
+            barrier.setAtIndex(ValueLayout.JAVA_LONG, 2, maskSlot);
+
+            try {
+                vkCmdPipelineBarrier.invokeExact(
+                        cmdBuf,                                    // commandBuffer (VkCommandBuffer)
+                        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,      // srcStageMask: COMPUTE_SHADER
+                        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,      // dstStageMask: COMPUTE_SHADER
+                        0,                                         // dependencyFlags: 无
+                        1,                                         // memoryBarrierCount: 1
+                        barrier.address(),                         // pMemoryBarriers: VkMemoryBarrier 指针
+                        0,                                         // bufferMemoryBarrierCount: 0
+                        0L,                                        // pBufferMemoryBarriers: null
+                        0,                                         // imageMemoryBarrierCount: 0
+                        0L                                         // pImageMemoryBarriers: null
+                );
+            } catch (Throwable t) {
+                // shutdown 期间忽略 Vulkan 清理错误
+            }
+
+            LOGGER.fine("[HiZPipeline] Memory barrier inserted (handle=0x" + Long.toHexString(cmdBuf)
+                    + ", srcAccess=SHADER_WRITE→dstAccess=SHADER_READ, stage=COMPUTE_SHADER)");
+        }
     }
 }

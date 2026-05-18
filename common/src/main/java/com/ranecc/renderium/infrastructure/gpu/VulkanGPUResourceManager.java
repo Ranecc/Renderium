@@ -9,7 +9,6 @@
 
 package com.ranecc.renderium.infrastructure.gpu;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaDeferredDeallocation;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;

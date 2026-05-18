@@ -3,7 +3,6 @@
 
 package com.ranecc.renderium.feature.renderopt;
 
-import com.ranecc.renderium.None;
 import com.ranecc.renderium.feature.blaze3d.aggressive.ChunkRenderData;
 
 import java.util.concurrent.atomic.AtomicLong;
