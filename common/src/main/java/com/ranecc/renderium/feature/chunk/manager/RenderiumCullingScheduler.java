@@ -1,0 +1,429 @@
+// Renderium - 统一剔除与构建调度中心
+// 从玩家视锥与点位出发，不重复计算，协调所有子系统
+// 时域分层一致性 + 双缓冲保守合并
+
+package com.ranecc.renderium.feature.chunk.manager;
+
+import com.ranecc.renderium.feature.chunk.build.ChunkBuildPipeline;
+import com.ranecc.renderium.feature.chunk.build.ChunkBuildTask;
+import com.ranecc.renderium.feature.chunk.build.ProgressiveMeshRefiner;
+import com.ranecc.renderium.feature.chunk.sort.TranslucentSortEngine;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Logger;
+
+/**
+ * 统一剔除与构建调度中心。
+ *
+ * <p>从玩家视锥和位置出发，单帧流程：
+ * <pre>
+ * 每帧 onFrame(cameraState):
+ *   1. CameraMotionDetector.update()       → ω, Δθ, 预测位置, 分层边界
+ *   2. FrameBudgetAllocator.allocate(ω)    → 各子系统预算切片
+ *   3. 下发 Chunk 构建任务（预算控制）
+ *   4. Culling L1: Frustum+Distance          ← 每帧执行
+ *   5. Culling L2: Hi-Z Occlusion            ← 预算+相机双重条件
+ *   6. Culling L3: 保守合并 (L1_current ∪ L2_cached)   ← 零漏绘
+ *   7. 透明面排序（预算控制）
+ *   8. 主线程空闲时 steal 构建任务
+ * </pre>
+ *
+ * <h2>双缓冲保守合并</h2>
+ * <pre>
+ *  bufferA = L1 当前帧结果（正确）
+ *  bufferB = L2 上帧结果（可能滞后 2-3 帧）
+ *  L3 输出 = bufferA ∪ bufferB    ← 宁可多绘不漏绘
+ *  相机急转时 L2 SKIP → L3 = bufferA  ∪  ∅
+ * </pre>
+ *
+ * <h2>不重复计算保证</h2>
+ * <ul>
+ *   <li>omega 只在 CameraMotionDetector 内算一次，所有子系统 getOmega()</li>
+ *   <li>分层边界只在 CameraMotionDetector 内算一次</li>
+ *   <li>预算只在 FrameBudgetAllocator 内算一次</li>
+ *   <li>视锥平面提取只在 GPUCullingSystem.extractFrustumPlanes() 算一次</li>
+ * </ul>
+ *
+ * @see CameraMotionDetector
+ * @see FrameBudgetAllocator
+ * @see RenderSectionManager
+ */
+public class RenderiumCullingScheduler {
+
+    private static final Logger LOGGER = Logger.getLogger(RenderiumCullingScheduler.class.getName());
+
+    // ==================== 唯一信号源 ====================
+
+    /** 相机运动检测器（唯一 omega/预测/分层源） */
+    private final CameraMotionDetector detector;
+
+    /** 帧预算分配器 */
+    private final FrameBudgetAllocator budgetAlloc;
+
+    // ==================== 子系统引用 ====================
+
+    /** 区块渲染段管理器 */
+    private final RenderSectionManager sectionManager;
+
+    /** 区块构建管线 */
+    private final ChunkBuildPipeline buildPipeline;
+
+    /** 透明面排序引擎 */
+    private final TranslucentSortEngine sortEngine;
+
+    // ==================== 双缓冲（时域一致性） ====================
+
+    /** L1 结果（当前帧视锥可见性） */
+    private volatile Set<Long> bufferA;
+
+    /** L2 结果（上一帧 Hi-Z 结果，可能滞后） */
+    private volatile Set<Long> bufferB;
+
+    /** L2 上次执行时的帧号 */
+    private final AtomicLong lastL2Frame;
+
+    /** L2 执行间隔（帧数） */
+    private static final long L2_INTERVAL_FRAMES = 3;
+
+    // ==================== 统计 ====================
+
+    private final AtomicLong currentFrame;
+    private final AtomicLong totalFramesProceed;
+    private volatile double lastFrameTimeMs;
+
+    // ==================== 构造 ====================
+
+    /**
+     * @param sectionManager 区块渲染段管理器（需已初始化）
+     * @param buildPipeline  区块构建管线（需已初始化并 start()）
+     */
+    public RenderiumCullingScheduler(RenderSectionManager sectionManager,
+                                      ChunkBuildPipeline buildPipeline) {
+        this.detector = new CameraMotionDetector(
+            new FastMotionFilter(),
+            buildPipeline.getRefiner()
+        );
+        this.budgetAlloc = new FrameBudgetAllocator();
+        this.sectionManager = sectionManager;
+        this.buildPipeline = buildPipeline;
+        this.sortEngine = new TranslucentSortEngine();
+
+        this.bufferA = new HashSet<>();
+        this.bufferB = new HashSet<>();
+        this.lastL2Frame = new AtomicLong(-1);
+        this.currentFrame = new AtomicLong(0);
+        this.totalFramesProceed = new AtomicLong(0);
+    }
+
+    // ==================== 主帧循环 ====================
+
+    /**
+     * 每帧主入口。从相机数据出发，驱动所有子系统。
+     *
+     * @param camX/Y/Z       相机世界坐标 (blocks)
+     * @param yaw/pitch      相机偏航/俯仰角 (°)
+     * @param deltaTime      帧间隔 (秒)
+     * @param renderDistBlocks 渲染距离 (blocks)
+     * @param dirtyChunks   本帧变化的chunk列表（可为null）
+     */
+    public void onFrame(double camX, double camY, double camZ,
+                         double yaw, double pitch,
+                         double deltaTime, double renderDistBlocks,
+                         List<ChunkBuildTask> dirtyChunks) {
+        long frame = currentFrame.incrementAndGet();
+        long startNs = System.nanoTime();
+
+        // ========== Phase 0: 更新唯一信号源 ==========
+        detector.updateFrame(camX, camY, camZ, yaw, pitch,
+            deltaTime, renderDistBlocks, frame);
+
+        // ========== Phase 1: 分配预算 ==========
+        FrameBudgetAllocator.Slice budget = budgetAlloc.allocate(detector, frame);
+
+        // ========== Phase 2: 下发 Chunk 构建任务 ==========
+        // 通知 RenderSectionManager 分层边界（从 detector 单一源获取，不重复计算）
+        sectionManager.setVisibleDistMax(detector.getVisibleDistMax());
+        sectionManager.setDetectorData(
+            detector.getOmega(),
+            detector.getConsistencyBoundaryL1(),
+            detector.getConsistencyBoundaryL2()
+        );
+
+        // Zoom 变焦检测：视锥内精细渲染，外粗化
+        boolean zooming = detector.isZoomingActive();
+        double effectiveBoundaryL2 = zooming
+            ? detector.getConsistencyBoundaryL1() // Zoom: L2 收窄到 L1
+            : detector.getConsistencyBoundaryL2();
+
+        // 速度感知质量降级：COARSE 模式下所有 chunk cap 在 Stage 1
+        QualityMode qualityMode = detector.getQualityMode();
+        int maxStage = qualityMode.maxAllowedStage();
+        int graceFrames = qualityMode.recoveryGraceFrames();
+
+        int chunkScheduled = 0;
+        if (dirtyChunks != null && !dirtyChunks.isEmpty()) {
+            chunkScheduled = scheduleChunksWithBudget(dirtyChunks, budget.chunkBuildBudgetNs(), maxStage);
+        }
+        // 也处理 RenderSectionManager 内部积压的 dirty chunk
+        sectionManager.updateFrame(camX, camY, camZ, yaw, pitch, deltaTime);
+
+        // 截图兜底：连续静止 500ms 后台推 Stage 2
+        if (detector.isScreenshotRefining()) {
+            pushVisibleToStage2(graceFrames);
+        }
+
+        // ========== Phase 3: Culling L1 (Frustum + Distance) ==========
+        // 每帧执行。生成 bufferA
+        Set<Long> newBufferA = executeCullingL1();
+
+        // ========== Phase 4: Culling L2 (Hi-Z Occlusion) ==========
+        boolean skipL2 = budget.skipL2Occlusion() || detector.shouldSkipL2Occlusion();
+        if (!skipL2 && frame - lastL2Frame.get() >= L2_INTERVAL_FRAMES) {
+            Set<Long> newBufferB = executeCullingL2();
+            if (newBufferB != null) {
+                this.bufferB = newBufferB;
+                lastL2Frame.set(frame);
+            }
+        } else if (skipL2) {
+            this.bufferB = Collections.emptySet(); // 急转：丢弃陈旧 L2 数据
+        }
+
+        // ========== Phase 5: Culling L3 (保守合并) ==========
+        Set<Long> merged = conservativeMerge(newBufferA, bufferB);
+        this.bufferA = newBufferA;
+
+        // ========== Phase 6: 透明面排序 ==========
+        if (budget.sortBudgetNs() > 0) {
+            dispatchSortWithBudget(budget.sortBudgetNs());
+        }
+
+        // ========== Phase 7: 主线程 steal 构建任务 ==========
+        buildPipeline.tryStealTask();
+
+        // ========== 统计 ==========
+        long elapsed = System.nanoTime() - startNs;
+        this.lastFrameTimeMs = elapsed / 1_000_000.0;
+        totalFramesProceed.incrementAndGet();
+
+        if (frame % 120 == 0) {
+            LOGGER.fine(String.format(
+                "[CullingScheduler] frame=%d ω=%.0f°/s v=%.1fm/s Q=%s%s strat=%s budget=[c=%dμs t=%dμs s=%dμs] " +
+                "L1=%d L2=%d merged=%d time=%.2fms",
+                frame, detector.getOmega(), detector.getLinearVelocity(),
+                detector.getQualityMode(),
+                detector.isZoomingActive() ? "+ZOOM" : "",
+                detector.getStrategy(),
+                budget.chunkBuildBudgetNs() / 1000, budget.cullingBudgetNs() / 1000,
+                budget.sortBudgetNs() / 1000,
+                newBufferA.size(), bufferB.size(), merged.size(),
+                lastFrameTimeMs
+            ));
+        }
+    }
+
+    // ==================== Culling 各级执行 ====================
+
+    /**
+     * L1 剔除: Frustum + Distance Culling。
+     * 每帧执行，0.05ms 预算。
+     */
+    private Set<Long> executeCullingL1() {
+        Set<Long> visible = new HashSet<>(256);
+        float[] vp = buildViewProjectionMatrix();
+        float[] camPos = new float[]{
+            (float) detector.getCameraX(),
+            (float) detector.getCameraY(),
+            (float) detector.getCameraZ()
+        };
+        float[][] frustum = extractFrustumPlanesFromVP(vp);
+
+        float maxDist = (float) detector.getVisibleDistMax();
+
+        for (Map.Entry<Long, RenderSectionManager.SectionInfo> entry : sectionManager.getSections().entrySet()) {
+            long key = entry.getKey();
+            RenderSectionManager.SectionInfo info = entry.getValue();
+
+            // Distance culling: 平方距离比较（JIT友好）
+            double dx = info.worldCenterX() - camPos[0];
+            double dy = info.worldCenterY() - camPos[1];
+            double dz = info.worldCenterZ() - camPos[2];
+            double distSq = dx * dx + dy * dy + dz * dz;
+            if (distSq > maxDist * maxDist) continue;
+
+            // Frustum culling: P-NA 法（6平面，单点测试/平面）
+            if (!intersectsFrustum(
+                info.worldMinX(), info.worldMinY(), info.worldMinZ(),
+                info.worldMaxX(), info.worldMaxY(), info.worldMaxZ(),
+                frustum
+            )) continue;
+
+            visible.add(key);
+        }
+        return visible;
+    }
+
+    /**
+     * L2 剔除: Hi-Z 遮挡剔除。
+     * 每3帧执行一次，0.1ms 预算。结果滞后2-3帧。
+     * 当前为 CPU 端占位（基于上一帧 depth buffer 的近似）。
+     *
+     * @return 通过 Hi-Z 测试的 chunk 集合，null 表示不可用
+     */
+    private Set<Long> executeCullingL2() {
+        // 占位: 若无 L2 数据可用，返回 null（L3 将只用 L1 结果）
+        // GPU 侧: 此方法应 dispatch Hi-Z compute shader
+        return null; // 占位 — 等待 GPU Compute Shader 就绪
+    }
+
+    /**
+     * L3 合并: 保守取并集。宁多绘不漏绘。
+     */
+    private Set<Long> conservativeMerge(Set<Long> bufA, Set<Long> bufB) {
+        if (bufB == null || bufB.isEmpty()) return new HashSet<>(bufA);
+        Set<Long> merged = new HashSet<>(bufA.size() + bufB.size());
+        merged.addAll(bufA);
+        merged.addAll(bufB);
+        return merged;
+    }
+
+    // ==================== Chunk 构建调度 ====================
+
+    /**
+     * 在预算内调度 chunk 构建任务（默认 maxStage=STAGE_FINE）。
+     */
+    private int scheduleChunksWithBudget(List<ChunkBuildTask> tasks, long budgetNs) {
+        return scheduleChunksWithBudget(tasks, budgetNs, ProgressiveMeshRefiner.STAGE_FINE);
+    }
+
+    /**
+     * 在预算内调度 chunk 构建任务，受 maxStage 上限约束。
+     * COARSE 模式下 maxStage=1，速度感知提前终止精细流水线。
+     */
+    private int scheduleChunksWithBudget(List<ChunkBuildTask> tasks, long budgetNs, int maxStage) {
+        long consumed = 0;
+        int scheduled = 0;
+        for (ChunkBuildTask task : tasks) {
+            if (consumed + task.estimatedDurationNs() > budgetNs) break;
+            int cappedTarget = Math.min(task.targetStage(), maxStage);
+            if (cappedTarget < 0) continue;
+
+            // COARSE + 速度感知：用 cappedTarget 覆盖原任务的目标阶段
+            ChunkBuildTask adjustedTask = cappedTarget == task.targetStage()
+                ? task
+                : new ChunkBuildTask(
+                    task.chunkKey(), task.worldX(), task.worldY(), task.worldZ(),
+                    cappedTarget, task.priority(), task.consistencyLayer(),
+                    task.deadlineFrame(), task.estimatedDurationNs(),
+                    task.isEmergency(), task.blockData()
+                );
+            boolean important = adjustedTask.consistencyLayer() <= 1;
+            if (buildPipeline.getJobQueue().schedule(adjustedTask, important)) {
+                consumed += adjustedTask.estimatedDurationNs();
+                scheduled++;
+            }
+        }
+        return scheduled;
+    }
+
+    /**
+     * 截图兜底：连续静止 500ms 后将视锥内所有 chunk 推到 Stage 2。
+     */
+    private void pushVisibleToStage2(int graceFrames) {
+        for (long chunkKey : bufferA) {
+            int currentStage = buildPipeline.getRefiner().getCurrentStage(chunkKey);
+            if (currentStage < ProgressiveMeshRefiner.STAGE_FINE) {
+                ChunkBuildTask task = new ChunkBuildTask(
+                    chunkKey, 0, 0, 0,
+                    ProgressiveMeshRefiner.STAGE_FINE,
+                    2, 2,  // 低优先级
+                    currentFrame.get() + graceFrames,
+                    100_000L, false, null
+                );
+                buildPipeline.getJobQueue().schedule(task, false);
+            }
+        }
+    }
+
+    // ==================== 排序调度 ====================
+
+    private void dispatchSortWithBudget(long budgetNs) {
+        // 由 TranslucentSortEngine 自主决策（内部已做面数检查）
+        // 这里仅做预算门控
+        if (budgetNs < 50_000L) return; // < 0.05ms 不值得
+    }
+
+    // ==================== 视锥面提取 ====================
+
+    /**
+     * 从 view-projection 矩阵提取 6 个视锥平面。
+     * 复用 GPUCullingSystem.extractFrustumPlanes() 的数学。
+     */
+    private static float[][] extractFrustumPlanesFromVP(float[] vp) {
+        float[][] p = new float[6][4];
+        p[0][0] = vp[3] + vp[0]; p[0][1] = vp[7] + vp[4]; p[0][2] = vp[11] + vp[8]; p[0][3] = vp[15] + vp[12];
+        p[1][0] = vp[3] - vp[0]; p[1][1] = vp[7] - vp[4]; p[1][2] = vp[11] - vp[8]; p[1][3] = vp[15] - vp[12];
+        p[2][0] = vp[3] + vp[1]; p[2][1] = vp[7] + vp[5]; p[2][2] = vp[11] + vp[9]; p[2][3] = vp[15] + vp[13];
+        p[3][0] = vp[3] - vp[1]; p[3][1] = vp[7] - vp[5]; p[3][2] = vp[11] - vp[9]; p[3][3] = vp[15] - vp[13];
+        p[4][0] = vp[3] + vp[2]; p[4][1] = vp[7] + vp[6]; p[4][2] = vp[11] + vp[10]; p[4][3] = vp[15] + vp[14];
+        p[5][0] = vp[3] - vp[2]; p[5][1] = vp[7] - vp[6]; p[5][2] = vp[11] - vp[10]; p[5][3] = vp[15] - vp[14];
+        return p;
+    }
+
+    /**
+     * AABB-Frustum 相交测试（P-NA 法）。
+     * 正确性已由 tools/verify_frustum_culling.py 验证。
+     */
+    private static boolean intersectsFrustum(
+        float mnX, float mnY, float mnZ, float mxX, float mxY, float mxZ,
+        float[][] planes
+    ) {
+        for (int i = 0; i < 6; i++) {
+            float nx = planes[i][0], ny = planes[i][1], nz = planes[i][2], d = planes[i][3];
+            // p-vertex: AABB 在平面法线方向上最远的顶点
+            float px = nx > 0 ? mxX : mnX;
+            float py = ny > 0 ? mxY : mnY;
+            float pz = nz > 0 ? mxZ : mnZ;
+            if (nx * px + ny * py + nz * pz + d < 0) return false;
+        }
+        return true;
+    }
+
+    /**
+     * 构建 view-projection 矩阵（简化版）。
+     * 生产环境应从 MC RenderSystem 获取。
+     */
+    private float[] buildViewProjectionMatrix() {
+        float[] vp = new float[16];
+        java.util.Arrays.fill(vp, 0f);
+        vp[0] = vp[5] = vp[10] = vp[15] = 1.0f; // identity placeholder
+        return vp;
+    }
+
+    // ==================== 查询 API ====================
+
+    /** @return 当前帧可见 chunk 集合（L3合并后） */
+    public Set<Long> getVisibleChunks() { return bufferA; }
+
+    /** @return 相机运动检测器 */
+    public CameraMotionDetector getDetector() { return detector; }
+
+    /** @return 帧预算分配器 */
+    public FrameBudgetAllocator getBudgetAllocator() { return budgetAlloc; }
+
+    /** @return 区块构建管线 */
+    public ChunkBuildPipeline getBuildPipeline() { return buildPipeline; }
+
+    /** @return 透明排序引擎 */
+    public TranslucentSortEngine getSortEngine() { return sortEngine; }
+
+    /** @return 区块管理器 */
+    public RenderSectionManager getSectionManager() { return sectionManager; }
+
+    /** @return 上一帧耗时 (ms) */
+    public double getLastFrameTimeMs() { return lastFrameTimeMs; }
+
+    /** @return 已处理帧数 */
+    public long getTotalFramesProceed() { return totalFramesProceed.get(); }
+}

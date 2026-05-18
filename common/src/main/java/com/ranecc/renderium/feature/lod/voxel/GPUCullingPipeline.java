@@ -1,11 +1,11 @@
-// Renderium v6 Phase 2 - Voxy-Inspired 超视距 LOD 系统核心架构
+// Renderium v6 Phase 2 - Voxel-based 超视距 LOD 系统核心架构
 
 // GPUCullingPipeline.java - GPU 剔除管线（Hi-Z Occlusion + Frustum Culling）
 // 功能: 高效剔除不可见或被遮挡的区块，输出可见性掩码
 // Phase 2 实现: CPU fallback 存根（完整 GPU 版本将在 Phase 2.x 完善）
 
 
-package com.ranecc.renderium.feature.lod.voxy;
+package com.ranecc.renderium.feature.lod.voxel;
 
 import java.util.BitSet;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -69,7 +69,7 @@ import com.ranecc.renderium.mock.MockMinecraft;
  * </pre>
  *
  *
- * @see VoxyInspiredLODSystem
+ * @see LODSystem
  * @see LODPyramidBuilder
  * @author Renderium Team
  * @version 6.0.0 (Phase 2)

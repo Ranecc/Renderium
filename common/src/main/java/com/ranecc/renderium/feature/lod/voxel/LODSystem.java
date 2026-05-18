@@ -1,11 +1,11 @@
-// Renderium v6 Phase 2 - Voxy-Inspired 超视距 LOD 系统核心架构
+// Renderium v6 Phase 2 - Voxel-based 超视距 LOD 系统核心架构
 
-// VoxyInspiredLODSystem.java - 超视距 LOD 引擎主协调器（受 Voxy 启发）
+// LODSystem.java - 超视距 LOD 引擎主协调器
 // 功能: 基于 Mipmap 金字塔 + GPU Driven 剔除 + 间接绘制的高性能 LOD 系统
 // 支持 1024+ chunks 的超远距离渲染
 
 
-package com.ranecc.renderium.feature.lod.voxy;
+package com.ranecc.renderium.feature.lod.voxel;
 
 import com.ranecc.renderium.None;
 
@@ -16,7 +16,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * VoxyInspiredLODSystem - 超视距 LOD 引擎（受 Voxy 启发）
+ * LODSystem - 超视距 LOD 引擎
  *
  * <p>基于 Mipmap 金字塔 + GPU Driven 剔除 + 间接绘制的高性能 LOD 系统。
  * 支持 1024+ chunks 的超远距离渲染。</p>
@@ -73,7 +73,7 @@ import java.util.logging.Logger;
  * <h2>使用示例</h2>
  * <pre>
  * // 1. 初始化配置
- * VoxyInspiredLODSystem.Config config = new VoxyInspiredLODSystem.Config.Builder()
+ * LODSystem.Config config = new LODSystem.Config.Builder()
  *     .maxLODLevels(8)
  *     .maxDistance(1024.0f)
  *     .pyramidCacheSize(256)
@@ -81,7 +81,7 @@ import java.util.logging.Logger;
  *     .build();
  *
  * // 2. 初始化系统
- * VoxyInspiredLODSystem lodSystem = VoxyInspiredLODSystem.getInstance();
+ * LODSystem lodSystem = LODSystem.getInstance();
  * boolean success = lodSystem.initialize(config, dataProvider);
  *
  * // 3. 每帧更新
@@ -121,24 +121,24 @@ import java.util.logging.Logger;
  * @version 6.0.0 (Phase 2)
  * @since 6.0.0
  */
-public class VoxyInspiredLODSystem {
+public class LODSystem {
 
     /** 日志记录器 */
-    private static final Logger LOGGER = Logger.getLogger(VoxyInspiredLODSystem.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(LODSystem.class.getName());
 
     // ==================== 单例实例 ====================
 
     /**
      * 饿汉式单例实例（线程安全，无锁）
      */
-    private static final VoxyInspiredLODSystem INSTANCE = new VoxyInspiredLODSystem();
+    private static final LODSystem INSTANCE = new LODSystem();
 
     /**
-     * 获取 VoxyInspiredLODSystem 单例实例
+     * 获取 LODSystem 单例实例
      *
-     * @return 全局唯一的 VoxyInspiredLODSystem 实例
+     * @return 全局唯一的 LODSystem 实例
      */
-    public static VoxyInspiredLODSystem getInstance() {
+    public static LODSystem getInstance() {
         return INSTANCE;
     }
 
@@ -147,7 +147,7 @@ public class VoxyInspiredLODSystem {
     /**
      * 系统配置类（Builder 模式）
      *
-     * <p>用于配置 VoxyInspiredLODSystem 的所有参数，
+     * <p>用于配置 LODSystem 的所有参数，
      * 使用 Builder 模式提供类型安全的配置接口
      */
     public static final class Config {
@@ -225,12 +225,12 @@ public class VoxyInspiredLODSystem {
 
     // ==================== 私有构造函数 ====================
 
-    private VoxyInspiredLODSystem() {}
+    private LODSystem() {}
 
     // ==================== 生命周期 API ====================
 
     /**
-     * 初始化 VoxyInspiredLOD 系统
+     * 初始化 LOD 系统
      *
      * <h3>方法签名与参数说明：</h3>
      * <pre>
@@ -271,7 +271,7 @@ public class VoxyInspiredLODSystem {
         }
 
         if (initialized.get()) {
-            LOGGER.warning("VoxyInspiredLODSystem 已初始化，跳过重复初始化");
+            LOGGER.warning("LODSystem 已初始化，跳过重复初始化");
             return true;
         }
 
@@ -302,7 +302,7 @@ public class VoxyInspiredLODSystem {
 
 
             LOGGER.info(String.format(
-                "VoxyInspiredLODSystem 初始化完成 " +
+                "LODSystem 初始化完成 " +
                 "[maxLOD=%d, maxDist=%.0f, cache=%d, hiZ=%s]",
                 config.maxLODLevels, config.maxDistance,
                 config.pyramidCacheSize,
@@ -317,7 +317,7 @@ public class VoxyInspiredLODSystem {
 
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE,
-                "VoxyInspiredLODSystem 初始化失败: " + e.getMessage(), e
+                "LODSystem 初始化失败: " + e.getMessage(), e
             );
             return false;
         }
@@ -368,11 +368,11 @@ public class VoxyInspiredLODSystem {
 
 
 
-            LOGGER.info("VoxyInspiredLODSystem 已成功关闭");
+            LOGGER.info("LODSystem 已成功关闭");
 
 
         } catch (Exception e) {
-            LOGGER.severe("VoxyInspiredLODSystem 关闭时出错: " + e.getMessage());
+            LOGGER.severe("LODSystem 关闭时出错: " + e.getMessage());
         }
 
     }
@@ -475,7 +475,7 @@ public class VoxyInspiredLODSystem {
      */
     public void render(Object renderPass, Object commandBuffer) {
         if (!initialized.get()) {
-            throw new IllegalStateException("VoxyInspiredLODSystem not initialized");
+            throw new IllegalStateException("LODSystem not initialized");
         }
 
 

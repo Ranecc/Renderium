@@ -1,10 +1,10 @@
-// Renderium v6 Phase 2 - Voxy-Inspired 超视距 LOD 系统核心架构
+// Renderium v6 Phase 2 - Voxel-based 超视距 LOD 系统核心架构
 
 // LODPyramidBuilder.java - Mipmap LOD 金字塔构建器
 // 功能: 将 Chunk 数据降采样为多级 Mipmap 纹理数组，支持 CPU/GPU 双路径
 
 
-package com.ranecc.renderium.feature.lod.voxy;
+package com.ranecc.renderium.feature.lod.voxel;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -62,7 +62,7 @@ import java.util.logging.Logger;
  * </pre>
  *
  *
- * @see VoxyInspiredLODSystem
+ * @see LODSystem
  * @author Renderium Team
  * @version 6.0.0 (Phase 2)
  * @since 6.0.0
