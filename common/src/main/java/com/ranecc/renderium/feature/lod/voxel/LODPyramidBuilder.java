@@ -6,6 +6,8 @@
 
 package com.ranecc.renderium.feature.lod.voxel;
 
+import java.io.*;
+import java.nio.file.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -838,9 +840,6 @@ public class LODPyramidBuilder {
 
     /**
      * 计算指定 LOD 级别的数据大小（字节）
-     *
-     * @param lodLevel LOD 级别 [0, maxLODLevels)
-     * @return 该级别的数据大小（字节）
      */
     public int getLevelDataSize(int lodLevel) {
         if (lodLevel < 0 || lodLevel >= maxLODLevels) {
@@ -848,16 +847,83 @@ public class LODPyramidBuilder {
                 "LOD 级别超出范围 [0, " + maxLODLevels + "): " + lodLevel
             );
         }
-
-
         int size = CHUNK_SIZE;
         for (int i = 0; i < lodLevel; i++) {
             size = Math.max(1, size / 2);
         }
-
-
         return size * size * size * BYTES_PER_BLOCK;
     }
 
+    // ==================== 磁盘持久化（P2 - Distant Horizons 式） ====================
 
+    /** 持久化根目录 */
+    private volatile Path persistenceDir = null;
+
+    private static final String PYRAMID_FILE_EXT = ".lodp";
+
+    /**
+     * 设置持久化目录
+     */
+    public void setPersistenceDir(Path dir) {
+        this.persistenceDir = dir;
+        try { Files.createDirectories(dir); } catch (IOException e) {
+            LOGGER.warning("无法创建持久化目录: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 保存单个金字塔到磁盘
+     */
+    public boolean saveToFile(long chunkKey, byte[][] levels) {
+        if (persistenceDir == null) return false;
+        Path file = persistenceDir.resolve(chunkKey + PYRAMID_FILE_EXT);
+        try (DataOutputStream dos = new DataOutputStream(new BufferedOutputStream(
+                new FileOutputStream(file.toFile())))) {
+            dos.writeInt(maxLODLevels);
+            for (int i = 0; i < maxLODLevels && i < levels.length; i++) {
+                byte[] data = levels[i];
+                dos.writeInt(data.length);
+                dos.write(data);
+            }
+            return true;
+        } catch (IOException e) {
+            LOGGER.fine("保存金字塔失败: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 从磁盘加载金字塔
+     */
+    public LODPyramidData loadFromFile(long chunkKey) {
+        if (persistenceDir == null) return null;
+        Path file = persistenceDir.resolve(chunkKey + PYRAMID_FILE_EXT);
+        if (!Files.exists(file)) return null;
+        try (DataInputStream dis = new DataInputStream(new BufferedInputStream(
+                new FileInputStream(file.toFile())))) {
+            int levels = dis.readInt();
+            byte[][] data = new byte[Math.min(levels, maxLODLevels)][];
+            for (int i = 0; i < data.length; i++) {
+                int len = dis.readInt();
+                data[i] = new byte[len];
+                dis.readFully(data[i]);
+            }
+            return new LODPyramidData(chunkKey, data, 0L, System.nanoTime());
+        } catch (IOException e) {
+            LOGGER.fine("加载金字塔失败: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 移除磁盘上的金字塔文件
+     */
+    public boolean removeFile(long chunkKey) {
+        if (persistenceDir == null) return false;
+        try {
+            return Files.deleteIfExists(persistenceDir.resolve(chunkKey + PYRAMID_FILE_EXT));
+        } catch (IOException e) {
+            return false;
+        }
+    }
 }

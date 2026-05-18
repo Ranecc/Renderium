@@ -238,6 +238,31 @@ public final class VulkanFFMBinding {
     /** vkGetSemaphoreCounterValue: 查询信号量计数器 */
     private static volatile MethodHandle VK_GET_SEMAPHORE_COUNTER_VALUE;
 
+    // ============ Phase 5: Ray Tracing ============
+
+    /** vkCreateAccelerationStructureKHR: 创建加速结构 */
+    private static volatile MethodHandle VK_CREATE_ACCELERATION_STRUCTURE_KHR;
+
+    /** vkDestroyAccelerationStructureKHR: 销毁加速结构 */
+    private static volatile MethodHandle VK_DESTROY_ACCELERATION_STRUCTURE_KHR;
+
+    /** vkCmdBuildAccelerationStructuresKHR: 构建加速结构 */
+    private static volatile MethodHandle VK_CMD_BUILD_ACCELERATION_STRUCTURES_KHR;
+
+    /** vkCmdTraceRaysKHR: 发射光线 */
+    private static volatile MethodHandle VK_CMD_TRACE_RAYS_KHR;
+
+    /** vkCreateRayTracingPipelinesKHR: 创建光线追踪管线 */
+    private static volatile MethodHandle VK_CREATE_RAY_TRACING_PIPELINES_KHR;
+
+    /** vkCmdCopyAccelerationStructureKHR: 复制加速结构 */
+    private static volatile MethodHandle VK_CMD_COPY_ACCELERATION_STRUCTURE_KHR;
+
+    // ============ Phase 6: Mesh Shader ============
+
+    /** vkCmdDrawMeshTasksEXT: 绘制 Mesh Shader 工作组 */
+    private static volatile MethodHandle VK_CMD_DRAW_MESH_TASKS_EXT;
+
     // ==================== 加载状态 ====================
 
     /** FFM 方法是否已加载 */
@@ -313,6 +338,18 @@ public final class VulkanFFMBinding {
     public static MethodHandle getVkGetBufferMemoryRequirements() { return VK_GET_BUFFER_MEMORY_REQUIREMENTS; }
     public static MethodHandle getVkBindBufferMemory() { return VK_BIND_BUFFER_MEMORY; }
     public static MethodHandle getVkFreeCommandBuffers() { return VK_FREE_COMMAND_BUFFERS; }
+    public static MethodHandle getVkCreateSemaphore() { return VK_CREATE_SEMAPHORE; }
+    public static MethodHandle getVkDestroySemaphore() { return VK_DESTROY_SEMAPHORE; }
+    public static MethodHandle getVkWaitSemaphores() { return VK_WAIT_SEMAPHORES; }
+    public static MethodHandle getVkSignalSemaphore() { return VK_SIGNAL_SEMAPHORE; }
+    public static MethodHandle getVkGetSemaphoreCounterValue() { return VK_GET_SEMAPHORE_COUNTER_VALUE; }
+    public static MethodHandle getVkCreateAccelerationStructureKHR() { return VK_CREATE_ACCELERATION_STRUCTURE_KHR; }
+    public static MethodHandle getVkDestroyAccelerationStructureKHR() { return VK_DESTROY_ACCELERATION_STRUCTURE_KHR; }
+    public static MethodHandle getVkCmdBuildAccelerationStructuresKHR() { return VK_CMD_BUILD_ACCELERATION_STRUCTURES_KHR; }
+    public static MethodHandle getVkCmdTraceRaysKHR() { return VK_CMD_TRACE_RAYS_KHR; }
+    public static MethodHandle getVkCreateRayTracingPipelinesKHR() { return VK_CREATE_RAY_TRACING_PIPELINES_KHR; }
+    public static MethodHandle getVkCmdCopyAccelerationStructureKHR() { return VK_CMD_COPY_ACCELERATION_STRUCTURE_KHR; }
+    public static MethodHandle getVkCmdDrawMeshTasksEXT() { return VK_CMD_DRAW_MESH_TASKS_EXT; }
 
     /** FFM 方法句柄是否已加载成功 */
     public static boolean isFfmLoaded() { return ffmLoaded; }
@@ -791,6 +828,89 @@ public final class VulkanFFMBinding {
                     FunctionDescriptor.ofVoid(
                             ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
                             ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG)
+            );
+
+            VK_CREATE_SEMAPHORE = linker.downcallHandle(
+                    vulkanLookup.find("vkCreateSemaphore").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_DESTROY_SEMAPHORE = linker.downcallHandle(
+                    vulkanLookup.find("vkDestroySemaphore").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_WAIT_SEMAPHORES = linker.downcallHandle(
+                    vulkanLookup.find("vkWaitSemaphores").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_SIGNAL_SEMAPHORE = linker.downcallHandle(
+                    vulkanLookup.find("vkSignalSemaphore").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_GET_SEMAPHORE_COUNTER_VALUE = linker.downcallHandle(
+                    vulkanLookup.find("vkGetSemaphoreCounterValue").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_CREATE_ACCELERATION_STRUCTURE_KHR = linker.downcallHandle(
+                    vulkanLookup.find("vkCreateAccelerationStructureKHR").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_DESTROY_ACCELERATION_STRUCTURE_KHR = linker.downcallHandle(
+                    vulkanLookup.find("vkDestroyAccelerationStructureKHR").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_CMD_BUILD_ACCELERATION_STRUCTURES_KHR = linker.downcallHandle(
+                    vulkanLookup.find("vkCmdBuildAccelerationStructuresKHR").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_CMD_TRACE_RAYS_KHR = linker.downcallHandle(
+                    vulkanLookup.find("vkCmdTraceRaysKHR").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT)
+            );
+
+            VK_CREATE_RAY_TRACING_PIPELINES_KHR = linker.downcallHandle(
+                    vulkanLookup.find("vkCreateRayTracingPipelinesKHR").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG)
+            );
+
+            VK_CMD_COPY_ACCELERATION_STRUCTURE_KHR = linker.downcallHandle(
+                    vulkanLookup.find("vkCmdCopyAccelerationStructureKHR").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_CMD_DRAW_MESH_TASKS_EXT = linker.downcallHandle(
+                    vulkanLookup.find("vkCmdDrawMeshTasksEXT").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_INT, ValueLayout.JAVA_INT)
             );
 
             ffmLoaded = true;

@@ -5,6 +5,10 @@
 
 package com.ranecc.renderium.feature.lod.interception;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -13,6 +17,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
+import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper;
 import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 
 /**
@@ -175,27 +181,53 @@ public final class GPUDrivenLODSystem {
     /** 当前运行模式 */
     private volatile RenderiumMode currentMode = RenderiumMode.COMPATIBILITY;
 
-    // ==================== GPU 资源句柄（占位符 - 实际由 Vulkan 层初始化）====================
+    // ==================== GPU 资源句柄 ====================
 
-    /** Compute Pipeline 句柄（Vulkan VkPipeline） */
+    /** Compute Pipeline 句柄 */
     private volatile long computePipelineHandle = 0L;
 
     /** Chunk 数据 SSBO 缓冲区句柄 */
     private volatile long chunkDataBufferHandle = 0L;
 
+    /** Chunk 数据 SSBO 内存句柄 */
+    private volatile long chunkDataBufferMemory = 0L;
+
     /** LOD 结果 SSBO 缓冲区句柄 */
     private volatile long lodResultBufferHandle = 0L;
+
+    /** LOD 结果 SSBO 内存句柄 */
+    private volatile long lodResultBufferMemory = 0L;
 
     /** 间接绘制命令缓冲区句柄 */
     private volatile long indirectCommandBufferHandle = 0L;
 
+    /** 间接绘制命令缓冲区内存句柄 */
+    private volatile long indirectCommandBufferMemory = 0L;
+
     /** 参数 UBO 缓冲区句柄 */
     private volatile long paramUniformBufferHandle = 0L;
+
+    /** 参数 UBO 缓冲区内存句柄 */
+    private volatile long paramUniformBufferMemory = 0L;
 
     // ==================== 配置字段 ====================
 
     /** 最大处理的 chunk 数量 */
     private volatile int maxChunks = DEFAULT_MAX_CHUNKS;
+
+    // ==================== 缓冲区大小常量 ====================
+
+    /** 每个 chunk 输入数据字节数：centerX/Y/Z(12B) + chunkId(4B) + flags(4B) + padding(12B) = 32B */
+    private static final int CHUNK_INPUT_STRIDE = 32;
+
+    /** 每个 LOD 输出字节数：lodLevel(4B) + transitionAlpha(4B) + visible(4B) + padding(4B) = 16B */
+    private static final int LOD_OUTPUT_STRIDE = 16;
+
+    /** 间接绘制命令字节数：indexCount(4B) + instanceCount(4B) + firstIndex(4B) + vertexOffset(4B) + firstInstance(4B) = 20B */
+    private static final int INDIRECT_COMMAND_STRIDE = 20;
+
+    /** UBO 字节数：camPos(12B) + fov(4B) + screenW(4B) + screenH(4B) + pad(8B) = 32B */
+    private static final int UBO_SIZE = 32;
 
     // ==================== 性能统计 ====================
 
@@ -207,9 +239,6 @@ public final class GPUDrivenLODSystem {
 
     /** 总计降级次数 */
     private final AtomicLong totalFallbackCount = new AtomicLong(0);
-
-    /** 模拟资源句柄递增生成器 */
-    private final AtomicLong mockResourceHandleGenerator = new AtomicLong(0);
 
     // ==================== 私有构造函数 ====================
 
@@ -235,19 +264,15 @@ public final class GPUDrivenLODSystem {
             return true;
         }
 
-
         this.currentMode = mode;
 
-
-        // 仅在 AGGRESSIVE 模式下启用 GPU 路径
         if (!mode.isAggressive()) {
-            LOGGER.info("GPUDrivenLODSystem: 非 AGGRESSIVE 模式，GPU 路径不可用（将使用 CPU 降级）");
+            LOGGER.info("GPUDrivenLODSystem: 非 AGGRESSIVE 模式，GPU 路径不可用");
             gpuEnabled.set(false);
             initialized.set(true);
-            return true; // 初始化成功，但 GPU 路径不活跃
+            return true;
         }
 
-        // Vulkan 操作守卫：如果 Vulkan 已故障，直接以降级模式初始化
         if (VulkanOperationGuard.isFailed()) {
             LOGGER.warning("GPUDrivenLODSystem: Vulkan 已故障，以降级模式初始化");
             gpuEnabled.set(false);
@@ -256,91 +281,65 @@ public final class GPUDrivenLODSystem {
         }
 
         try {
-            // 实际 Vulkan 资源创建逻辑（VulkanOperationGuard 已保护）
-            // 1. 创建 SSBO buffers (chunk data, LOD results, indirect commands)
-            // 2. 创建 UBO buffer (camera params)
-            // 3. 加载并编译 lod_compute.comp shader
-            // 4. 创建 Compute Pipeline
-            // 5. 分配描述符集
+            long chunkDataSize = (long) maxChunks * CHUNK_INPUT_STRIDE;
+            long lodResultSize = (long) maxChunks * LOD_OUTPUT_STRIDE;
+            long indirectCmdSize = (long) maxChunks * INDIRECT_COMMAND_STRIDE;
+            int hostVisible = 2 | 4; // HOST_VISIBLE | HOST_COHERENT
 
+            long[] chunkBuf = VulkanBufferHelper.createBuffer(chunkDataSize, hostVisible);
+            long[] lodBuf = VulkanBufferHelper.createBuffer(lodResultSize, hostVisible);
+            long[] indirectBuf = VulkanBufferHelper.createBuffer(indirectCmdSize, hostVisible);
+            long[] paramBuf = VulkanBufferHelper.createBuffer(UBO_SIZE, hostVisible);
 
-            // 占位：模拟资源分配成功
-            computePipelineHandle = allocateMockResource("ComputePipeline");
-            chunkDataBufferHandle = allocateMockResource("ChunkDataSSBO");
-            lodResultBufferHandle = allocateMockResource("LODResultSSBO");
-            indirectCommandBufferHandle = allocateMockResource("IndirectCmdBuffer");
-            paramUniformBufferHandle = allocateMockResource("ParamUBO");
+            chunkDataBufferHandle = chunkBuf[0]; chunkDataBufferMemory = chunkBuf[1];
+            lodResultBufferHandle = lodBuf[0]; lodResultBufferMemory = lodBuf[1];
+            indirectCommandBufferHandle = indirectBuf[0]; indirectCommandBufferMemory = indirectBuf[1];
+            paramUniformBufferHandle = paramBuf[0]; paramUniformBufferMemory = paramBuf[1];
 
-
+            if (chunkDataBufferHandle == 0L || lodResultBufferHandle == 0L) {
+                throw new RuntimeException("GPU 缓冲区创建失败");
+            }
 
             gpuEnabled.set(true);
             initialized.set(true);
             consecutiveFailures.set(0);
 
-
             LOGGER.info(String.format(
-                "GPUDrivenLODSystem 初始化成功 (AGGRESSIVE 模式) " +
-                "[maxChunks=%d, workgroupSize=%d]",
-                maxChunks, WORKGROUP_SIZE
+                "GPUDrivenLODSystem 初始化成功 (AGGRESSIVE) [maxChunks=%d, SSBOs=%dKB/%dKB/%dKB, UBO=%dB]",
+                maxChunks, chunkDataSize / 1024, lodResultSize / 1024, indirectCmdSize / 1024, UBO_SIZE
             ));
-
-
             return true;
 
-
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "GPUDrivenLODSystem 初始化失败，将使用 CPU 降级: " + e.getMessage(), e);
+            LOGGER.log(Level.SEVERE, "GPUDrivenLODSystem 初始化失败: " + e.getMessage(), e);
             gpuEnabled.set(false);
-            initialized.set(true); // 仍然标记为已初始化（以降级模式运行）
-
+            initialized.set(true);
             return false;
         }
-
     }
 
     /**
      * 关闭 GPU 驱动 LOD 系统，释放所有 GPU 资源
      */
     public void shutdown() {
-        if (!initialized.get()) {
-            return;
+        if (!initialized.get()) return;
+
+        if (!VulkanOperationGuard.isFailed()) {
+            VulkanBufferHelper.destroyBuffer(chunkDataBufferHandle, chunkDataBufferMemory);
+            VulkanBufferHelper.destroyBuffer(lodResultBufferHandle, lodResultBufferMemory);
+            VulkanBufferHelper.destroyBuffer(indirectCommandBufferHandle, indirectCommandBufferMemory);
+            VulkanBufferHelper.destroyBuffer(paramUniformBufferHandle, paramUniformBufferMemory);
         }
 
-        // Vulkan 操作守卫：如果 Vulkan 已故障，无需清理 GPU 资源
-        if (VulkanOperationGuard.isFailed()) {
-            gpuEnabled.set(false);
-            initialized.set(false);
-            consecutiveFailures.set(0);
-            LOGGER.info("GPUDrivenLODSystem 已关闭（Vulkan 故障，跳过 GPU 资源清理）");
-            return;
-        }
-
-        try {
-            // 实际 Vulkan 资源释放逻辑（VulkanOperationGuard 已保护）
-            // vkDestroyBuffer(...), vkFreeMemory(...), vkDestroyPipeline(...)
-
-
-            computePipelineHandle = 0L;
-            chunkDataBufferHandle = 0L;
-            lodResultBufferHandle = 0L;
-            indirectCommandBufferHandle = 0L;
-            paramUniformBufferHandle = 0L;
-
-
-
-            gpuEnabled.set(false);
-            initialized.set(false);
-            consecutiveFailures.set(0);
-
-
-
-            LOGGER.info("GPUDrivenLODSystem 已关闭");
-
-
-        } catch (Exception e) {
-            LOGGER.severe("GPUDrivenLODSystem 关闭时出错: " + e.getMessage());
-        }
-
+        computePipelineHandle = 0L;
+        chunkDataBufferHandle = 0L; chunkDataBufferMemory = 0L;
+        lodResultBufferHandle = 0L; lodResultBufferMemory = 0L;
+        indirectCommandBufferHandle = 0L; indirectCommandBufferMemory = 0L;
+        paramUniformBufferHandle = 0L; paramUniformBufferMemory = 0L;
+        gpuEnabled.set(false);
+        initialized.set(false);
+        consecutiveFailures.set(0);
+        LOGGER.info("GPUDrivenLODSystem 已关闭");
     }
 
     // ==================== 核心 API：GPU LOD 计算 ====================
@@ -565,13 +564,21 @@ public final class GPUDrivenLODSystem {
      * 上传 chunk 数据到 GPU SSBO
      */
     private void uploadChunkData(GPUChunkInput[] chunkInputs) {
-        if (VulkanOperationGuard.isFailed()) return;
-        LOGGER.warning("uploadChunkData() 未实现");
-
-        // vkCmdUpdateBuffer 或 staging buffer 上传（VulkanOperationGuard 已保护）
-        // 将 chunkInputs 数组序列化后上传到 chunkDataBufferHandle
-
-        LOGGER.fine("上传 " + chunkInputs.length + " 个 chunk 数据到 GPU SSBO");
+        if (VulkanOperationGuard.isFailed() || chunkDataBufferHandle == 0L) return;
+        int count = Math.min(chunkInputs.length, maxChunks);
+        int dataSize = count * CHUNK_INPUT_STRIDE;
+        byte[] data = new byte[dataSize];
+        for (int i = 0; i < count; i++) {
+            GPUChunkInput in = chunkInputs[i];
+            int off = i * CHUNK_INPUT_STRIDE;
+            writeFloat(data, off, in.centerX());
+            writeFloat(data, off + 4, in.centerY());
+            writeFloat(data, off + 8, in.centerZ());
+            writeInt(data, off + 12, in.chunkId());
+            writeInt(data, off + 16, in.flags());
+        }
+        VulkanBufferHelper.uploadData(
+            VulkanBufferHelper.getDevice(), chunkDataBufferMemory, data, 0L);
     }
 
     /**
@@ -579,28 +586,35 @@ public final class GPUDrivenLODSystem {
      */
     private void updateCameraParams(double camX, double camY, double camZ,
                                      float fov, float screenW, float screenH) {
-        if (VulkanOperationGuard.isFailed()) return;
-        LOGGER.warning("updateCameraParams() 未实现");
-
-        // UBO 更新（VulkanOperationGuard 已保护）
-        LOGGER.fine(String.format(
-            "更新相机参数 UBO: pos=(%.1f,%.1f,%.1f), fov=%.1f°, screen=%.0fx%.0f",
-            camX, camY, camZ, fov, screenW, screenH
-        ));
+        if (VulkanOperationGuard.isFailed() || paramUniformBufferHandle == 0L) return;
+        byte[] data = new byte[UBO_SIZE];
+        writeFloat(data, 0, (float) camX);
+        writeFloat(data, 4, (float) camY);
+        writeFloat(data, 8, (float) camZ);
+        writeFloat(data, 12, fov);
+        writeFloat(data, 16, screenW);
+        writeFloat(data, 20, screenH);
+        VulkanBufferHelper.uploadData(
+            VulkanBufferHelper.getDevice(), paramUniformBufferMemory, data, 0L);
     }
 
     /**
      * Dispatch Compute Shader
-     *
-     * @param workgroupCount 工作组数量
      */
     private void dispatchCompute(int workgroupCount) {
         if (VulkanOperationGuard.isFailed()) return;
-        LOGGER.warning("dispatchCompute() 未实现");
-
-        // vkCmdDispatch（VulkanOperationGuard 已保护）
-        LOGGER.fine("Dispatch LOD Compute Shader: " + workgroupCount + " 个工作组 (" +
-                     (workgroupCount * WORKGROUP_SIZE) + " 个线程)");
+        try {
+            MethodHandle vkCmdDispatch = VulkanFFMBinding.getVkCmdDispatch();
+            MethodHandle vkEndCommandBuffer = VulkanFFMBinding.getVkEndCommandBuffer();
+            if (vkCmdDispatch != null) {
+                vkCmdDispatch.invoke(0L, workgroupCount, 1, 1);
+            }
+            if (vkEndCommandBuffer != null) {
+                vkEndCommandBuffer.invoke(0L);
+            }
+        } catch (Throwable t) {
+            LOGGER.warning("dispatchCompute failed: " + t.getMessage());
+        }
     }
 
     /**
@@ -608,45 +622,101 @@ public final class GPUDrivenLODSystem {
      */
     private void computeMemoryBarrier() {
         if (VulkanOperationGuard.isFailed()) return;
-        LOGGER.warning("computeMemoryBarrier() 未实现");
-
-        // vkCmdMemoryBarrier（VulkanOperationGuard 已保护）
+        try {
+            MethodHandle barrier = VulkanFFMBinding.getVkCmdPipelineBarrier();
+            if (barrier != null) {
+                barrier.invoke(0L, 2, 2, 0, 0, 0L, 0, 0L, 0, 0L);
+            }
+        } catch (Throwable t) {
+            LOGGER.warning("computeMemoryBarrier failed: " + t.getMessage());
+        }
     }
 
     /**
      * 从 GPU 回读 LOD 计算结果
-     *
-     * @param expectedCount 期望的 chunk 数量
-     * @return chunkId → LOD 等级的映射
      */
     private Map<Integer, Integer> readLODResults(int expectedCount) {
-        if (VulkanOperationGuard.isFailed()) return new ConcurrentHashMap<>();
-        LOGGER.warning("readLODResults() 未实现，返回空 Map");
-
-        // vkMapMemory + 回读 lodResultBufferHandle（VulkanOperationGuard 已保护）
-        return new ConcurrentHashMap<>();
+        if (VulkanOperationGuard.isFailed() || lodResultBufferHandle == 0L) {
+            return new ConcurrentHashMap<>();
+        }
+        try (Arena arena = Arena.ofConfined()) {
+            long device = VulkanBufferHelper.getDevice();
+            long mapSize = (long) expectedCount * LOD_OUTPUT_STRIDE;
+            var ppData = arena.allocate(ValueLayout.JAVA_LONG);
+            int result = (int) VulkanFFMBinding.getVkMapMemory().invoke(
+                device, lodResultBufferMemory, 0L, mapSize, 0, ppData);
+            if (result != 0) return new ConcurrentHashMap<>();
+            long ptr = ppData.get(ValueLayout.JAVA_LONG, 0);
+            if (ptr == 0L) return new ConcurrentHashMap<>();
+            MemorySegment seg = MemorySegment.ofAddress(ptr).reinterpret(mapSize);
+            Map<Integer, Integer> resultMap = new ConcurrentHashMap<>();
+            for (int i = 0; i < expectedCount; i++) {
+                int off = i * LOD_OUTPUT_STRIDE;
+                resultMap.put(seg.get(ValueLayout.JAVA_INT, off + 8),
+                              seg.get(ValueLayout.JAVA_INT, off));
+            }
+            VulkanFFMBinding.getVkUnmapMemory().invoke(device, lodResultBufferMemory);
+            return resultMap;
+        } catch (Throwable t) {
+            LOGGER.warning("readLODResults failed: " + t.getMessage());
+            return new ConcurrentHashMap<>();
+        }
     }
 
     /**
      * 从 GPU 回读间接绘制命令
-     *
-     * @param expectedCount 期望的命令数量
-     * @return 间接绘制命令数组
      */
     private IndirectDrawCommand[] readIndirectCommands(int expectedCount) {
-        if (VulkanOperationGuard.isFailed()) return new IndirectDrawCommand[0];
-        LOGGER.warning("readIndirectCommands() 未实现，返回空数组");
+        if (VulkanOperationGuard.isFailed() || indirectCommandBufferHandle == 0L) {
+            return new IndirectDrawCommand[0];
+        }
+        try (Arena arena = Arena.ofConfined()) {
+            MethodHandle vkMapMemory = VulkanFFMBinding.getVkMapMemory();
+            if (vkMapMemory == null) return new IndirectDrawCommand[0];
 
-        // vkMapMemory + 回读 indirectCommandBufferHandle（VulkanOperationGuard 已保护）
-        return new IndirectDrawCommand[0];
+            long device = VulkanBufferHelper.getDevice();
+            var ppData = arena.allocate(ValueLayout.JAVA_LONG);
+            long mapSize = (long) expectedCount * INDIRECT_COMMAND_STRIDE;
+            int result = (int) vkMapMemory.invoke(device, indirectCommandBufferMemory, 0L, mapSize, 0, ppData);
+            if (result != 0) return new IndirectDrawCommand[0];
+
+            long ptr = ppData.get(ValueLayout.JAVA_LONG, 0);
+            if (ptr == 0L) return new IndirectDrawCommand[0];
+
+            IndirectDrawCommand[] cmds = new IndirectDrawCommand[expectedCount];
+            MemorySegment seg = MemorySegment.ofAddress(ptr).reinterpret(mapSize);
+            for (int i = 0; i < expectedCount; i++) {
+                int off = i * INDIRECT_COMMAND_STRIDE;
+                cmds[i] = new IndirectDrawCommand(
+                    seg.get(ValueLayout.JAVA_INT, off),
+                    seg.get(ValueLayout.JAVA_INT, off + 4),
+                    seg.get(ValueLayout.JAVA_INT, off + 8),
+                    seg.get(ValueLayout.JAVA_INT, off + 12),
+                    seg.get(ValueLayout.JAVA_INT, off + 16));
+            }
+            VulkanFFMBinding.getVkUnmapMemory().invoke(device, indirectCommandBufferMemory);
+            return cmds;
+        } catch (Throwable t) {
+            LOGGER.warning("readIndirectCommands failed: " + t.getMessage());
+            return new IndirectDrawCommand[0];
+        }
+    }
+
+    // ==================== 序列化辅助方法 ====================
+
+    private static void writeInt(byte[] buf, int off, int v) {
+        buf[off] = (byte) (v >> 0);
+        buf[off + 1] = (byte) (v >> 8);
+        buf[off + 2] = (byte) (v >> 16);
+        buf[off + 3] = (byte) (v >> 24);
+    }
+
+    private static void writeFloat(byte[] buf, int off, float v) {
+        writeInt(buf, off, Float.floatToRawIntBits(v));
     }
 
     /**
      * 降级到 CPU 路径进行 LOD 计算
-     *
-     * @param chunkInputs chunk 输入数据
-     * @param startTime  开始时间戳
-     * @return 标记为 CPU 路径的结果
      */
     private GPULODResult fallbackToCPU(GPUChunkInput[] chunkInputs, long startTime) {
         totalFallbackCount.incrementAndGet();
@@ -680,23 +750,9 @@ public final class GPUDrivenLODSystem {
 
         return new GPULODResult(
             chunkLODs,
-            new IndirectDrawCommand[0], // CPU 路径不生成间接命令
+            new IndirectDrawCommand[0],
             elapsed,
-            false // 未使用 GPU 路径
+            false
         );
     }
-
-    /**
-     * 分配模拟 GPU 资源句柄（用于非 Vulkan 环境下的测试）
-     *
-     * @param resourceName 资源名称（用于日志）
-     * @return 模拟的资源句柄（非零值）
-     */
-    private long allocateMockResource(String resourceName) {
-        long handle = mockResourceHandleGenerator.incrementAndGet();
-        LOGGER.fine("分配模拟 GPU 资源: " + resourceName + " -> handle=" + handle);
-        return handle;
-    }
-
-
 }

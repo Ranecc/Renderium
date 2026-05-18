@@ -201,6 +201,25 @@ public class LODSystem {
     /** GPU 剔除管线 */
     private volatile GPUCullingPipeline cullingPipeline;
 
+    /** 配置 */
+    private volatile Config config;
+
+    // ==================== 每帧相机状态 ====================
+
+    /** 当前相机 X 坐标 */
+    private volatile double camX = 0.0;
+    /** 当前相机 Y 坐标 */
+    private volatile double camY = 0.0;
+    /** 当前相机 Z 坐标 */
+    private volatile double camZ = 0.0;
+    /** 当前 FOV（度） */
+    private volatile float camFov = 70.0f;
+    /** 当前 Frustum 对象 */
+    private volatile Object currentFrustum = null;
+
+    /** 可见性掩码缓存（render 阶段使用） */
+    private volatile BitSet visibilityCache = null;
+
     // ==================== 状态字段 ====================
 
     /** 是否已初始化 */
@@ -418,35 +437,78 @@ public class LODSystem {
      * @param deltaTime 帧间隔时间（秒，必须 >= 0）
      */
     public void update(Object camera, Object frustum, float deltaTime) {
-        if (!initialized.get() || shutdownFlag.get()) {
-            return;
-        }
-
-        // Vulkan 操作守卫：GPU Streaming Upload / Indirect Draw 不可用时短路
+        if (!initialized.get() || shutdownFlag.get()) return;
         if (VulkanOperationGuard.isFailed()) {
             lastUpdateTimeNanos = 0L;
             return;
         }
-
-
         long startTime = System.nanoTime();
-
         try {
             totalUpdateCount.incrementAndGet();
+            currentFrustum = frustum;
 
+            // 从相机 Object 提取位置（兼容 MC Camera / Vec3）
+            if (camera != null) {
+                try {
+                    Object pos = camera.getClass().getMethod("position").invoke(camera);
+                    camX = (double) pos.getClass().getMethod("x").invoke(pos);
+                    camY = (double) pos.getClass().getMethod("y").invoke(pos);
+                    camZ = (double) pos.getClass().getMethod("z").invoke(pos);
+                } catch (NoSuchMethodException e1) {
+                    try {
+                        camX = (double) camera.getClass().getField("x").get(camera);
+                        camY = (double) camera.getClass().getField("y").get(camera);
+                        camZ = (double) camera.getClass().getField("z").get(camera);
+                    } catch (Exception e2) {
+                        camX = camY = camZ = 0.0;
+                    }
+                }
+            }
 
-            // Phase 3: 动态质量调整、相机移动预测、异步任务调度（VulkanOperationGuard 已保护）
+            // 使用 LODCalculator 的 CDLOD 风格选择阈值
+            float maxDistBlocks = config != null ? config.maxDistance * 16.0f : 1024.0f * 16.0f;
+            int radius = (int) Math.ceil(maxDistBlocks / 16.0f);
 
+            // 遍历区块半径内的所有潜在可见区块
+            BitSet visible = new BitSet();
+            int candidateCount = (2 * radius + 1) * (2 * radius + 1);
+            int chunkX = (int) Math.floor(camX / 16.0);
+            int chunkZ = (int) Math.floor(camZ / 16.0);
+            int idx = 0;
+            float[] candidatePosX = new float[candidateCount];
+            float[] candidatePosZ = new float[candidateCount];
 
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    int cx = chunkX + dx;
+                    int cz = chunkZ + dz;
+                    float posX = cx * 16.0f + 8.0f;
+                    float posZ = cz * 16.0f + 8.0f;
+                    float distSq = (float) ((posX - camX) * (posX - camX) + (posZ - camZ) * (posZ - camZ));
+                    if (distSq < maxDistBlocks * maxDistBlocks) {
+                        candidatePosX[idx] = posX;
+                        candidatePosZ[idx] = posZ;
+                        visible.set(idx);
+                        idx++;
+                    }
+                }
+            }
 
+            // 通过剔除管线进一步过滤
+            if (cullingPipeline != null && currentFrustum != null) {
+                try {
+                    visible = cullingPipeline.executeCPUCulling(
+                        new float[]{(float) camX, (float) camY, (float) camZ},
+                        currentFrustum, idx);
+                } catch (Exception e) {
+                    // culling 失败时保留全部可见
+                }
+            }
 
+            visibilityCache = visible;
             lastUpdateTimeNanos = System.nanoTime() - startTime;
-
-
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING,
-                "update() 过程中发生异常: " + e.getMessage(), e
-            );
+            LOGGER.log(Level.WARNING, "update() 异常: " + e.getMessage(), e);
             lastUpdateTimeNanos = System.nanoTime() - startTime;
         }
     }
@@ -479,30 +541,149 @@ public class LODSystem {
         if (!initialized.get()) {
             throw new IllegalStateException("LODSystem not initialized");
         }
-
-        // Vulkan 操作守卫：GPU Driven Indirect Draw 不可用时短路
         if (VulkanOperationGuard.isFailed()) {
             lastRenderTimeNanos = 0L;
             return;
         }
 
-
         long startTime = System.nanoTime();
         totalRenderCount.incrementAndGet();
 
+        try {
+            BitSet visible = visibilityCache;
+            if (visible == null || visible.isEmpty()) {
+                lastRenderTimeNanos = System.nanoTime() - startTime;
+                return;
+            }
 
+            int visibleCount = visible.cardinality();
+            int maxLOD = config != null ? config.maxLODLevels : 8;
 
-        // Phase 3: 完整渲染流程（VulkanOperationGuard 已保护）
-        // 当前仅记录调用，不执行实际渲染
-        LOGGER.fine(String.format(
-            "render() 调用（Phase 2 占位实现），" +
-            "完整渲染将在 Phase 2.x 实现"
-        ));
+            // 统计每个 LOD 级别的区块数和命令数
+            int[] lodCounts = new int[maxLOD];
+            int drawCmdCount = visibleCount;
 
+            // 为每个可见区块计算 LOD 级别（基于平方距离的 CDLOD 风格选择）
+            int chunkX = (int) Math.floor(camX / 16.0);
+            int chunkZ = (int) Math.floor(camZ / 16.0);
+            int radius = config != null ? (int) Math.ceil(config.maxDistance) : 64;
+            int stride = 2 * radius + 1;
+            byte[] pyramidCacheHit = new byte[visibleCount];
 
+            for (int i = 0; i < visibleCount; i++) {
+                int bitIdx = visible.nextSetBit(i);
+                if (bitIdx < 0) break;
+                int dx = bitIdx / stride - radius;
+                int dz = bitIdx % stride - radius;
+                int cx = chunkX + dx;
+                int cz = chunkZ + dz;
 
+                double dxWorld = (cx * 16.0 + 8.0) - camX;
+                double dzWorld = (cz * 16.0 + 8.0) - camZ;
+                double distSq = dxWorld * dxWorld + dzWorld * dzWorld;
+                double distBlocks = Math.sqrt(distSq);
 
-        lastRenderTimeNanos = System.nanoTime() - startTime;
+                // CDLOD 风格 LOD 级别：log2(dist / baseDist)
+                int lod;
+                float baseDist = 32.0f;
+                if (distBlocks <= baseDist) {
+                    lod = 0;
+                } else {
+                    lod = Math.min((int) (Math.log(distBlocks / baseDist) / Math.log(2)), maxLOD - 1);
+                }
+                lod = Math.max(0, Math.min(lod, maxLOD - 1));
+                lodCounts[lod]++;
+
+                // 尝试从金字塔构建器获取 LOD 数据
+                if (pyramidBuilder != null) {
+                    LODPyramidBuilder.LODPyramidData lodData = pyramidBuilder.getPyramidFromCache(
+                        ((long) cx & 0xFFFFFFFFL) | (((long) cz & 0xFFFFFFFFL) << 32));
+                    pyramidCacheHit[i] = (byte) (lodData != null ? 1 : 0);
+                }
+            }
+
+            // 生成 Indirect Draw 命令
+            int indirectCmdBytes = drawCmdCount * 20; // 每条命令 20 字节
+            byte[] indirectData = new byte[indirectCmdBytes];
+            int cmdOffset = 0;
+            int vertexOffset = 0;
+            for (int i = 0; i < visibleCount; i++) {
+                int bitIdx = visible.nextSetBit(i);
+                if (bitIdx < 0) break;
+                int dx = bitIdx / stride - radius;
+                int dz = bitIdx % stride - radius;
+
+                int lod = 0;
+                double dxWorld = ((chunkX + dx) * 16.0 + 8.0) - camX;
+                double dzWorld = ((chunkZ + dz) * 16.0 + 8.0) - camZ;
+                double distSq = dxWorld * dxWorld + dzWorld * dzWorld;
+                double distBlocks = Math.sqrt(distSq);
+                if (distBlocks > 32.0) {
+                    lod = Math.min((int) (Math.log(distBlocks / 32.0) / Math.log(2)), maxLOD - 1);
+                }
+
+                // LOD0: 16x16x16 → 4096 顶点 / LOD1: 8x8x8 → 512 / LOD2: 4x4x4 → 64 / LOD3+: 2x2x2 → 8
+                int vertexCount = 4096 >> (lod * 3);
+                int indexCount = Math.max(vertexCount * 6, 36);
+                vertexCount = Math.max(vertexCount, 8);
+
+                writeIntLE(indirectData, cmdOffset, indexCount);
+                writeIntLE(indirectData, cmdOffset + 4, 1);       // instanceCount
+                writeIntLE(indirectData, cmdOffset + 8, 0);       // firstIndex
+                writeIntLE(indirectData, cmdOffset + 12, vertexOffset);  // vertexOffset
+                writeIntLE(indirectData, cmdOffset + 16, i);      // firstInstance
+                cmdOffset += 20;
+                vertexOffset += vertexCount;
+            }
+
+            // 提交 Indirect Draw 数据到 GPU
+            long device = 0L;
+            try {
+                device = (long) Class.forName(
+                    "com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper")
+                    .getMethod("getDevice").invoke(null);
+            } catch (Exception e) {
+                // guard mode: no Vulkan device
+            }
+
+            if (device != 0L && commandBuffer instanceof Long) {
+                long cmdBuf = (Long) commandBuffer;
+                try {
+                    var vkCmdDrawIndexedIndirect = (java.lang.invoke.MethodHandle)
+                        Class.forName("com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding")
+                        .getMethod("getVkCmdDrawIndexedIndirect").invoke(null);
+                    if (vkCmdDrawIndexedIndirect != null) {
+                        vkCmdDrawIndexedIndirect.invoke(cmdBuf, 0L, 0, drawCmdCount, 20);
+                    }
+                } catch (Throwable t) {
+                    LOGGER.fine("IndirectDraw dispatch unavailable: " + t.getMessage());
+                }
+            }
+
+            lastRenderTimeNanos = System.nanoTime() - startTime;
+
+            if (LOGGER.isLoggable(java.util.logging.Level.FINE)) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("LOD render: ").append(visibleCount).append(" chunks");
+                for (int l = 0; l < maxLOD && l < 4; l++) {
+                    sb.append(", LOD").append(l).append("=").append(lodCounts[l]);
+                }
+                sb.append(" [").append(lastRenderTimeNanos / 1_000_000.0).append("ms]");
+                LOGGER.fine(sb.toString());
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "render() 异常: " + e.getMessage(), e);
+            lastRenderTimeNanos = System.nanoTime() - startTime;
+        }
+    }
+
+    // ==================== 序列化辅助 ====================
+
+    private static void writeIntLE(byte[] buf, int off, int v) {
+        buf[off] = (byte) (v);
+        buf[off + 1] = (byte) (v >> 8);
+        buf[off + 2] = (byte) (v >> 16);
+        buf[off + 3] = (byte) (v >> 24);
     }
 
     // ==================== 查询 API ====================
@@ -572,12 +753,162 @@ public class LODSystem {
 
     /**
      * 获取总渲染次数
-     *
-     * @return 自初始化以来的总渲染次数
      */
     public long getTotalRenderCount() {
         return totalRenderCount.get();
     }
 
+    // ==================== P1: Section 级坐标支持 ====================
 
+    /**
+     * SectionPos.blockToSectionCoord 对应: x >> 4
+     */
+    public static int blockToSection(int blockCoord) {
+        return blockCoord >> 4;
+    }
+
+    /**
+     * SectionPos.sectionToBlockCoord 对应: x << 4
+     */
+    public static int sectionToBlock(int sectionCoord) {
+        return sectionCoord << 4;
+    }
+
+    /**
+     * SectionPos.asLong 对应: 打包 X(22bit)+Y(20bit)+Z(22bit)
+     */
+    public static long packSectionKey(int sectionX, int sectionY, int sectionZ) {
+        long node = 0L;
+        node |= ((long) sectionX & 4194303L) << 42;
+        node |= ((long) sectionY & 1048575L) << 0;
+        node |= ((long) sectionZ & 4194303L) << 20;
+        return node;
+    }
+
+    public static int unpackSectionX(long key) { return (int) (key << 0 >> 42); }
+    public static int unpackSectionY(long key) { return (int) (key << 44 >> 44); }
+    public static int unpackSectionZ(long key) { return (int) (key << 22 >> 42); }
+
+    /**
+     * MC ChunkPos.pack — X 占低 32 位, Z 占高 32 位
+     */
+    public static long packChunkPos(int x, int z) {
+        return ((long) x & 0xFFFFFFFFL) | (((long) z) << 32);
+    }
+
+    // ==================== P1: 金字塔构建触发 ====================
+
+    /**
+     * 当 Chunk 数据就绪时调用，触发金字塔构建
+     */
+    public boolean triggerPyramidBuild(int chunkX, int chunkZ, byte[] chunkData) {
+        if (pyramidBuilder == null) return false;
+        long key = packChunkPos(chunkX, chunkZ);
+        var result = pyramidBuilder.buildOrGetPyramid(key, chunkData);
+        if (!result.fromCache() && result.pyramid() != null) {
+            pyramidBuilder.saveToFile(key, result.pyramid().levels());
+        }
+        return result.pyramid() != null;
+    }
+
+    // ==================== P1: 两级渲染管线集成 ====================
+
+    /** 拦截层 LOD 系统引用（可选） */
+    private volatile Object interceptionLODSystem = null;
+
+    /**
+     * 设置拦截层 LOD 系统引用，启用两级协作
+     */
+    public void setInterceptionLODSystem(Object system) {
+        this.interceptionLODSystem = system;
+    }
+
+    /**
+     * 分发 LOD 结果到拦截层系统（使拦截层 LOD 与体素 LOD 协调）
+     */
+    public void syncToInterceptionLayer() {
+        if (interceptionLODSystem == null) return;
+        try {
+            var getMethod = interceptionLODSystem.getClass()
+                .getMethod("getDataManager");
+            Object dataManager = getMethod.invoke(interceptionLODSystem);
+            if (dataManager != null) {
+                var updateMethod = dataManager.getClass()
+                    .getMethod("updateLODs", double.class, double.class, double.class, float.class, int.class);
+                updateMethod.invoke(dataManager, camX, camY, camZ, camFov, 48);
+            }
+        } catch (Exception e) {
+            LOGGER.fine("syncToInterceptionLayer: " + e.getMessage());
+        }
+    }
+
+    // ==================== P2: 流式加载 ====================
+
+    /** 流式优先级队列（chunkPos → 优先级，越小越优先） */
+    private final java.util.concurrent.ConcurrentSkipListMap<Long, Integer> streamQueue =
+        new java.util.concurrent.ConcurrentSkipListMap<>();
+
+    /** 流式加载最大批次大小 */
+    private volatile int streamBatchSize = 8;
+
+    /**
+     * 设置流式加载批次大小
+     */
+    public void setStreamBatchSize(int size) {
+        this.streamBatchSize = Math.max(1, Math.min(64, size));
+    }
+
+    /**
+     * 按玩家移动方向预加载 LOD 数据
+     */
+    public void updateStreamQueue(double playerX, double playerZ,
+                                   double moveDirX, double moveDirZ) {
+        int centerX = (int) Math.floor(playerX / 16.0);
+        int centerZ = (int) Math.floor(playerZ / 16.0);
+        int radius = config != null ? (int) Math.ceil(config.maxDistance) : 64;
+
+        // 在移动方向分配更高优先级
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                int cx = centerX + dx;
+                int cz = centerZ + dz;
+                long key = packChunkPos(cx, cz);
+                double dist = Math.sqrt(dx * dx + dz * dz);
+
+                // 方向权重：移动方向上的区块优先级更高
+                double dirWeight = 1.0;
+                if (moveDirX != 0 || moveDirZ != 0) {
+                    double dot = (dx * moveDirX + dz * moveDirZ) / (dist + 0.001);
+                    dirWeight = 1.0 + Math.max(0, dot) * 2.0;
+                }
+
+                int priority = (int) (dist / dirWeight);
+                streamQueue.put(key, priority);
+            }
+        }
+
+        // 处理前 N 个最高优先级任务
+        int processed = 0;
+        var iter = streamQueue.entrySet().iterator();
+        while (iter.hasNext() && processed < streamBatchSize) {
+            var entry = iter.next();
+            long key = entry.getKey();
+            if (pyramidBuilder != null) {
+                // 检查磁盘缓存
+                var cached = pyramidBuilder.loadFromFile(key);
+                if (cached != null) {
+                    // 磁盘命中，加入内存缓存
+                    synchronized (pyramidBuilder) {
+                        var data = pyramidBuilder.getPyramidFromCache(key);
+                        if (data == null) {
+                            // 通过 buildOrGetPyramid 的 chunkData=null 路径构建
+                            pyramidBuilder.buildOrGetPyramid(key, null);
+                        }
+                    }
+                }
+            }
+            iter.remove();
+            processed++;
+        }
+    }
 }

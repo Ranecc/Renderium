@@ -1,5 +1,7 @@
 package com.ranecc.renderium.infrastructure.gpu;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.ValueLayout;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
@@ -7,69 +9,93 @@ import java.util.logging.Logger;
 import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 
 /**
- * 全局 Vulkan DescriptorPool / DescriptorSet 管理器
+ * 全局 Vulkan DescriptorPool / Bindless DescriptorSet 管理器
  *
- * <p>启动时创建一次，全系统共用。
- * 受 {@link VulkanOperationGuard} 保护。
+ * <p>启动时创建全局 Pool。所有 Compute Pass 共用一个 Bindless DescriptorSet，
+ * 支持 VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND + PARTIALLY_BOUND。
+ *
+ * <h2>Phase 3: Bindless 架构</h2>
+ * <pre>
+ * 传统（每 Pass 一次绑定）:
+ *   vkCmdBindDescriptorSets(cmdBuf, pipelineLayout, 0, 1, &perPassDS, ...)
+ *
+ * Bindless（全局静态绑定）:
+ *   vkCmdBindDescriptorSets(cmdBuf, globalPipelineLayout, 0, 1, &bindlessDS, ...)
+ *   // 着色器中按 descriptorIndex 索引 textures/buffers
+ * </pre>
  */
 public final class VulkanDescriptorManager {
 
     private static final Logger LOGGER = Logger.getLogger("Renderium|VulkanDescMgr");
 
-    private static final int VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE = 0;
-    private static final int VK_DESCRIPTOR_TYPE_STORAGE_BUFFER = 3;
-    private static final int VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER = 6;
+    static final int VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE = 0;
+    static final int VK_DESCRIPTOR_TYPE_STORAGE_BUFFER = 3;
+    static final int VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER = 6;
     static final int VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER = 1;
     public static final int VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT = 1;
     public static final int VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT = 2;
 
+    private static final int VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT = 0x00000004;
+    private static final int VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT = 0x00000008;
+    private static final int VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO = 27;
+    private static final int VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO = 28;
+    private static final int VK_SUCCESS = 0;
+
     private static final AtomicLong descriptorPool = new AtomicLong(0L);
+    private static final AtomicLong bindlessSetLayout = new AtomicLong(0L);
+    private static final AtomicLong bindlessDescriptorSet = new AtomicLong(0L);
     private static final AtomicBoolean created = new AtomicBoolean(false);
+    private static final AtomicBoolean bindlessInit = new AtomicBoolean(false);
+
+    public static final int BINDLESS_TARGET_SLOTS = 200_000;
 
     private VulkanDescriptorManager() {}
 
-    public static long getDescriptorPool() {
-        if (!created.get()) createGlobalPool();
-        return descriptorPool.get();
-    }
-
-    public static long getPool() { return getDescriptorPool(); }
+    public static long getPool() { return descriptorPool.get(); }
+    public static long getBindlessSet() { return bindlessDescriptorSet.get(); }
+    public static long getBindlessLayout() { return bindlessSetLayout.get(); }
 
     public static boolean isAvailable() {
         return VulkanDeviceHolder.isAvailable() && VulkanFFMBinding.isFfmLoaded();
     }
+
+    public static boolean isBindlessReady() {
+        return bindlessDescriptorSet.get() != 0L && bindlessSetLayout.get() != 0L;
+    }
+
+    // ==================== 全局 Pool 创建 ====================
 
     private static void createGlobalPool() {
         if (!created.compareAndSet(false, true)) return;
         if (!isAvailable()) return;
 
         long device = VulkanDeviceHolder.getInstance().getDevice();
-        try (var arena = java.lang.foreign.Arena.ofConfined()) {
-            var sizeStruct = arena.allocate(32);
-            sizeStruct.set(java.lang.foreign.ValueLayout.JAVA_INT, 0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-            sizeStruct.set(java.lang.foreign.ValueLayout.JAVA_INT, 4, 100000);
-            sizeStruct.set(java.lang.foreign.ValueLayout.JAVA_INT, 8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-            sizeStruct.set(java.lang.foreign.ValueLayout.JAVA_INT, 12, 16384);
-            sizeStruct.set(java.lang.foreign.ValueLayout.JAVA_INT, 16, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-            sizeStruct.set(java.lang.foreign.ValueLayout.JAVA_INT, 20, 16384);
-            sizeStruct.set(java.lang.foreign.ValueLayout.JAVA_INT, 24, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-            sizeStruct.set(java.lang.foreign.ValueLayout.JAVA_INT, 28, 100000);
+        try (var arena = Arena.ofConfined()) {
+            var sizes = arena.allocate(32);
+            sizes.set(ValueLayout.JAVA_INT, 0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+            sizes.set(ValueLayout.JAVA_INT, 4, 100000);
+            sizes.set(ValueLayout.JAVA_INT, 8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+            sizes.set(ValueLayout.JAVA_INT, 12, 16384);
+            sizes.set(ValueLayout.JAVA_INT, 16, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+            sizes.set(ValueLayout.JAVA_INT, 20, 16384);
+            sizes.set(ValueLayout.JAVA_INT, 24, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
+            sizes.set(ValueLayout.JAVA_INT, 28, 100000);
 
             var createInfo = arena.allocate(32);
-            createInfo.set(java.lang.foreign.ValueLayout.JAVA_INT,  0, 0);     // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
-            createInfo.set(java.lang.foreign.ValueLayout.JAVA_INT,  4, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);  // flags
-            createInfo.set(java.lang.foreign.ValueLayout.JAVA_INT,  8, 200000); // maxSets
-            createInfo.set(java.lang.foreign.ValueLayout.JAVA_INT, 12, 4);       // poolSizeCount = 4 entries in sizeStruct
-            createInfo.set(java.lang.foreign.ValueLayout.ADDRESS, 16, sizeStruct); // pPoolSizes
+            createInfo.set(ValueLayout.JAVA_INT, 0, 0);
+            createInfo.set(ValueLayout.JAVA_INT, 4, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
+            createInfo.set(ValueLayout.JAVA_INT, 8, BINDLESS_TARGET_SLOTS);
+            createInfo.set(ValueLayout.JAVA_INT, 12, 4);
+            createInfo.set(ValueLayout.ADDRESS, 16, sizes);
 
             long[] outPool = new long[1];
             int result = (int) VulkanFFMBinding.getVkCreateDescriptorPool()
                 .invoke(device, createInfo.address(), 0L, outPool);
-            if (result == 0) {
+            if (result == VK_SUCCESS) {
                 descriptorPool.set(outPool[0]);
                 LOGGER.info("Global DescriptorPool created: 0x" + Long.toHexString(outPool[0]));
             } else {
-                LOGGER.warning("vkCreateDescriptorPool failed with VkResult=" + result);
+                LOGGER.warning("vkCreateDescriptorPool failed VkResult=" + result);
                 created.set(false);
             }
         } catch (Throwable t) {
@@ -78,14 +104,155 @@ public final class VulkanDescriptorManager {
         }
     }
 
-    public static void destroy() {
-        if (descriptorPool.get() == 0L) return;
+    // ==================== Phase 3: Bindless 分配 ====================
+
+    /**
+     * 创建 Bindless DescriptorSetLayout + 从全局 Pool 分配 1 个 DescriptorSet。
+     *
+     * <p>Layout 包含 3 个 binding:
+     * <ol>
+     *   <li>binding=0: StorageBuffer (SSBO 数据)</li>
+     *   <li>binding=1: SampledImage (纹理 10K 槽)</li>
+     *   <li>binding=2: UniformBuffer (UBO 数据)</li>
+     * </ol>
+     * 全部带 UPDATE_AFTER_BIND + PARTIALLY_BOUND。
+     */
+    public static boolean allocateBindlessSet() {
+        if (bindlessInit.get()) return true;
+        if (!bindlessInit.compareAndSet(false, true)) return bindlessDescriptorSet.get() != 0L;
+        if (!isAvailable()) return false;
+
         long device = VulkanDeviceHolder.getInstance().getDevice();
+        long pool = descriptorPool.get();
+        if (pool == 0L) {
+            createGlobalPool();
+            pool = descriptorPool.get();
+        }
+        if (pool == 0L) return false;
+
+        try (var arena = Arena.ofConfined()) {
+            var bindings = arena.allocate(72);
+
+            bindings.set(ValueLayout.JAVA_INT, 0, 0);
+            bindings.set(ValueLayout.JAVA_INT, 4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+            bindings.set(ValueLayout.JAVA_INT, 8, 16384);
+            bindings.set(ValueLayout.JAVA_INT, 12, VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT
+                | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+
+            bindings.set(ValueLayout.JAVA_INT, 24, 1);
+            bindings.set(ValueLayout.JAVA_INT, 28, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+            bindings.set(ValueLayout.JAVA_INT, 32, 100000);
+            bindings.set(ValueLayout.JAVA_INT, 36, VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT
+                | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+
+            bindings.set(ValueLayout.JAVA_INT, 48, 2);
+            bindings.set(ValueLayout.JAVA_INT, 52, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+            bindings.set(ValueLayout.JAVA_INT, 56, 16384);
+            bindings.set(ValueLayout.JAVA_INT, 60, VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT
+                | VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT);
+
+            var layoutInfo = arena.allocate(24);
+            layoutInfo.set(ValueLayout.JAVA_INT, 0, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);
+            layoutInfo.set(ValueLayout.JAVA_INT, 8, 3);
+            layoutInfo.set(ValueLayout.ADDRESS, 16, bindings);
+
+            long[] outLayout = new long[1];
+            int result = (int) VulkanFFMBinding.getVkCreateDescriptorSetLayout()
+                .invoke(device, layoutInfo.address(), 0L, outLayout);
+            if (result != VK_SUCCESS) return false;
+            bindlessSetLayout.set(outLayout[0]);
+
+            var allocInfo = arena.allocate(32);
+            allocInfo.set(ValueLayout.JAVA_INT, 0, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
+            allocInfo.set(ValueLayout.JAVA_LONG, 8, pool);
+            allocInfo.set(ValueLayout.JAVA_INT, 16, 1);
+            allocInfo.set(ValueLayout.JAVA_LONG, 24, outLayout[0]);
+
+            long[] outSet = new long[1];
+            result = (int) VulkanFFMBinding.getVkAllocateDescriptorSets()
+                .invoke(device, allocInfo.address(), 0L, outSet);
+            if (result == VK_SUCCESS) {
+                bindlessDescriptorSet.set(outSet[0]);
+                LOGGER.info("Bindless DescriptorSet allocated: layout=0x"
+                    + Long.toHexString(outLayout[0])
+                    + " set=0x" + Long.toHexString(outSet[0]));
+                return true;
+            }
+            return false;
+        } catch (Throwable t) {
+            LOGGER.warning("allocateBindlessSet failed: " + t.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 更新 Bindless DescriptorSet 中的 StorageBuffer binding (binding=0)
+     *
+     * @param buffers   长整型数组 [handle, offset, range, handle, offset, range, ...]
+     * @param count     要写入的 buffer 数量
+     */
+    public static boolean updateBindlessStorageBuffers(long[] buffers, int count) {
+        long set = bindlessDescriptorSet.get();
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (set == 0L || device == 0L || buffers == null || count == 0) return false;
+
+        try (var arena = Arena.ofConfined()) {
+            int structSize = 40;
+            var writes = arena.allocate((long) count * structSize);
+            for (int i = 0; i < count; i++) {
+                long offset = (long) i * structSize;
+                writes.set(ValueLayout.JAVA_LONG, offset, set);
+                writes.set(ValueLayout.JAVA_INT, offset + 8, 0);
+                writes.set(ValueLayout.JAVA_INT, offset + 12, 0);
+                writes.set(ValueLayout.JAVA_INT, offset + 16, 1);
+                writes.set(ValueLayout.JAVA_INT, offset + 20, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+                writes.set(ValueLayout.JAVA_LONG, offset + 24, buffers[i * 3]);
+                writes.set(ValueLayout.JAVA_LONG, offset + 32, buffers[i * 3 + 1]);
+            }
+            VulkanFFMBinding.getVkUpdateDescriptorSets().invoke(device, count, writes.address(), 0, 0L);
+            return true;
+        } catch (Throwable t) {
+            LOGGER.warning("updateBindlessStorageBuffers failed: " + t.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 绑定 Bindless DescriptorSet 到命令缓冲区
+     */
+    public static boolean bindBindlessSet(long cmdBuf, long pipelineLayout) {
+        long set = bindlessDescriptorSet.get();
+        if (set == 0L || cmdBuf == 0L || pipelineLayout == 0L) return false;
         try {
-            VulkanFFMBinding.getVkDestroyDescriptorPool()
-                .invoke(device, descriptorPool.get(), 0L);
-            descriptorPool.set(0L);
-            created.set(false);
-        } catch (Throwable ignored) {}
+            VulkanFFMBinding.getVkCmdBindDescriptorSets().invoke(
+                cmdBuf, 0, pipelineLayout, 0, 1, set, 0, 0L);
+            return true;
+        } catch (Throwable t) {
+            LOGGER.warning("bindBindlessSet failed: " + t.getMessage());
+            return false;
+        }
+    }
+
+    // ==================== 清理 ====================
+
+    public static void destroy() {
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L) return;
+
+        long layout = bindlessSetLayout.getAndSet(0L);
+        if (layout != 0L) {
+            try {
+                VulkanFFMBinding.getVkDestroyDescriptorSetLayout().invoke(device, layout, 0L);
+            } catch (Throwable ignored) {}
+        }
+
+        long pool = descriptorPool.getAndSet(0L);
+        if (pool != 0L) {
+            try {
+                VulkanFFMBinding.getVkDestroyDescriptorPool().invoke(device, pool, 0L);
+            } catch (Throwable ignored) {}
+        }
+        created.set(false);
+        bindlessInit.set(false);
     }
 }

@@ -228,7 +228,7 @@ public final class LodCullingComputePass {
 
     static long getVkDevice() { return vkDevice; }
     static long getCommandPool() { return commandPool; }
-    static long getFence() { return fence; }
+    public static long getFence() { return fence; }
     static long getComputeQueue() { return computeQueue; }
     static void setVkDevice(long v) { vkDevice = v; }
     static void setCommandPool(long v) { commandPool = v; }
@@ -2134,33 +2134,50 @@ public final class LodCullingComputePass {
         }
     }
 
+    // ==================== 运行时可配参数 ====================
+
+    /** 活跃物体数量（可由外部设置，用于 Compute Dispatch 工作组大小计算） */
+    private static volatile int activeObjectCount = 1024;
+
+    /**
+     * 设置活跃物体数量
+     */
+    public static void setActiveObjectCount(int count) {
+        activeObjectCount = Math.max(1, count);
+    }
+
     // ==================== 屏障与同步 ====================
 
     /**
      * 获取当前渲染目标的显示宽度
      */
     private static int getDisplayWidth() {
-        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
-        if (device != 0L) return 1920;
-        return 1920;
+        try {
+            var toolkit = java.awt.Toolkit.getDefaultToolkit();
+            return toolkit.getScreenSize().width;
+        } catch (Throwable t) {
+            // headless 环境回退 1920
+            return 1920;
+        }
     }
 
     /**
      * 获取当前渲染目标的显示高度
      */
     private static int getDisplayHeight() {
-        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
-        if (device != 0L) return 1080;
-        return 1080;
+        try {
+            var toolkit = java.awt.Toolkit.getDefaultToolkit();
+            return toolkit.getScreenSize().height;
+        } catch (Throwable t) {
+            return 1080;
+        }
     }
 
     /**
      * 获取活跃物体的数量（用于计算 Compute Dispatch 工作组大小）
      */
     private static int getActiveObjectCount() {
-        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
-        if (device != 0L) return 1024;
-        return 1024;
+        return activeObjectCount;
     }
 
     /**

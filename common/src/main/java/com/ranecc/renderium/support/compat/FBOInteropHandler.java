@@ -5,7 +5,13 @@ package com.ranecc.renderium.support.compat;
 
 import com.ranecc.renderium.tech.stub.renderbackendproxy.RenderBackendProxy;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 import java.util.logging.Logger;
+import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 
 /**
@@ -66,6 +72,7 @@ public final class FBOInteropHandler {
     // OpenGL 互操作句柄（初始化后不变）
     private long glToVulkanSemaphore = 0L;
     private long vulkanToGLSemaphore = 0L;
+    private long deviceHandle = 0L;
     private int pboRead = 0;
     private int pboWrite = 0;
 
@@ -213,10 +220,43 @@ public final class FBOInteropHandler {
     }
 
     private void initializeSynchronization() {
-        if (com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) {
-            glToVulkanSemaphore = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            vulkanToGLSemaphore = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getComputeQueue();
-        } else {
+        deviceHandle = VulkanDeviceHolder.getInstance().getDevice();
+        if (deviceHandle == 0L) {
+            glToVulkanSemaphore = 0L;
+            vulkanToGLSemaphore = 0L;
+            return;
+        }
+        if (!VulkanFFMBinding.isFfmLoaded()) {
+            glToVulkanSemaphore = 0L;
+            vulkanToGLSemaphore = 0L;
+            return;
+        }
+        MethodHandle vkCreateSemaphore = VulkanFFMBinding.getVkCreateSemaphore();
+        if (vkCreateSemaphore == null) {
+            glToVulkanSemaphore = 0L;
+            vulkanToGLSemaphore = 0L;
+            return;
+        }
+        try (Arena arena = Arena.ofConfined()) {
+            // VkSemaphoreCreateInfo: [sType(4B), padding(4B), pNext(8B), flags(4B)] = 20B padded to 24B
+            MemorySegment ciAligned = arena.allocate(24);
+            ciAligned.set(ValueLayout.JAVA_INT, 0, 4);     // sType
+            ciAligned.set(ValueLayout.ADDRESS, 8, MemorySegment.NULL); // pNext
+            ciAligned.set(ValueLayout.JAVA_INT, 20, 0);    // flags = 0 (binary semaphore)
+
+            var outSem = arena.allocate(ValueLayout.JAVA_LONG);
+
+            int r1 = (int) vkCreateSemaphore.invokeExact(deviceHandle, ciAligned.address(), 0L, outSem.address());
+            glToVulkanSemaphore = r1 == 0 ? outSem.get(ValueLayout.JAVA_LONG, 0) : 0L;
+
+            int r2 = (int) vkCreateSemaphore.invokeExact(deviceHandle, ciAligned.address(), 0L, outSem.address());
+            vulkanToGLSemaphore = r2 == 0 ? outSem.get(ValueLayout.JAVA_LONG, 0) : 0L;
+
+            LOGGER.fine(String.format(
+                "[FBOInterop] Semaphores created: gl→vk=0x%x, vk→gl=0x%x",
+                glToVulkanSemaphore, vulkanToGLSemaphore));
+        } catch (Throwable t) {
+            LOGGER.warning("initializeSynchronization failed: " + t.getMessage());
             glToVulkanSemaphore = 0L;
             vulkanToGLSemaphore = 0L;
         }

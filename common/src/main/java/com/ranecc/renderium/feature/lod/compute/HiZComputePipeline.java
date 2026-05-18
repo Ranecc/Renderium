@@ -150,6 +150,7 @@ public final class HiZComputePipeline {
     public static long getHizOcclusionDescSet() { return hizOcclusionDescSet; }
     public static byte[] getHizBuildSpirv() { return HIZ_BUILD_SPIRV; }
     public static byte[] getHizOcclusionSpirv() { return HIZ_OCCLUSION_SPIRV; }
+    public static boolean isInitialized() { return hizBuildPipeline != 0L && hizOcclusionPipeline != 0L; }
     public static int getMaxHiZMipLevels() { return MAX_HIZ_MIP_LEVELS; }
 
     // ==================== SPIR-V 加载 ====================
