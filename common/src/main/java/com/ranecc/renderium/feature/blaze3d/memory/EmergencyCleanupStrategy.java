@@ -7,6 +7,10 @@ import java.util.List;
 import java.util.concurrent.*;
 import java.util.logging.Logger;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
+
 /**
  * 紧急清理策略 (临界状态: ≥97%)。
  * <p>
@@ -205,11 +209,71 @@ public final class EmergencyCleanupStrategy implements CleanupStrategy {
     }
 
     // ==================== 资源清理操作 ====================
-    private boolean evictTexture(long id) { /* TODO */ return true; }
-    private boolean unloadChunk(long id) { /* TODO */ return true; }
-    private boolean evictShader(long id) { /* TODO */ return true; }
-    private boolean releaseBuffer(long id) { /* TODO */ return true; }
-    private boolean evictModel(long id) { /* TODO */ return true; }
+
+    /**
+     * 紧急驱逐纹理资源（释放对应的 VkImageView）
+     */
+    private boolean evictTexture(long id) {
+        long device = getVkDevice();
+        if (device == 0L) return false;
+        VulkanGraphicsHelper.destroyImageView(device, id);
+        LOGGER.fine("[Emergency] 纹理已驱逐: id=0x" + Long.toHexString(id));
+        return true;
+    }
+
+    /**
+     * 紧急卸载块网格（释放对应的 VkBuffer）
+     */
+    private boolean unloadChunk(long id) {
+        long device = getVkDevice();
+        if (device == 0L) return false;
+        VulkanBufferHelper.destroyBuffer(id, 0L);
+        LOGGER.fine("[Emergency] 块网格已卸载: id=0x" + Long.toHexString(id));
+        return true;
+    }
+
+    /**
+     * 紧急驱逐着色器（释放对应的 VkShaderModule）
+     */
+    private boolean evictShader(long id) {
+        long device = getVkDevice();
+        if (device == 0L) return false;
+        VulkanGraphicsHelper.destroyShaderModule(device, id);
+        LOGGER.fine("[Emergency] 着色器已驱逐: id=0x" + Long.toHexString(id));
+        return true;
+    }
+
+    /**
+     * 紧急释放临时缓冲（释放对应的 VkBuffer + VkDeviceMemory）
+     */
+    private boolean releaseBuffer(long id) {
+        long device = getVkDevice();
+        if (device == 0L) return false;
+        VulkanBufferHelper.destroyBuffer(id, 0L);
+        LOGGER.fine("[Emergency] 缓冲已释放: id=0x" + Long.toHexString(id));
+        return true;
+    }
+
+    /**
+     * 紧急驱逐实体模型（释放对应的 VkBuffer）
+     */
+    private boolean evictModel(long id) {
+        long device = getVkDevice();
+        if (device == 0L) return false;
+        VulkanBufferHelper.destroyBuffer(id, 0L);
+        LOGGER.fine("[Emergency] 模型已驱逐: id=0x" + Long.toHexString(id));
+        return true;
+    }
+
+    /**
+     * 获取 VkDevice 句柄（通过 VulkanDeviceHolder）
+     */
+    private static long getVkDevice() {
+        if (!VulkanDeviceHolder.isAvailable()) {
+            return 0L;
+        }
+        return VulkanDeviceHolder.getInstance().getVkDeviceHandle();
+    }
 
     /** 估算总预算 */
     private long estimateTotalBudget() {

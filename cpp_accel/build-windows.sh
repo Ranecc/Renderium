@@ -1,10 +1,10 @@
 #!/bin/bash
-# MinGW-w64 交叉编译 renderium_accel Windows DLL
+# MinGW-w64 交叉编译 renderium_accel Windows DLL (适配当前项目结构)
 set -e
 
-SRC="/mnt/e/DEV/Renderium/experiments/renderium_accel"
+SRC="/mnt/e/DEV/Renderium-shader/Renderium/cpp_accel"
 BUILD="$SRC/build-windows-mingw"
-DST="/mnt/e/DEV/Renderium/renderium/common/src/main/resources/native/windows-x64"
+DST="/mnt/e/DEV/Renderium-shader/Renderium/common/src/main/resources/native/windows-x64"
 
 echo "========================================"
 echo "  Cross-compiling for Windows x64"
@@ -43,7 +43,6 @@ echo ""
 echo "[3/3] Copying to resources..."
 mkdir -p "$DST"
 
-# 查找生成的DLL
 DLL_FILE=$(find "$BUILD" -name "renderium_accel.dll" -type f 2>/dev/null | head -1)
 if [ -n "$DLL_FILE" ]; then
     cp "$DLL_FILE" "$DST/"
@@ -51,16 +50,15 @@ if [ -n "$DLL_FILE" ]; then
     ls -lh "$DST/renderium_accel.dll"
     echo "DONE"
 else
-    # 也可能是 librenderium_accel.dll (MinGW命名)
     LIB_DLL=$(find "$BUILD" -name "*.dll" -type f 2>/dev/null | head -1)
     if [ -n "$LIB_DLL" ]; then
         cp "$LIB_DLL" "$DST/"
-        echo "  DLL: $(basename $LIB_DLL) (renamed to renderium_accel.dll)"
         mv "$DST/$(basename $LIB_DLL)" "$DST/renderium_accel.dll" 2>/dev/null || true
         ls -lh "$DST/"*.dll 2>/dev/null
         echo "DONE"
     else
-        echo "ERROR: No DLL found in build output!"
+        echo "ERROR: No DLL found!"
         find "$BUILD" -name "*.dll" -o -name "*.so" -o -name "*.a" 2>/dev/null | head -5
+        exit 1
     fi
 fi

@@ -2,25 +2,32 @@
 
 现代 Minecraft 渲染扩展，支持 Vulkan、DLSS 和高级优化技术。
 
+> **开发状态：早期开发 / Early Development**
+>
+> 本项目处于活跃开发阶段，大量代码为骨架实现或占位代码。许多声明的功能尚未完全实现或仅在模拟状态下工作。
+
+---
+
 ## 特性
 
-- **扩展点**：扩展 Minecraft 26.2+ 官方 Vulkan 渲染器
-- **超分辨率**：通过 NVIDIA Streamline SDK 支持 NVIDIA DLSS、Intel XeSS、AMD FSR
-- **帧生成**：支持 DLSS 帧生成和 FSR 帧生成技术
-- **NVIDIA Reflex**：支持低延迟模式，提升竞技游戏体验
-- **高级剔除**：视锥剔除、遮挡剔除（基于 BFS）和 GPU 驱动 LOD
-- **自定义后处理**：将自定义后处理效果插入渲染管线
-- **双平台**：同时支持 NeoForge 和 Fabric
-- **双模式**：独立模式和 Sodium 兼容模式
-- **C++ 加速**：可选原生库加速性能关键算法
+- **扩展点**：设计用于扩展 Minecraft 26.2+ 官方 Vulkan 渲染器
+- **超分辨率**：DLSS / XeSS / FSR 适配器框架（通过 NVIDIA Streamline SDK）
+- **帧生成**：DLSS Frame Generation 和 FSR Frame Generation 适配器框架
+- **高级剔除**：视锥剔除、BFS 遮挡剔除框架、HiZ 管理
+- **自定义后处理**：着色器系统与后处理管线框架
+- **双平台**：Fabric（已启用）/ NeoForge（计划中）
+- **双模式**：独立模式和 Sodium 兼容模式（框架层）
+- **C++ 加速**：可选原生库接口（预留）
 
 ## 环境要求
 
 - Java 25+
-- Minecraft 26.2-snapshot-3+
-- NeoForge 21.11.0-beta+ 或 Fabric Loader 0.18.5+
-- NVIDIA RTX / AMD RDNA2+ / Intel Arc GPU（用于超分辨率功能）
+- Minecraft 26.2-snapshot-7+
+- Fabric Loader 0.18.5+
 - Vulkan 兼容 GPU 和驱动程序
+- NVIDIA RTX / AMD RDNA2+ / Intel Arc GPU（用于超分辨率功能，需 Streamline SDK）
+
+> **NeoForge 说明**：由于 NeoForge 21.x 暂不支持 Minecraft 26.2-snapshot，NeoForge 模块当前已禁用，待上游支持后启用。
 
 ## 项目结构
 
@@ -28,38 +35,35 @@
 Renderium/
 ├── common/                          # 平台无关核心
 │   └── src/main/java/com/ranecc/renderium/
-│       ├── application/             # 应用层 (DDD Application Layer)
-│       │   ├── controller/          # 入口控制器
-│       │   ├── core/               # 核心管理器 (RenderiumCore, CoreState)
-│       │   ├── orchestrator/       # 帧处理器与生命周期编排
-│       │   └── usecase/            # 用例 (Configure/Initialize/ProcessFrame)
-│       ├── domain/                  # 领域层 (DDD Domain Layer)
-│       │   ├── constant/           # 配置/Vulkan/FFI 常量
-│       │   ├── enums/              # 35+ 枚举 (QualityLevel, SRTechnology, ShaderPreset 等)
-│       │   ├── model/              # 领域模型 (RenderContext, CullingContext, VisibilityResult 等)
-│       │   │   └── config/         # 配置聚合根 (RenderiumConfig) 与子配置
-│       │   └── service/            # 领域服务 (BFS算法, LOD计算, Kahan累加, 收敛监控)
-│       └── feature/                 # 功能模块层
-│           ├── blaze3d/            # Blaze3D 优化器 (VMA内存, GPU剔除, 着色器管线)
-│           ├── culling/            # 剔除系统 (BFS遮挡剔除, 视锥剔除, HiZ剔除)
-│           ├── intercept/          # 渲染拦截层 (模组检测, 预/后拦截, 处理器)
-│           ├── lod/                # LOD系统 (GPU驱动LOD, Voxy风格, 过渡处理)
-│           ├── module/             # 模块系统 (ModuleMetadata, RenderiumModule)
-│           ├── pipeline/           # 渲染管线 (PipelineNode, 节点注册表, 策略, 参数旋钮)
-│           ├── raytracing/         # 光线追踪模块
-│           ├── renderopt/          # 渲染优化 (批处理, 网格构建, 顶点压缩)
-│           └── shader/             # 着色器系统 (CompShader, SPIR-V, 工厂, 注册表, 工作台)
+│       ├── application/             # 应用层（核心生命周期管理）
+│       ├── domain/                  # 领域层（枚举、配置模型）
+│       ├── feature/                 # 功能模块层
+│       │   ├── blaze3d/            # Blaze3D 优化器框架
+│       │   ├── culling/            # 剔除系统框架
+│       │   ├── intercept/          # 渲染拦截层
+│       │   ├── pipeline/           # 渲染管线框架
+│       │   └── shader/             # 着色器系统框架
+│       ├── infrastructure/          # 基础设施层
+│       │   ├── config/             # 配置管理
+│       │   ├── gpu/                # GPU 资源管理
+│       │   ├── nativeLib/          # 原生库 FFI 绑定
+│       │   └── vulkan/             # Vulkan 辅助工具
+│       ├── presentation/            # 表现层（UI 系统）
+│       ├── tech/                    # 技术集成层
+│       │   ├── dlss/               # DLSS 集成框架
+│       │   ├── framegen/           # 帧生成框架
+│       │   ├── reflex/             # Reflex 低延迟框架
+│       │   ├── streamline/         # Streamline SDK 绑定
+│       │   └── superres/           # 超分辨率适配器
+│       └── platform/               # 平台抽象层
 ├── fabric/                          # Fabric 专属实现
-│   └── src/main/java/com/ranecc/renderium/fabric/
-└── neoforge/                        # NeoForge 专属实现
-    └── src/main/java/com/ranecc/renderium/neoforge/
+└── neoforge/                        # NeoForge 专属实现（暂禁用）
 ```
 
 ## 环境搭建
 
 ### 1. 安装依赖
 
-确保你已安装：
 - JDK 25+ (https://adoptium.net/)
 - Gradle 9.4+（或使用包含的 wrapper）
 
@@ -69,194 +73,48 @@ Renderium/
 # 编译所有模块
 ./gradlew build
 
-# 或编译特定平台
+# 仅编译 Fabric
 ./gradlew :fabric:build
-./gradlew :neoforge:build
 ```
 
 ### 3. 运行开发客户端
 
 ```bash
-# Fabric
 ./gradlew :fabric:runClient
-
-# NeoForge
-./gradlew :neoforge:runClient
 ```
 
-## 扩展点
+## 核心 API
 
-### RenderExtension
+### RenderiumCore
 
-实现 `RenderExtension` 接口以添加自定义渲染功能：
+中央管理器，提供生命周期控制：
 
 ```java
-public class MyExtension implements RenderExtension {
-    @Override
-    public String getName() {
-        return "MyExtension";
-    }
-
-    @Override
-    public int getPriority() {
-        return 500; // 数值越小越早执行
-    }
-
-    @Override
-    public void onVulkanPipelineInit(long vulkanDevice) {
-        // 在 Vulkan 管线初始化后调用
-    }
-
-    @Override
-    public void onFrameBegin(int frameNumber, float deltaTime) {
-        // 在每帧开始时调用
-    }
-
-    @Override
-    public void onOpaquePassRendered(long commandBuffer, long depthTexture, long colorTexture) {
-        // 在不透明渲染完成后、后处理前调用
-    }
-
-    @Override
-    public void onPostProcessingBegin(long commandBuffer, long sceneTexture) {
-        // 在后处理链开始时调用
-    }
-
-    @Override
-    public void onBeforeOutput(long commandBuffer, long outputTexture, int displayWidth, int displayHeight) {
-        // 在最终输出到屏幕前调用
-    }
-}
+RenderiumCore core = RenderiumCore.getInstance();
+core.initialize(deviceHandle);      // 初始化
+core.processFrame(deltaTime);       // 帧处理
+core.shutdown();                    // 关闭
 ```
-
-注册你的扩展：
-
-```java
-RenderiumCore.getInstance().registerExtension(new MyExtension());
-```
-
-### FrustumCuller
-
-实现 `FrustumCuller` 接口以使用自定义剔除算法：
-
-```java
-public class MyCuller implements FrustumCuller {
-    @Override
-    public void initialize(int maxDrawDistance) {
-        // 初始化剔除资源
-    }
-
-    @Override
-    public void updateCamera(float cameraX, float cameraY, float cameraZ,
-                            float pitch, float yaw, float fov) {
-        // 更新相机视锥体
-    }
-
-    @Override
-    public boolean isVisible(float minX, float minY, float minZ,
-                            float maxX, float maxY, float maxZ) {
-        // 自定义可见性测试
-        return true;
-    }
-
-    @Override
-    public List<Integer> computeVisibleChunks(List<ChunkBounds> chunks,
-                                               float cameraX, float cameraY, float cameraZ) {
-        // 返回可见区块索引列表
-        return List.of();
-    }
-}
-```
-
-### PostProcessor
-
-实现 `PostProcessor` 接口以添加自定义后处理效果：
-
-```java
-public class MyEffect implements PostProcessor {
-    @Override
-    public String getName() {
-        return "MyEffect";
-    }
-
-    @Override
-    public int getOrder() {
-        return 500; // 执行顺序
-    }
-
-    @Override
-    public void process(long commandBuffer, TextureInputs inputs,
-                       TextureOutput output, int width, int height) {
-        // 应用自定义后处理
-    }
-}
-```
-
-## API 文档
-
-### 核心类
-
-- `RenderiumCore` - 所有扩展和渲染技术的中心管理器
-- `RenderExtension` - 扩展点接口
-- `FrustumCuller` - 自定义剔除接口
-- `PostProcessor` - 后处理效果接口
-
-### 超分辨率
-
-- `SuperResolutionManager` - 管理 DLSS/FSR/XeSS 技术
-- `DLSSAdapter` - NVIDIA DLSS 集成
-- `FSRAdapter` - AMD FSR 集成
-- `XeSSAdapter` - Intel XeSS 集成
-
-### 帧生成
-
-- `FrameGeneratorManager` - 管理帧生成技术
-- `DLSSFGAdapter` - DLSS 帧生成
-- `FSRFGAdapter` - FSR 帧生成
-
-### Reflex 低延迟
-
-- `ReflexManager` - NVIDIA Reflex 低延迟模式
-
-### 剔除
-
-- `CullingController` - 协调多种剔除策略
-- `BfsOcclusion` - 基于 BFS 的遮挡剔除
-
-### Streamline SDK
-
-- `SLContext` - Streamline SDK 上下文管理
-- `VulkanStreamlineBridge` - Vulkan-Streamline 集成
 
 ### 配置
 
-- `RenderiumConfig` - 主配置类
+- 主配置类：`RenderiumConfig`
 - 配置文件位置：`<游戏目录>/config/renderium.properties`
 
 ## 双模式系统
 
 ### 独立模式
-独立运行，无需 Sodium，可使用完整功能集。
+独立运行，无需 Sodium。
 
 ### 兼容模式（有 Sodium）
-通过 Mixin 注入扩展 Sodium 设置界面，动态链接模式，兼容其他模组生态。
+通过 Mixin 注入扩展 Sodium 设置界面（框架预留）。
 
-模式检测：
 ```java
 RenderiumDualModeManager dualMode = RenderiumDualModeManager.getInstance();
 if (dualMode.isPerformanceModPresent()) {
-    // Sodium 存在，运行在兼容模式
+    // Sodium 检测（当前为占位实现）
 }
 ```
-
-## 与 Minecraft 26.2 集成
-
-Minecraft 26.2+ 包含官方 Vulkan 支持。Renderium 通过以下方式扩展它：
-
-1. **Mixin 注入**：在关键点拦截 Minecraft 的渲染管线
-2. **扩展回调**：在适当时机通知已注册的扩展
-3. **资源访问**：提供对 Vulkan 纹理和命令缓冲区的访问
-4. **管线扩展**：允许插入自定义渲染通道
 
 ## 调试模式
 
@@ -270,11 +128,18 @@ Minecraft 26.2+ 包含官方 Vulkan 支持。Renderium 通过以下方式扩展�
 -Drenderium.debug.verbose=true
 ```
 
-## AI 辅助声明
+## AI 辅助声明与开发状态
 
-本项目大量使用 AI 辅助开发，部分代码可能存在错漏、混乱或与其他模块不一致的情况。如发现问题，欢迎提交 Issue 或 Pull Request 指正。
+**本项目大量使用 AI 辅助开发。** 代码库中存在以下情况：
 
-特别欢迎关于兼容性的 Issue（模组兼容、Minecraft 版本兼容、显卡/驱动兼容等），只要有余力就会跟进适配。
+- **骨架代码**：大量方法为占位实现，直接返回 `true`/`false`/`null`
+- **硬编码值**：FFM 结构体偏移量、分辨率缩放比例等
+- **未实现功能**：模组检测、原生加速库、部分 Streamline SDK 调用链
+- **接口漂移**：README 历史版本中的部分 API 示例与实际代码不匹配
+
+详见 [骨架与缺失清单](.context/Renderium/skeleton-and-gaps.md)。
+
+如发现问题，欢迎提交 Issue 或 Pull Request 指正。特别欢迎关于兼容性的 Issue（模组兼容、Minecraft 版本兼容、显卡/驱动兼容等）。
 
 ## 许可证与合规
 
@@ -288,13 +153,7 @@ Minecraft 26.2+ 包含官方 Vulkan 支持。Renderium 通过以下方式扩展�
 | NVIDIA DLSS SDK | NVIDIA RTX SDKs 许可 | DLSS 超分辨率和帧生成 |
 | LWJGL 3 | BSD 许可证 | Java 原生绑定 |
 | FastUtil | Apache 2.0 | 高性能集合 |
-| Sodium（可选） | LGPL-3.0 许可证 | 可选运行时依赖，通过 Mixin 动态链接 |
-
-### 许可证合规声明
-
-- **Streamline SDK**：以原版、未修改形式分发，包含完整版权声明
-- **DLSS/DLSS-G**：受 NVIDIA RTX SDKs 许可约束，作为具有实质功能的应用程序分发
-- **Sodium**：可选依赖，非衍生作品。LGPL-3.0 第 4 节允许动态链接
+| Sodium（可选） | LGPL-3.0 许可证 | 可选运行时依赖，动态链接 |
 
 ## 免责声明
 

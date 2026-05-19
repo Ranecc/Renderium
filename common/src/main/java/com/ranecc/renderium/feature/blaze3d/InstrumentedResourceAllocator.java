@@ -577,90 +577,99 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
 
     // ==================== 内部方法：池化逻辑 ====================
 
+    // ==================== 自定义池跟踪 ====================
+
+    /** 池化资源跟踪表 (resourceId hash → poolTag) */
+    private final java.util.concurrent.ConcurrentHashMap<Long, PoolTag> pooledResources = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** 资源 ID 生成器 */
+    private final java.util.concurrent.atomic.AtomicLong resourceIdGenerator = new java.util.concurrent.atomic.AtomicLong(1);
+
+    /** 池化资源的最小哈希分布步长 */
+    private static final long POOL_HASH_STRIDE = 2654435761L;
+
+    /**
+     * 池化标记：记录资源来自哪个 Arena 类型
+     */
+    private enum PoolTag {
+        PER_FRAME,
+        RING_BUFFER,
+        POOL_BLOCK
+    }
+
     /**
      * 判断是否应该尝试自定义池化路径
-     *
-     * @return 如果满足所有池化条件则返回 true
      */
     private boolean shouldTryCustomPooling() {
-        // 自定义池化未实现
-        return false;
+        return customPoolingEnabled.get()
+                && memoryOptimizer != null
+                && memoryOptimizer.isEnabled()
+                && !mojangNativePoolingDetected;
     }
 
     /**
      * 尝试从自定义池中获取资源
-     * <p>
-     * 根据 descriptor 的特征选择合适的 Arena 类型：
-     * <ul>
-     *   <li>临时数据（Staging/Uniform）→ Per-Frame Arena</li>
-     *   <li>动态 Uniform/Vertex → Ring Buffer Arena</li>
-     *   <li>固定大小块 → Pool Arena</li>
-     * </ul>
-     *
-     * @param <T>        资源类型
-     * @param descriptor 资源描述符
-     * @return 成功从池中获取返回资源，否则返回 null（表示应该委托给原始分配器）
      */
     @SuppressWarnings("unchecked")
     private <T> T tryAcquireFromCustomPool(ResourceDescriptor<T> descriptor) {
-        // TODO: 根据 descriptor 的具体类型和用途选择合适的 Arena
-        // 当前版本仅提供框架，实际池化逻辑将在 Phase 3 完善
-        //
-        // 示例伪代码：
-        // if (isTemporaryResource(descriptor)) {
-        //     ArenaAllocation alloc = memoryOptimizer.allocateFromFrame(size, alignment);
-        //     if (alloc != null) {
-        //         return wrapArenaAllocation(alloc, descriptor);
-        //     }
-        // }
-        //
-        // if (isDynamicUniformOrVertex(descriptor)) {
-        //     RingAllocation alloc = memoryOptimizer.allocateFromRing(size, alignment);
-        //     return wrapRingAllocation(alloc, descriptor);
-        // }
-        //
-        // if (isFixedBlockSizeResource(descriptor)) {
-        //     BlockAllocation alloc = memoryOptimizer.allocateFromPool();
-        //     if (alloc != null) {
-        //         return wrapBlockAllocation(alloc, descriptor);
-        //     }
-        // }
+        long size = estimateResourceSize(descriptor);
+        if (size <= 0) return null;
 
-        return null; // 当前版本暂不支持实际池化，返回 null 触发委托
+        // 分配资源 ID（用于池化标记）
+        long resourceTag = resourceIdGenerator.getAndIncrement();
+
+        // 尝试从 Pool Arena 获取（适用固定大小块）
+        if (size <= MemoryOptimizer.DEFAULT_POOL_BLOCK_SIZE) {
+            var alloc = memoryOptimizer.allocateFromPool();
+            if (alloc != null) {
+                pooledResources.put(resourceTag * POOL_HASH_STRIDE, PoolTag.POOL_BLOCK);
+                return (T) alloc;
+            }
+        }
+
+        // 尝试从 Per-Frame Arena 获取（适用临时数据）
+        var frameAlloc = memoryOptimizer.allocateFromFrame(size, 16L);
+        if (frameAlloc != null) {
+            pooledResources.put(resourceTag * POOL_HASH_STRIDE, PoolTag.PER_FRAME);
+            return (T) frameAlloc;
+        }
+
+        return null;
     }
 
     /**
      * 尝试将资源返回到自定义池
-     *
-     * @param <T>      资源类型
-     * @param resource 资源实例
-     * @return 如果成功返回到池中返回 true，否则返回 false（应该委托给原始释放器）
      */
     private <T> boolean tryReleaseToCustomPool(T resource) {
-        // TODO: 判断资源是否来自我们的自定义池
-        // 如果是，则返回对应的 Arena
-        //
-        // 示例伪代码：
-        // if (isPooledResource(resource)) {
-        //     PoolEntry entry = unwrapResource(resource);
-        //     if (entry instanceof FrameArenaAllocation) {
-        //         // Per-Frame Arena 的资源无需手动释放，帧结束时自动重置
-        //         return true;
-        //     }
-        //     if (entry instanceof RingBufferAllocation) {
-        //         // Ring Buffer 无需手动释放，自动推进
-        //         return true;
-        //     }
-        //     if (entry instanceof PoolArenaBlock) {
-        //         memoryOptimizer.freePoolBlock(entry.getBlockIndex());
-        //         return true;
-        //     }
-        // }
+        long resourceHash = (long) System.identityHashCode(resource) * POOL_HASH_STRIDE;
+        PoolTag tag = pooledResources.remove(resourceHash);
+        if (tag == null) return false;
 
-        return false; // 当前版本暂不支持实际池化回收
+        // Per-Frame 和 Ring Buffer Arena 不需要手动释放
+        if (tag == PoolTag.POOL_BLOCK && resource instanceof MemoryOptimizer.BlockAllocation) {
+            memoryOptimizer.freePoolBlock(((MemoryOptimizer.BlockAllocation) resource).blockIndex);
+        }
+        return true;
     }
 
-    // ==================== 内部方法：Mojang 池化检测 ====================
+    /**
+     * 估算资源大小（从 descriptor 信息推断）
+     */
+    private long estimateResourceSize(ResourceDescriptor<?> descriptor) {
+        if (descriptor == null) return -1;
+        try {
+            String descStr = descriptor.toString().toLowerCase();
+            if (descStr.contains("uniform")) return 256L;
+            if (descStr.contains("vertex")) return 4096L;
+            if (descStr.contains("index")) return 2048L;
+            if (descStr.contains("staging")) return 65536L;
+            if (descStr.contains("storage")) return 262144L;
+            if (descStr.contains("texture") || descStr.contains("image")) return 4194304L;
+            return 4096L;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
 
     /**
      * 检测 Mojang 是否已实现原生池化
@@ -762,17 +771,6 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
         }
     }
 
-    /**
-     * 估算资源大小（字节）
-     * <p>
-     * 由于 ResourceDescriptor 可能不直接暴露大小信息，
-     * 这里使用保守估算或返回 0 表示未知。
-     *
-     * @param descriptor 资源描述符
-     * @return 估算的字节数，0 表示未知
-     */
-    private long estimateResourceSize(ResourceDescriptor<?> descriptor) {
-        // 未实现，无法估算
-        return -1;
-    }
+    // ==================== 内部辅助方法 ====================
+
 }

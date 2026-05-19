@@ -365,20 +365,53 @@ public final class Blaze3DOptimizerPluginLoader {
 
     /**
      * 发现可用插件列表
-     * <p>扫描插件目录或使用服务加载机制。
+     * <p>通过 Java ServiceLoader 机制 + plugins/ 目录 JAR 扫描发现插件。
      *
      * @return 候选插件列表
      */
     private List<Blaze3DOptimizerPlugin> discoverPlugins() {
-        // TODO: 实现实际的插件发现逻辑
-        // 可能的实现方式：
-        // 1. 扫描 plugins/ 目录下的 JAR 文件
-        // 2. 使用 Java ServiceLoader
-        // 3. 通过 SPI 机制注册
-        // 4. 硬编码已知插件（开发阶段）
+        List<Blaze3DOptimizerPlugin> candidates = new ArrayList<>();
 
-        LOGGER.fine("Plugin discovery not yet implemented - returning empty list");
-        return Collections.emptyList();
+        // 方式1: 通过 ServiceLoader 发现已注册的插件实现
+        try {
+            java.util.ServiceLoader<Blaze3DOptimizerPlugin> serviceLoader =
+                    java.util.ServiceLoader.load(Blaze3DOptimizerPlugin.class);
+            for (Blaze3DOptimizerPlugin plugin : serviceLoader) {
+                candidates.add(plugin);
+                LOGGER.fine("[PluginLoader] ServiceLoader 发现插件: " + plugin.getMetadata().id());
+            }
+        } catch (Exception e) {
+            LOGGER.fine("[PluginLoader] ServiceLoader 插件发现失败: " + e.getMessage());
+        }
+
+        // 方式2: 扫描 pluginsBaseDir 目录下的 JAR 文件
+        if (pluginsBaseDir != null && java.nio.file.Files.exists(pluginsBaseDir)) {
+            try (java.util.stream.Stream<java.nio.file.Path> paths =
+                         java.nio.file.Files.list(pluginsBaseDir)) {
+                paths.filter(p -> p.toString().endsWith(".jar"))
+                     .forEach(jarPath -> {
+                         try (java.net.URLClassLoader jarLoader =
+                                      new java.net.URLClassLoader(
+                                              new java.net.URL[]{jarPath.toUri().toURL()},
+                                              getClass().getClassLoader())) {
+                             java.util.ServiceLoader<Blaze3DOptimizerPlugin> jarServices =
+                                     java.util.ServiceLoader.load(
+                                             Blaze3DOptimizerPlugin.class, jarLoader);
+                             for (Blaze3DOptimizerPlugin plugin : jarServices) {
+                                 candidates.add(plugin);
+                                 LOGGER.fine("[PluginLoader] JAR 发现插件: " + plugin.getMetadata().id() + " from " + jarPath);
+                             }
+                         } catch (Exception e) {
+                             LOGGER.fine("[PluginLoader] 加载插件 JAR 失败: " + jarPath + " - " + e.getMessage());
+                         }
+                     });
+            } catch (Exception e) {
+                LOGGER.fine("[PluginLoader] 扫描插件目录失败: " + e.getMessage());
+            }
+        }
+
+        LOGGER.fine("[PluginLoader] 插件发现完成: 共 " + candidates.size() + " 个候选");
+        return candidates;
     }
 
     /**

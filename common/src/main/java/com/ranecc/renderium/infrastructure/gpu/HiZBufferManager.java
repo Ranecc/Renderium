@@ -5,7 +5,13 @@
 package com.ranecc.renderium.infrastructure.gpu;
 
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 import java.util.logging.Logger;
+
+import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 
 /**
@@ -78,6 +84,128 @@ public final class HiZBufferManager {
 
     /** Hi-Z 最大 Mipmap 层数（与 GLSL shader 和 OcclusionCullConfig 一致） */
     public static final int HIZ_MAX_MIP_LEVELS = 10;
+
+    /** 配置 UBO 大小（192 字节，std140 布局） */
+    private static final long CONFIG_UBO_SIZE = 192;
+
+    // ==================== Vulkan 结构体尺寸（x64 MSVC ABI） ====================
+
+    private static final long SZ_IMAGE_CREATE_INFO = 88;
+    private static final long SZ_IMAGE_VIEW_CREATE_INFO = 80;
+    private static final long SZ_BUFFER_CREATE_INFO = 56;
+    private static final long SZ_MEMORY_ALLOCATE_INFO = 32;
+    private static final long SZ_MEMORY_REQUIREMENTS = 24;
+    private static final long SZ_SAMPLER_CREATE_INFO = 80;
+
+    // ==================== Vulkan 结构体字段偏移 ====================
+
+    // VkImageCreateInfo
+    private static final long OFF_ICI_STYPE = 0;
+    private static final long OFF_ICI_PNEXT = 8;
+    private static final long OFF_ICI_FLAGS = 16;
+    private static final long OFF_ICI_IMAGE_TYPE = 20;
+    private static final long OFF_ICI_FORMAT = 24;
+    private static final long OFF_ICI_EXTENT_WIDTH = 28;
+    private static final long OFF_ICI_EXTENT_HEIGHT = 32;
+    private static final long OFF_ICI_EXTENT_DEPTH = 36;
+    private static final long OFF_ICI_MIP_LEVELS = 40;
+    private static final long OFF_ICI_ARRAY_LAYERS = 44;
+    private static final long OFF_ICI_SAMPLES = 48;
+    private static final long OFF_ICI_TILING = 52;
+    private static final long OFF_ICI_USAGE = 56;
+    private static final long OFF_ICI_SHARING_MODE = 60;
+    private static final long OFF_ICI_QUEUE_FAMILY_INDEX_COUNT = 64;
+    private static final long OFF_ICI_P_QUEUE_FAMILY_INDICES = 72;
+    private static final long OFF_ICI_INITIAL_LAYOUT = 80;
+
+    // VkImageViewCreateInfo
+    private static final long OFF_IVCI_STYPE = 0;
+    private static final long OFF_IVCI_PNEXT = 8;
+    private static final long OFF_IVCI_FLAGS = 16;
+    private static final long OFF_IVCI_IMAGE = 24;
+    private static final long OFF_IVCI_VIEW_TYPE = 32;
+    private static final long OFF_IVCI_FORMAT = 36;
+    private static final long OFF_IVCI_COMPONENTS_R = 40;
+    private static final long OFF_IVCI_COMPONENTS_G = 44;
+    private static final long OFF_IVCI_COMPONENTS_B = 48;
+    private static final long OFF_IVCI_COMPONENTS_A = 52;
+    private static final long OFF_IVCI_SUBRESOURCE_ASPECT_MASK = 56;
+    private static final long OFF_IVCI_SUBRESOURCE_BASE_MIP = 60;
+    private static final long OFF_IVCI_SUBRESOURCE_LEVEL_COUNT = 64;
+    private static final long OFF_IVCI_SUBRESOURCE_BASE_ARRAY = 68;
+    private static final long OFF_IVCI_SUBRESOURCE_LAYER_COUNT = 72;
+
+    // VkBufferCreateInfo
+    private static final long OFF_BCI_STYPE = 0;
+    private static final long OFF_BCI_PNEXT = 8;
+    private static final long OFF_BCI_FLAGS = 16;
+    private static final long OFF_BCI_SIZE = 24;
+    private static final long OFF_BCI_USAGE = 32;
+    private static final long OFF_BCI_SHARING_MODE = 36;
+    private static final long OFF_BCI_QUEUE_FAMILY_INDEX_COUNT = 40;
+    private static final long OFF_BCI_P_QUEUE_FAMILY_INDICES = 48;
+
+    // VkMemoryAllocateInfo
+    private static final long OFF_MAI_STYPE = 0;
+    private static final long OFF_MAI_PNEXT = 8;
+    private static final long OFF_MAI_ALLOCATION_SIZE = 16;
+    private static final long OFF_MAI_MEMORY_TYPE_INDEX = 24;
+
+    // VkMemoryRequirements
+    private static final long OFF_MEMREQ_SIZE = 0;
+    private static final long OFF_MEMREQ_ALIGNMENT = 8;
+    private static final long OFF_MEMREQ_MEMORY_TYPE_BITS = 16;
+
+    // VkSamplerCreateInfo
+    private static final long OFF_SCI_STYPE = 0;
+    private static final long OFF_SCI_PNEXT = 8;
+    private static final long OFF_SCI_FLAGS = 16;
+    private static final long OFF_SCI_MAG_FILTER = 20;
+    private static final long OFF_SCI_MIN_FILTER = 24;
+    private static final long OFF_SCI_MIPMAP_MODE = 28;
+    private static final long OFF_SCI_ADDRESS_MODE_U = 32;
+    private static final long OFF_SCI_ADDRESS_MODE_V = 36;
+    private static final long OFF_SCI_ADDRESS_MODE_W = 40;
+    private static final long OFF_SCI_MIP_LOD_BIAS = 44;
+    private static final long OFF_SCI_ANISOTROPY_ENABLE = 48;
+    private static final long OFF_SCI_MAX_ANISOTROPY = 52;
+    private static final long OFF_SCI_COMPARE_ENABLE = 56;
+    private static final long OFF_SCI_COMPARE_OP = 60;
+    private static final long OFF_SCI_MIN_LOD = 64;
+    private static final long OFF_SCI_MAX_LOD = 68;
+    private static final long OFF_SCI_BORDER_COLOR = 72;
+    private static final long OFF_SCI_UNNORMALIZED_COORDINATES = 76;
+
+    // ==================== Vulkan 枚举常量 ====================
+
+    private static final int VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO = 11;
+    private static final int VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO = 12;
+    private static final int VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO = 3;
+    private static final int VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO = 32;
+    private static final int VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO = 20;
+
+    private static final int VK_IMAGE_TYPE_2D = 1;
+    private static final int VK_IMAGE_VIEW_TYPE_2D = 1;
+    private static final int VK_FORMAT_R32G32B32A32_SFLOAT = 0x57;
+    private static final int VK_IMAGE_USAGE_STORAGE_BIT = 0x0008;
+    private static final int VK_IMAGE_USAGE_SAMPLED_BIT = 0x0004;
+    private static final int VK_IMAGE_USAGE_TRANSFER_SRC_BIT = 0x0020;
+    private static final int VK_IMAGE_USAGE_TRANSFER_DST_BIT = 0x0040;
+    private static final int VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT = 0x0010;
+
+    private static final int VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT = 0x0001;
+    private static final int VK_MEMORY_PROPERTY_HOST_COHERENT_BIT = 0x0002;
+
+    private static final int VK_SAMPLE_COUNT_1_BIT = 1;
+    private static final int VK_SHARING_MODE_EXCLUSIVE = 0;
+    private static final int VK_IMAGE_ASPECT_COLOR_BIT = 0x0001;
+    private static final int VK_IMAGE_TILING_OPTIMAL = 0;
+    private static final int VK_IMAGE_LAYOUT_UNDEFINED = 0;
+    private static final int VK_FILTER_NEAREST = 0;
+    private static final int VK_SAMPLER_MIPMAP_MODE_NEAREST = 0;
+    private static final int VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE = 2;
+    private static final int VK_COMPONENT_SWIZZLE_IDENTITY = 0;
+    private static final int VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK = 0;
 
     // ==================== Vulkan 设备引用 ====================
 
@@ -189,6 +317,27 @@ public final class HiZBufferManager {
      * 此处存储实际的 VkBuffer 句柄用于 vkDestroyBuffer。
      */
     private volatile long configBufferHandle = 0L;
+
+    /**
+     * Hi-Z 采样器的 VkSampler 句柄（volatile，线程安全读取）
+     * <p>
+     * 使用 VK_FILTER_NEAREST 和 VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE 创建，
+     * 用于 Hi-Z 纹理读取时的点采样和边缘钳制。
+     */
+    private volatile long hiZSampler = 0L;
+
+    /**
+     * 配置 UBO 的 VkDeviceMemory 句柄（内部追踪，用于释放）
+     * <p>
+     * Host Visible + Host Coherent 内存，用于每帧更新 OcclusionCullConfig 数据。
+     */
+    private volatile long configBufferMemory = 0L;
+
+    /**
+     * 当前实际 Mipmap 层级数量
+     * 根据 width/height 计算，不超过 HIZ_MAX_MIP_LEVELS
+     */
+    private int currentMipLevels = 0;
 
     // ==================== 状态标志 ====================
 
@@ -362,35 +511,250 @@ public final class HiZBufferManager {
                 "VulkanDeviceHolder 未初始化，无法创建 Hi-Z 资源");
         }
 
+        int mipLevels = (int) Math.min(
+            Math.ceil(Math.log(Math.max(width, height)) / Math.log(2)) + 1,
+            HIZ_MAX_MIP_LEVELS
+        );
+
         LOGGER.info(String.format(
-            "═══════════════════════════════════════" +
-            "HiZBufferManager 正在初始化..." +
-            "  分辨率: %dx%d" +
-            "  Mipmap 层数: %d" +
-            "  格式: RGBA32F (R32G32B32A32_SFLOAT)" +
-            "═══════════════════════════════════════",
-            width, height, HIZ_MAX_MIP_LEVELS));
+            "╔══════════════════════════════════════╗\n" +
+            "║  HiZBufferManager 正在初始化...       ║\n" +
+            "║  分辨率: %dx%d                         ║\n" +
+            "║  Mipmap 层数: %d                       ║\n" +
+            "║  格式: RGBA32F (R32G32B32A32_SFLOAT)  ║\n" +
+            "╚══════════════════════════════════════╝",
+            width, height, mipLevels));
 
         try {
             long vkDevice = deviceHolder.getVkDeviceHandle();
-
-            // 注意：实际 Vulkan API 调用将在 LodCullingComputePass 中完成
-            // 此处仅标记资源和预留句柄空间
-            // 具体实现见 LodCullingComputePass.createHiZResources()
-
             this.currentWidth = width;
             this.currentHeight = height;
+            this.currentMipLevels = mipLevels;
+
+            try (Arena arena = Arena.ofConfined()) {
+                // 获取 FFM MethodHandle
+                MethodHandle vkCreateImage = VulkanFFMBinding.getVkCreateImage();
+                MethodHandle vkDestroyImage = VulkanFFMBinding.getVkDestroyImage();
+                MethodHandle vkCreateImageView = VulkanFFMBinding.getVkCreateImageView();
+                MethodHandle vkGetImageMemoryRequirements = VulkanFFMBinding.getVkGetImageMemoryRequirements();
+                MethodHandle vkAllocateMemory = VulkanFFMBinding.getVkAllocateMemory();
+                MethodHandle vkBindImageMemory = VulkanFFMBinding.getVkBindImageMemory();
+                MethodHandle vkCreateBuffer = VulkanFFMBinding.getVkCreateBuffer();
+                MethodHandle vkDestroyBuffer = VulkanFFMBinding.getVkDestroyBuffer();
+                MethodHandle vkGetBufferMemoryRequirements = VulkanFFMBinding.getVkGetBufferMemoryRequirements();
+                MethodHandle vkBindBufferMemory = VulkanFFMBinding.getVkBindBufferMemory();
+                MethodHandle vkCreateSampler = VulkanFFMBinding.getVkCreateSampler();
+
+                // ==================== 1. 创建 Sampler ====================
+                MemorySegment samplerCreateInfo = arena.allocate(SZ_SAMPLER_CREATE_INFO);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_STYPE / 4, VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_SCI_PNEXT / 8, 0L);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_FLAGS / 4, 0);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_MAG_FILTER / 4, VK_FILTER_NEAREST);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_MIN_FILTER / 4, VK_FILTER_NEAREST);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_MIPMAP_MODE / 4, VK_SAMPLER_MIPMAP_MODE_NEAREST);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_ADDRESS_MODE_U / 4, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_ADDRESS_MODE_V / 4, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_ADDRESS_MODE_W / 4, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_FLOAT, OFF_SCI_MIP_LOD_BIAS / 4, 0.0f);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_ANISOTROPY_ENABLE / 4, 0);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_FLOAT, OFF_SCI_MAX_ANISOTROPY / 4, 0.0f);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_COMPARE_ENABLE / 4, 0);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_COMPARE_OP / 4, 0);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_FLOAT, OFF_SCI_MIN_LOD / 4, 0.0f);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_FLOAT, OFF_SCI_MAX_LOD / 4, 0.0f);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_BORDER_COLOR / 4, VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_UNNORMALIZED_COORDINATES / 4, 0);
+
+                MemorySegment pSampler = arena.allocate(ValueLayout.JAVA_LONG);
+                int samplerResult = (int) vkCreateSampler.invokeExact(vkDevice,
+                    samplerCreateInfo.address(), 0L, pSampler.address());
+                if (samplerResult != 0) {
+                    throw new RuntimeException("vkCreateSampler 失败，VkResult=" + samplerResult);
+                }
+                this.hiZSampler = pSampler.getAtIndex(ValueLayout.JAVA_LONG, 0);
+                LOGGER.fine("✓ Hi-Z Sampler 创建成功: 0x" + Long.toHexString(this.hiZSampler));
+
+                // ==================== 2. 创建 Hi-Z Image ====================
+                MemorySegment imageCreateInfo = arena.allocate(SZ_IMAGE_CREATE_INFO);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_STYPE / 4, VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_ICI_PNEXT / 8, 0L);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_FLAGS / 4, 0);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_IMAGE_TYPE / 4, VK_IMAGE_TYPE_2D);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_FORMAT / 4, VK_FORMAT_R32G32B32A32_SFLOAT);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_EXTENT_WIDTH / 4, width);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_EXTENT_HEIGHT / 4, height);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_EXTENT_DEPTH / 4, 1);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_MIP_LEVELS / 4, mipLevels);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_ARRAY_LAYERS / 4, 1);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_SAMPLES / 4, VK_SAMPLE_COUNT_1_BIT);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_TILING / 4, VK_IMAGE_TILING_OPTIMAL);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_USAGE / 4,
+                    VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_SHARING_MODE / 4, VK_SHARING_MODE_EXCLUSIVE);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_QUEUE_FAMILY_INDEX_COUNT / 4, 0);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_ICI_P_QUEUE_FAMILY_INDICES / 8, 0L);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_INITIAL_LAYOUT / 4, VK_IMAGE_LAYOUT_UNDEFINED);
+
+                MemorySegment pImage = arena.allocate(ValueLayout.JAVA_LONG);
+                int imageResult = (int) vkCreateImage.invokeExact(vkDevice,
+                    imageCreateInfo.address(), 0L, pImage.address());
+                if (imageResult != 0) {
+                    throw new RuntimeException("vkCreateImage 失败，VkResult=" + imageResult);
+                }
+                this.hiZImageHandle = pImage.getAtIndex(ValueLayout.JAVA_LONG, 0);
+                LOGGER.fine("✓ Hi-Z Image 创建成功: 0x" + Long.toHexString(this.hiZImageHandle));
+
+                // ==================== 3. 获取内存需求并分配显存 ====================
+                MemorySegment memReqs = arena.allocate(SZ_MEMORY_REQUIREMENTS);
+                vkGetImageMemoryRequirements.invokeExact(vkDevice, this.hiZImageHandle, memReqs.address());
+                long imageMemSize = memReqs.getAtIndex(ValueLayout.JAVA_LONG, OFF_MEMREQ_SIZE / 8);
+                int memoryTypeBits = memReqs.getAtIndex(ValueLayout.JAVA_INT, (int)(OFF_MEMREQ_MEMORY_TYPE_BITS / 4));
+                int imageMemoryTypeIndex = Integer.numberOfTrailingZeros(memoryTypeBits);
+
+                MemorySegment allocInfo = arena.allocate(SZ_MEMORY_ALLOCATE_INFO);
+                allocInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_MAI_STYPE / 4, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
+                allocInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_MAI_PNEXT / 8, 0L);
+                allocInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_MAI_ALLOCATION_SIZE / 8, imageMemSize);
+                allocInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_MAI_MEMORY_TYPE_INDEX / 4, imageMemoryTypeIndex);
+
+                MemorySegment pMemory = arena.allocate(ValueLayout.JAVA_LONG);
+                int allocResult = (int) vkAllocateMemory.invokeExact(vkDevice, allocInfo.address(), 0L, pMemory.address());
+                if (allocResult != 0) {
+                    throw new RuntimeException("vkAllocateMemory (Image) 失败，VkResult=" + allocResult);
+                }
+                this.hiZDeviceMemory = pMemory.getAtIndex(ValueLayout.JAVA_LONG, 0);
+
+                int bindResult = (int) vkBindImageMemory.invokeExact(vkDevice,
+                    this.hiZImageHandle, this.hiZDeviceMemory, 0L);
+                if (bindResult != 0) {
+                    throw new RuntimeException("vkBindImageMemory 失败，VkResult=" + bindResult);
+                }
+                LOGGER.fine("✓ Image Memory 绑定成功: size=" + imageMemSize + " bytes");
+
+                // ==================== 4. 创建 Storage ImageViews ====================
+                for (int i = 0; i < mipLevels; i++) {
+                    long viewHandle = createImageView(vkDevice, arena, vkCreateImageView,
+                        this.hiZImageHandle, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT,
+                        VK_IMAGE_ASPECT_COLOR_BIT, i, 1);
+                    this.hiZMipmapImageViews[i] = viewHandle;
+                }
+
+                // ==================== 5. 创建 Sampler ImageViews ====================
+                for (int i = 0; i < mipLevels; i++) {
+                    long viewHandle = createImageView(vkDevice, arena, vkCreateImageView,
+                        this.hiZImageHandle, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT,
+                        VK_IMAGE_ASPECT_COLOR_BIT, i, 1);
+                    this.hiZMipmapSamplerViews[i] = viewHandle;
+                }
+                LOGGER.fine("✓ ImageViews 创建完成: " + mipLevels + " storage + " + mipLevels + " sampler");
+
+                // ==================== 6. 创建 Config UBO Buffer ====================
+                MemorySegment bufferCreateInfo = arena.allocate(SZ_BUFFER_CREATE_INFO);
+                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_BCI_STYPE / 4, VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO);
+                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_BCI_PNEXT / 8, 0L);
+                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_BCI_FLAGS / 4, 0);
+                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_BCI_SIZE / 8, CONFIG_UBO_SIZE);
+                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_BCI_USAGE / 4, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_BCI_SHARING_MODE / 4, VK_SHARING_MODE_EXCLUSIVE);
+                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_BCI_QUEUE_FAMILY_INDEX_COUNT / 4, 0);
+                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_BCI_P_QUEUE_FAMILY_INDICES / 8, 0L);
+
+                MemorySegment pBuffer = arena.allocate(ValueLayout.JAVA_LONG);
+                int bufferResult = (int) vkCreateBuffer.invokeExact(vkDevice, bufferCreateInfo.address(), 0L, pBuffer.address());
+                if (bufferResult != 0) {
+                    throw new RuntimeException("vkCreateBuffer 失败，VkResult=" + bufferResult);
+                }
+                this.configBufferHandle = pBuffer.getAtIndex(ValueLayout.JAVA_LONG, 0);
+
+                // ==================== 7. 分配 + 绑定 Buffer Memory ====================
+                MemorySegment bufferMemReqs = arena.allocate(SZ_MEMORY_REQUIREMENTS);
+                vkGetBufferMemoryRequirements.invokeExact(vkDevice, this.configBufferHandle, bufferMemReqs.address());
+                long bufferMemSize = bufferMemReqs.getAtIndex(ValueLayout.JAVA_LONG, OFF_MEMREQ_SIZE / 8);
+                int bufferMemTypeBits = bufferMemReqs.getAtIndex(ValueLayout.JAVA_INT, (int)(OFF_MEMREQ_MEMORY_TYPE_BITS / 4));
+                int bufferMemoryTypeIndex = Integer.numberOfTrailingZeros(bufferMemTypeBits);
+
+                MemorySegment bufferAllocInfo = arena.allocate(SZ_MEMORY_ALLOCATE_INFO);
+                bufferAllocInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_MAI_STYPE / 4, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
+                bufferAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_MAI_PNEXT / 8, 0L);
+                bufferAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_MAI_ALLOCATION_SIZE / 8, bufferMemSize);
+                bufferAllocInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_MAI_MEMORY_TYPE_INDEX / 4, bufferMemoryTypeIndex);
+
+                MemorySegment pBufferMemory = arena.allocate(ValueLayout.JAVA_LONG);
+                int bufferAllocResult = (int) vkAllocateMemory.invokeExact(vkDevice, bufferAllocInfo.address(), 0L, pBufferMemory.address());
+                if (bufferAllocResult != 0) {
+                    throw new RuntimeException("vkAllocateMemory (Buffer) 失败，VkResult=" + bufferAllocResult);
+                }
+                this.configBufferMemory = pBufferMemory.getAtIndex(ValueLayout.JAVA_LONG, 0);
+
+                int bindBufferResult = (int) vkBindBufferMemory.invokeExact(vkDevice,
+                    this.configBufferHandle, this.configBufferMemory, 0L);
+                if (bindBufferResult != 0) {
+                    throw new RuntimeException("vkBindBufferMemory 失败，VkResult=" + bindBufferResult);
+                }
+                this.configBufferView = this.configBufferHandle;
+                LOGGER.fine("✓ Config UBO Buffer 创建完成: size=" + CONFIG_UBO_SIZE + " bytes");
+            }
+
             this.initialized = true;
 
             LOGGER.info(String.format(
-                "HiZBufferManager 初始化完成 [分辨率=%dx%d | MipLevels=%d]",
-                width, height, HIZ_MAX_MIP_LEVELS));
+                "HiZBufferManager 初始化完成 [分辨率=%dx%d | MipLevels=%d | " +
+                "Image=0x%X | Sampler=0x%X | UBO=0x%X]",
+                width, height, this.currentMipLevels,
+                this.hiZImageHandle, this.hiZSampler, this.configBufferHandle));
 
-        } catch (Exception e) {
-            LOGGER.severe("HiZBufferManager 初始化失败: " + e.getMessage());
+        } catch (Throwable t) {
+            LOGGER.severe("HiZBufferManager 初始化失败: " + t.getMessage());
             cleanupPartialResources();
-            throw new RuntimeException("Hi-Z 资源创建失败", e);
+            if (t instanceof RuntimeException) {
+                throw (RuntimeException) t;
+            }
+            throw new RuntimeException("Hi-Z 资源创建失败", t);
         }
+    }
+
+    /**
+     * 辅助方法：创建 VkImageView
+     *
+     * @param vkDevice      VkDevice 句柄
+     * @param arena         Arena 内存分配器
+     * @param vkCreateImageView MH vkCreateImageView
+     * @param image         VkImage 句柄
+     * @param viewType      VkImageViewType (VK_IMAGE_VIEW_TYPE_2D = 1)
+     * @param format        VkFormat
+     * @param aspectMask    VkImageAspectFlags
+     * @param baseMipLevel  基础 Mip 层级
+     * @param levelCount    Mip 层级数量
+     * @return VkImageView 句柄
+     */
+    private long createImageView(long vkDevice, Arena arena, MethodHandle vkCreateImageView,
+                                  long image, int viewType, int format, int aspectMask,
+                                  int baseMipLevel, int levelCount) throws Throwable {
+        MemorySegment viewCreateInfo = arena.allocate(SZ_IMAGE_VIEW_CREATE_INFO);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_STYPE / 4, VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_IVCI_PNEXT / 8, 0L);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_FLAGS / 4, 0);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_IVCI_IMAGE / 8, image);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_VIEW_TYPE / 4, viewType);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_FORMAT / 4, format);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_COMPONENTS_R / 4, VK_COMPONENT_SWIZZLE_IDENTITY);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_COMPONENTS_G / 4, VK_COMPONENT_SWIZZLE_IDENTITY);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_COMPONENTS_B / 4, VK_COMPONENT_SWIZZLE_IDENTITY);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_COMPONENTS_A / 4, VK_COMPONENT_SWIZZLE_IDENTITY);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_SUBRESOURCE_ASPECT_MASK / 4, aspectMask);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_SUBRESOURCE_BASE_MIP / 4, baseMipLevel);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_SUBRESOURCE_LEVEL_COUNT / 4, levelCount);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_SUBRESOURCE_BASE_ARRAY / 4, 0);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_SUBRESOURCE_LAYER_COUNT / 4, 1);
+
+        MemorySegment pView = arena.allocate(ValueLayout.JAVA_LONG);
+        int result = (int) vkCreateImageView.invokeExact(vkDevice, viewCreateInfo.address(), 0L, pView.address());
+        if (result != 0) {
+            throw new RuntimeException("vkCreateImageView 失败，VkResult=" + result);
+        }
+        return pView.getAtIndex(ValueLayout.JAVA_LONG, 0);
     }
 
     /**
@@ -718,6 +1082,25 @@ public final class HiZBufferManager {
      */
     public int getCurrentHeight() { return this.currentHeight; }
 
+    /**
+     * 获取当前实际 Mipmap 层级数量
+     * <p>
+     * 根据创建时的 width/height 动态计算，不超过 HIZ_MAX_MIP_LEVELS。
+     *
+     * @return int - 当前 Mipmap 层数（1 ~ HIZ_MAX_MIP_LEVELS）
+     */
+    public int getCurrentMipLevels() { return this.currentMipLevels; }
+
+    /**
+     * 获取 Hi-Z Sampler 句柄
+     * <p>
+     * 使用 VK_FILTER_NEAREST + VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE 创建，
+     * 用于 Hi-Z 纹理采样时保证点采样和边缘钳制。
+     *
+     * @return long - VkSampler 句柄，未初始化时返回 0L
+     */
+    public long getHiZSampler() { return this.hiZSampler; }
+
     // ==================== 内部句柄设置方法（供 LodCullingComputePass 调用）====================
 
     /**
@@ -808,55 +1191,82 @@ public final class HiZBufferManager {
      */
     private void disposeInternal() {
         long vkDevice = deviceHolder.getVkDeviceHandle();
+        if (vkDevice == 0L) return;
 
-        try {
-            for (int i = 0; i < HIZ_MAX_MIP_LEVELS; i++) {
+        // 在本地变量中缓存 MethodHandle 避免重复查找
+        MethodHandle vkDestroyImageView = VulkanFFMBinding.getVkDestroyImageView();
+        MethodHandle vkDestroySampler = VulkanFFMBinding.getVkDestroySampler();
+        MethodHandle vkFreeMemory = VulkanFFMBinding.getVkFreeMemory();
+        MethodHandle vkDestroyBuffer = VulkanFFMBinding.getVkDestroyBuffer();
+        MethodHandle vkDestroyImage = VulkanFFMBinding.getVkDestroyImage();
+
+        // 1. 销毁 Mipmap ImageViews（当前实际层数）
+        for (int i = 0; i < this.currentMipLevels; i++) {
+            try {
                 if (this.hiZMipmapImageViews[i] != 0L) {
+                    vkDestroyImageView.invokeExact(vkDevice, this.hiZMipmapImageViews[i], 0L);
                     this.hiZMipmapImageViews[i] = 0L;
                 }
+            } catch (Throwable t) {
+                LOGGER.finest("销毁 Storage ImageView[%d] 时忽略异常: %s".formatted(i, t.getMessage()));
+            }
+            try {
                 if (this.hiZMipmapSamplerViews[i] != 0L) {
+                    vkDestroyImageView.invokeExact(vkDevice, this.hiZMipmapSamplerViews[i], 0L);
                     this.hiZMipmapSamplerViews[i] = 0L;
                 }
+            } catch (Throwable t) {
+                LOGGER.finest("销毁 Sampler ImageView[%d] 时忽略异常: %s".formatted(i, t.getMessage()));
             }
-        } catch (Exception e) {
-            LOGGER.warning("销毁 Hi-Z ImageView 时异常: " + e.getMessage());
         }
 
+        // 2. 销毁 Sampler
         try {
-            if (this.depthBufferView != 0L) {
-                this.depthBufferView = 0L;
+            if (this.hiZSampler != 0L) {
+                vkDestroySampler.invokeExact(vkDevice, this.hiZSampler, 0L);
+                this.hiZSampler = 0L;
             }
-        } catch (Exception e) {
-            LOGGER.warning("销毁 Depth Buffer View 时异常: " + e.getMessage());
+        } catch (Throwable t) {
+            LOGGER.finest("销毁 Sampler 时忽略异常: " + t.getMessage());
         }
 
+        // 3. 销毁 UBO Buffer + 显存
         try {
-            if (this.configBufferView != 0L || this.configBufferHandle != 0L) {
-                this.configBufferView = 0L;
+            if (this.configBufferHandle != 0L) {
+                if (this.configBufferMemory != 0L) {
+                    vkFreeMemory.invokeExact(vkDevice, this.configBufferMemory, 0L);
+                    this.configBufferMemory = 0L;
+                }
+                vkDestroyBuffer.invokeExact(vkDevice, this.configBufferHandle, 0L);
                 this.configBufferHandle = 0L;
             }
-        } catch (Exception e) {
-            LOGGER.warning("销毁 Config UBO Buffer 时异常: " + e.getMessage());
+        } catch (Throwable t) {
+            LOGGER.finest("销毁 UBO Buffer 时忽略异常: " + t.getMessage());
+        }
+        this.configBufferView = 0L;
+
+        // 4. 销毁 Hi-Z Image + 显存
+        try {
+            if (this.hiZDeviceMemory != 0L) {
+                vkFreeMemory.invokeExact(vkDevice, this.hiZDeviceMemory, 0L);
+                this.hiZDeviceMemory = 0L;
+            }
+        } catch (Throwable t) {
+            LOGGER.finest("释放 Hi-Z Memory 时忽略异常: " + t.getMessage());
         }
 
         try {
             if (this.hiZImageHandle != 0L) {
+                vkDestroyImage.invokeExact(vkDevice, this.hiZImageHandle, 0L);
                 this.hiZImageHandle = 0L;
             }
-        } catch (Exception e) {
-            LOGGER.warning("销毁 Hi-Z Image 时异常: " + e.getMessage());
-        }
-
-        try {
-            if (this.hiZDeviceMemory != 0L) {
-                this.hiZDeviceMemory = 0L;
-            }
-        } catch (Exception e) {
-            LOGGER.warning("释放 Hi-Z DeviceMemory 时异常: " + e.getMessage());
+        } catch (Throwable t) {
+            LOGGER.finest("销毁 Hi-Z Image 时忽略异常: " + t.getMessage());
         }
 
         this.currentWidth = 0;
         this.currentHeight = 0;
+        this.currentMipLevels = 0;
         this.initialized = false;
     }
 
@@ -874,11 +1284,13 @@ public final class HiZBufferManager {
     @Override
     public String toString() {
         return String.format(
-            "HiZBufferManager[initialized=%b, size=%dx%d, mipLevels=%d, depthView=0x%016X]",
+            "HiZBufferManager[initialized=%b, size=%dx%d, mipLevels=%d, sampler=0x%016X, image=0x%016X, ubo=0x%016X]",
             this.initialized,
             this.currentWidth, this.currentHeight,
-            HIZ_MAX_MIP_LEVELS,
-            this.depthBufferView
+            this.currentMipLevels,
+            this.hiZSampler,
+            this.hiZImageHandle,
+            this.configBufferHandle
         );
     }
 }

@@ -1,6 +1,7 @@
 package com.ranecc.renderium.infrastructure.gpu;
 
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
@@ -127,15 +128,17 @@ public final class VulkanTimelineManager {
      * @param value 要 signal 的值（即帧序号 N）
      */
     public static void signal(long sem, long value) {
-        long cQueue = VulkanDeviceHolder.getInstance().getComputeQueue();
-        if (cQueue == 0L || sem == 0L) return;
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L || sem == 0L) return;
         try (Arena arena = Arena.ofConfined()) {
-            var signalInfo = arena.allocate(32);
-            signalInfo.set(ValueLayout.JAVA_LONG, 0, sem);
-            signalInfo.set(ValueLayout.JAVA_LONG, 8, value);
-            long submitInfo = arena.allocate(16).address();
+            // VkSignalSemaphoreInfo: sType(int, offset0) + pNext(long, offset8) + semaphore(long, offset16) + value(long, offset24)
+            MemorySegment signalInfo = arena.allocate(32);
+            signalInfo.set(ValueLayout.JAVA_INT, 0, 1000203002); // VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO (from spec)
+            signalInfo.set(ValueLayout.ADDRESS, 8, MemorySegment.NULL); // pNext
+            signalInfo.set(ValueLayout.JAVA_LONG, 16, sem);
+            signalInfo.set(ValueLayout.JAVA_LONG, 24, value);
             int result = (int) VulkanFFMBinding.getVkSignalSemaphore()
-                .invoke(cQueue, submitInfo);
+                .invoke(device, signalInfo.address());
             if (result != VK_SUCCESS) {
                 LOGGER.warning("Signal failed: sem=0x" + Long.toHexString(sem)
                     + " value=" + value + " result=" + result);
@@ -154,15 +157,17 @@ public final class VulkanTimelineManager {
      * @return true 如果成功
      */
     public static boolean waitForValue(long sem, long value, long timeoutNs) {
-        long gQueue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-        if (gQueue == 0L || sem == 0L) return false;
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L || sem == 0L) return false;
         try (Arena arena = Arena.ofConfined()) {
-            var waitInfo = arena.allocate(24);
-            waitInfo.set(ValueLayout.JAVA_LONG, 0, sem);
-            waitInfo.set(ValueLayout.JAVA_LONG, 8, value);
-            long submitInfo = arena.allocate(16).address();
+            // VkWaitSemaphoresInfo: sType(int, offset0) + pNext(long, offset8) + semaphore(long, offset16) + value(long, offset24)
+            MemorySegment waitInfo = arena.allocate(32);
+            waitInfo.set(ValueLayout.JAVA_INT, 0, 1000203003); // VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO
+            waitInfo.set(ValueLayout.ADDRESS, 8, MemorySegment.NULL); // pNext
+            waitInfo.set(ValueLayout.JAVA_LONG, 16, sem);
+            waitInfo.set(ValueLayout.JAVA_LONG, 24, value);
             int result = (int) VulkanFFMBinding.getVkWaitSemaphores()
-                .invoke(gQueue, submitInfo, timeoutNs);
+                .invoke(device, waitInfo.address(), timeoutNs);
             return result == VK_SUCCESS;
         } catch (Throwable t) {
             LOGGER.warning("Wait exception: " + t.getMessage());

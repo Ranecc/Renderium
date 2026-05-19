@@ -141,6 +141,12 @@ public final class VulkanFFMBinding {
     /** vkDestroyImageView: 销毁图像视图 */
     private static volatile MethodHandle VK_DESTROY_IMAGE_VIEW;
 
+    /** vkCreateSampler: 创建采样器 */
+    private static volatile MethodHandle VK_CREATE_SAMPLER;
+
+    /** vkDestroySampler: 销毁采样器 */
+    private static volatile MethodHandle VK_DESTROY_SAMPLER;
+
     /** vkAllocateMemory: 分配设备内存 */
     private static volatile MethodHandle VK_ALLOCATE_MEMORY;
 
@@ -313,6 +319,8 @@ public final class VulkanFFMBinding {
     public static MethodHandle getVkDestroyImage() { return VK_DESTROY_IMAGE; }
     public static MethodHandle getVkCreateImageView() { return VK_CREATE_IMAGE_VIEW; }
     public static MethodHandle getVkDestroyImageView() { return VK_DESTROY_IMAGE_VIEW; }
+    public static MethodHandle getVkCreateSampler() { return VK_CREATE_SAMPLER; }
+    public static MethodHandle getVkDestroySampler() { return VK_DESTROY_SAMPLER; }
     public static MethodHandle getVkAllocateMemory() { return VK_ALLOCATE_MEMORY; }
     public static MethodHandle getVkFreeMemory() { return VK_FREE_MEMORY; }
     public static MethodHandle getVkBindImageMemory() { return VK_BIND_IMAGE_MEMORY; }
@@ -661,11 +669,23 @@ public final class VulkanFFMBinding {
                     vulkanLookup.find("vkCreateImageView").orElseThrow(),
                     FunctionDescriptor.of(ValueLayout.JAVA_INT,
                             ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
-                            ValueLayout.JAVA_LONG)
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
             );
 
             VK_DESTROY_IMAGE_VIEW = linker.downcallHandle(
                     vulkanLookup.find("vkDestroyImageView").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_CREATE_SAMPLER = linker.downcallHandle(
+                    vulkanLookup.find("vkCreateSampler").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+            );
+
+            VK_DESTROY_SAMPLER = linker.downcallHandle(
+                    vulkanLookup.find("vkDestroySampler").orElseThrow(),
                     FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
             );
 
@@ -846,7 +866,7 @@ public final class VulkanFFMBinding {
                     vulkanLookup.find("vkWaitSemaphores").orElseThrow(),
                     FunctionDescriptor.of(ValueLayout.JAVA_INT,
                             ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
-                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
+                            ValueLayout.JAVA_LONG)
             );
 
             VK_SIGNAL_SEMAPHORE = linker.downcallHandle(
@@ -878,7 +898,6 @@ public final class VulkanFFMBinding {
                     vulkanLookup.find("vkCmdBuildAccelerationStructuresKHR").orElseThrow(),
                     FunctionDescriptor.ofVoid(
                             ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
-                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
                             ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
             );
 

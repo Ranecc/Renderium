@@ -59,11 +59,50 @@ public final class RenderiumDualModeManager {
     }
 
     /**
-     * 检查是否存在性能优化模组（如 Sodium）
+     * 性能优化模组的主类全限定名
+     * Sodium: me.jellysquid.mods.sodium.client.SodiumClientMod
+     * OptiFine: optifine.OptiFineClass（若存在）
+     */
+    private static final String[] PERFORMANCE_MOD_CLASSES = {
+        "me.jellysquid.mods.sodium.client.SodiumClientMod",
+        "optifine.OptiFineClass"
+    };
+
+    /** 模组检测结果缓存 */
+    private volatile Boolean modPresentCache = null;
+
+    /**
+     * 检查是否存在性能优化模组（如 Sodium、OptiFine）
+     * <p>
+     * 通过反射检测已知性能优化模组的主类是否存在于类路径中。
+     * 使用双检锁 + volatile 缓存避免重复反射。
+     * </p>
      *
      * @return true 如果检测到性能模组
      */
     public boolean isPerformanceModPresent() {
-        return false;
+        if (modPresentCache != null) {
+            return modPresentCache;
+        }
+        synchronized (this) {
+            if (modPresentCache != null) {
+                return modPresentCache;
+            }
+            for (String className : PERFORMANCE_MOD_CLASSES) {
+                try {
+                    Class.forName(className);
+                    LOGGER.info("检测到性能优化模组: " + className);
+                    modPresentCache = true;
+                    return true;
+                } catch (ClassNotFoundException e) {
+                    LOGGER.fine("未检测到模组: " + className);
+                } catch (NoClassDefFoundError e) {
+                    LOGGER.fine("模组存在但依赖缺失: " + className);
+                }
+            }
+            modPresentCache = false;
+            LOGGER.fine("未检测到任何性能优化模组");
+            return false;
+        }
     }
 }

@@ -7,7 +7,7 @@ public class BooleanOption implements RendererOption {
 
     public boolean getValue() { return value; }
     public void setValue(boolean v) { this.value = v; }
-    public boolean isEnabled(ConfigState state) { return true; }
+    public boolean isEnabled(ConfigState state) { return value; }
 
     @Override
     public net.minecraft.network.chat.Component getName() {

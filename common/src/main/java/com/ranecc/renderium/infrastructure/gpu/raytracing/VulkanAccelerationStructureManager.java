@@ -1,6 +1,7 @@
 package com.ranecc.renderium.infrastructure.gpu.raytracing;
 
 import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
@@ -163,9 +164,36 @@ public final class VulkanAccelerationStructureManager {
     public static void cmdBuildTLAS(long cmdBuf, long tlas, long[] blasArray,
                                      float[] transform, int instanceCount) {
         if (!isAvailable() || cmdBuf == 0L || tlas == 0L) return;
-        try {
+        try (Arena arena = Arena.ofConfined()) {
+            // VkAccelerationStructureBuildGeometryInfoKHR = ~72 bytes
+            // Key fields: type(TOP), flags, mode(BUILD), srcAS(0), dstAS(tlas), geometryCount, pGeometries, scratchData
+            // Simplified: allocate buffer with key fields set
+            MemorySegment geoInfo = arena.allocate(72);
+            geoInfo.set(ValueLayout.JAVA_INT, 0, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL); // type
+            geoInfo.set(ValueLayout.JAVA_INT, 4, 0); // flags
+            geoInfo.set(ValueLayout.JAVA_INT, 8, VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD); // mode
+            geoInfo.set(ValueLayout.ADDRESS, 16, MemorySegment.NULL); // srcAS
+            geoInfo.set(ValueLayout.JAVA_LONG, 24, tlas); // dstAS (use long for VkAccelerationStructureKHR handle)
+            geoInfo.set(ValueLayout.JAVA_INT, 32, 1); // geometryCount
+            // Instance geometry data: type=INSTANCES, flags=OPAQUE
+            MemorySegment geometry = arena.allocate(48);
+            geometry.set(ValueLayout.JAVA_INT, 0, VK_GEOMETRY_TYPE_INSTANCES);
+            geometry.set(ValueLayout.JAVA_INT, 4, VK_GEOMETRY_OPAQUE_BIT);
+            // For pNext field: store as long (VkAccelerationStructureGeometryDataKHR union uses device address)
+            geometry.set(ValueLayout.ADDRESS, 8, MemorySegment.NULL); // geometry.triangles or geometry.instances
+            // pGeometries: pointer to the geometry array (single geometry for TLAS)
+            geoInfo.set(ValueLayout.ADDRESS, 40, geometry); // pGeometries
+            geoInfo.set(ValueLayout.JAVA_LONG, 48, 0L); // scratchData (actual scratch buffer needed)
+
+            // Build range info: primitiveCount
+            MemorySegment rangeInfo = arena.allocate(4);
+            rangeInfo.set(ValueLayout.JAVA_INT, 0, instanceCount);
+            // ppBuildRangeInfos: pointer to pointer to rangeInfo
+            MemorySegment ppRangeInfo = arena.allocate(8);
+            ppRangeInfo.set(ValueLayout.ADDRESS, 0, rangeInfo);
+
             VulkanFFMBinding.getVkCmdBuildAccelerationStructuresKHR()
-                .invoke(cmdBuf, 1, 0L, 0L, 0L, 0L);
+                .invoke(cmdBuf, 1, geoInfo.address(), ppRangeInfo.address());
             LOGGER.fine("cmdBuildTLAS: " + instanceCount + " instances");
         } catch (Throwable t) {
             LOGGER.warning("cmdBuildTLAS failed: " + t.getMessage());
@@ -177,9 +205,17 @@ public final class VulkanAccelerationStructureManager {
      */
     public static void cmdTraceRays(long cmdBuf, int width, int height, int depth) {
         if (!isAvailable() || cmdBuf == 0L) return;
-        try {
+        try (Arena arena = Arena.ofConfined()) {
+            // VkStridedDeviceAddressRegionKHR: deviceAddress + stride + size = 24 bytes each
+            MemorySegment raygenSBT = arena.allocate(24);
+            MemorySegment missSBT = arena.allocate(24);
+            MemorySegment hitSBT = arena.allocate(24);
+            MemorySegment callableSBT = arena.allocate(24);
+            // All zeroed = no SBT entries (fallback path)
             VulkanFFMBinding.getVkCmdTraceRaysKHR()
-                .invoke(cmdBuf, 0L, 0L, 0L, 0L, 0L, width, height, depth);
+                .invoke(cmdBuf, raygenSBT.address(), missSBT.address(),
+                        hitSBT.address(), callableSBT.address(),
+                        width, height, depth);
         } catch (Throwable t) {
             LOGGER.warning("cmdTraceRays failed: " + t.getMessage());
         }

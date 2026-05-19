@@ -2,25 +2,32 @@
 
 Modern Minecraft rendering extension with Vulkan, DLSS, and advanced optimization technologies.
 
+> **Development Status: Early Development**
+>
+> This project is in active development. Large portions of the codebase are skeleton implementations or placeholder code. Many advertised features are not yet fully implemented or only work in a simulated state.
+
+---
+
 ## Features
 
-- **Extension Points**: Extends Minecraft 26.2+ official Vulkan renderer
-- **Super Resolution**: NVIDIA DLSS, Intel XeSS, AMD FSR support via NVIDIA Streamline SDK
-- **Frame Generation**: DLSS Frame Generation and FSR Frame Generation support
-- **NVIDIA Reflex**: Low latency mode support for competitive gaming
-- **Advanced Culling**: Frustum culling, occlusion culling (BFS-based), and GPU-driven LOD
-- **Custom Post-Processing**: Insert custom post-processing effects into the render pipeline
-- **Dual Platform**: Supports both NeoForge and Fabric
-- **Dual Mode**: Independent mode and Sodium compatibility mode
-- **C++ Acceleration**: Optional native library for performance-critical algorithms
+- **Extension Points**: Designed to extend the Minecraft 26.2+ official Vulkan renderer
+- **Super Resolution**: DLSS / XeSS / FSR adapter framework (via NVIDIA Streamline SDK)
+- **Frame Generation**: DLSS Frame Generation and FSR Frame Generation adapter framework
+- **Advanced Culling**: Frustum culling, BFS occlusion culling framework, HiZ management
+- **Custom Post-Processing**: Shader system and post-processing pipeline framework
+- **Dual Platform**: Fabric (enabled) / NeoForge (planned)
+- **Dual Mode**: Independent mode and Sodium compatibility mode (framework layer)
+- **C++ Acceleration**: Optional native library interface (reserved)
 
 ## Requirements
 
 - Java 25+
-- Minecraft 26.2-snapshot-3+
-- NeoForge 21.11.0-beta+ or Fabric Loader 0.18.5+
-- NVIDIA RTX / AMD RDNA2+ / Intel Arc GPU (for super resolution features)
+- Minecraft 26.2-snapshot-7+
+- Fabric Loader 0.18.5+
 - Vulkan-compatible GPU and drivers
+- NVIDIA RTX / AMD RDNA2+ / Intel Arc GPU (for super resolution features, requires Streamline SDK)
+
+> **NeoForge Note**: The NeoForge module is currently disabled because NeoForge 21.x does not yet support Minecraft 26.2-snapshot. It will be re-enabled once upstream support is available.
 
 ## Project Structure
 
@@ -28,38 +35,35 @@ Modern Minecraft rendering extension with Vulkan, DLSS, and advanced optimizatio
 Renderium/
 ├── common/                          # Platform-independent core
 │   └── src/main/java/com/ranecc/renderium/
-│       ├── application/             # Application Layer (DDD)
-│       │   ├── controller/          # Entry controller
-│       │   ├── core/               # Core manager (RenderiumCore, CoreState)
-│       │   ├── orchestrator/       # Frame processor & lifecycle orchestration
-│       │   └── usecase/            # Use cases
-│       ├── domain/                  # Domain Layer (DDD)
-│       │   ├── constant/           # Config/Vulkan/FFI constants
-│       │   ├── enums/              # 35+ enums
-│       │   ├── model/              # Domain models
-│       │   │   └── config/         # Configuration aggregate root
-│       │   └── service/            # Domain services (BFS, LOD, Kahan, convergence)
-│       └── feature/                 # Feature module layer
-│           ├── blaze3d/            # Blaze3D optimizer (VMA memory, GPU culling, shader pipeline)
-│           ├── culling/            # Culling system (BFS occlusion, frustum, HiZ)
-│           ├── intercept/          # Render interception (mod detection, pre/post handlers)
-│           ├── lod/                # LOD system (GPU-driven, Voxy-style, transition)
-│           ├── module/             # Module system (ModuleMetadata, RenderiumModule)
-│           ├── pipeline/           # Render pipeline (PipelineNode, registry, strategies, parameter knobs)
-│           ├── raytracing/         # Ray tracing module
-│           ├── renderopt/          # Render optimization (batching, mesh building, vertex compression)
-│           └── shader/             # Shader system (CompShader, SPIR-V, factory, workbench)
+│       ├── application/             # Application layer (core lifecycle)
+│       ├── domain/                  # Domain layer (enums, config models)
+│       ├── feature/                 # Feature modules
+│       │   ├── blaze3d/            # Blaze3D optimizer framework
+│       │   ├── culling/            # Culling system framework
+│       │   ├── intercept/          # Render interception layer
+│       │   ├── pipeline/           # Render pipeline framework
+│       │   └── shader/             # Shader system framework
+│       ├── infrastructure/          # Infrastructure layer
+│       │   ├── config/             # Configuration management
+│       │   ├── gpu/                # GPU resource management
+│       │   ├── nativeLib/          # Native library FFI bindings
+│       │   └── vulkan/             # Vulkan utilities
+│       ├── presentation/            # Presentation layer (UI system)
+│       ├── tech/                    # Technology integration layer
+│       │   ├── dlss/               # DLSS integration framework
+│       │   ├── framegen/           # Frame generation framework
+│       │   ├── reflex/             # Reflex low-latency framework
+│       │   ├── streamline/         # Streamline SDK bindings
+│       │   └── superres/           # Super resolution adapters
+│       └── platform/               # Platform abstraction layer
 ├── fabric/                          # Fabric-specific implementation
-│   └── src/main/java/com/ranecc/renderium/fabric/
-└── neoforge/                        # NeoForge-specific implementation
-    └── src/main/java/com/ranecc/renderium/neoforge/
+└── neoforge/                        # NeoForge-specific implementation (disabled)
 ```
 
 ## Setup
 
 ### 1. Install Dependencies
 
-Ensure you have:
 - JDK 25+ (https://adoptium.net/)
 - Gradle 9.4+ (or use the included wrapper)
 
@@ -69,194 +73,48 @@ Ensure you have:
 # Build all modules
 ./gradlew build
 
-# Or build specific platform
+# Fabric only
 ./gradlew :fabric:build
-./gradlew :neoforge:build
 ```
 
 ### 3. Run Development Client
 
 ```bash
-# Fabric
 ./gradlew :fabric:runClient
-
-# NeoForge
-./gradlew :neoforge:runClient
 ```
 
-## Extension Points
+## Core API
 
-### RenderExtension
+### RenderiumCore
 
-Implement `RenderExtension` to add custom rendering functionality:
+Central manager providing lifecycle control:
 
 ```java
-public class MyExtension implements RenderExtension {
-    @Override
-    public String getName() {
-        return "MyExtension";
-    }
-
-    @Override
-    public int getPriority() {
-        return 500; // Lower = earlier execution
-    }
-
-    @Override
-    public void onVulkanPipelineInit(long vulkanDevice) {
-        // Called after Vulkan pipeline initialization
-    }
-
-    @Override
-    public void onFrameBegin(int frameNumber, float deltaTime) {
-        // Called at the start of each frame
-    }
-
-    @Override
-    public void onOpaquePassRendered(long commandBuffer, long depthTexture, long colorTexture) {
-        // Called after opaque rendering, before post-processing
-    }
-
-    @Override
-    public void onPostProcessingBegin(long commandBuffer, long sceneTexture) {
-        // Called at the start of post-processing
-    }
-
-    @Override
-    public void onBeforeOutput(long commandBuffer, long outputTexture, int displayWidth, int displayHeight) {
-        // Called before final output to screen
-    }
-}
+RenderiumCore core = RenderiumCore.getInstance();
+core.initialize(deviceHandle);      // Initialize
+core.processFrame(deltaTime);       // Frame processing
+core.shutdown();                    // Shutdown
 ```
-
-Register your extension:
-
-```java
-RenderiumCore.getInstance().registerExtension(new MyExtension());
-```
-
-### FrustumCuller
-
-Implement `FrustumCuller` for custom culling algorithms:
-
-```java
-public class MyCuller implements FrustumCuller {
-    @Override
-    public void initialize(int maxDrawDistance) {
-        // Initialize culling resources
-    }
-
-    @Override
-    public void updateCamera(float cameraX, float cameraY, float cameraZ,
-                            float pitch, float yaw, float fov) {
-        // Update camera frustum
-    }
-
-    @Override
-    public boolean isVisible(float minX, float minY, float minZ,
-                            float maxX, float maxY, float maxZ) {
-        // Custom visibility test
-        return true;
-    }
-
-    @Override
-    public List<Integer> computeVisibleChunks(List<ChunkBounds> chunks,
-                                               float cameraX, float cameraY, float cameraZ) {
-        // Return visible chunk indices
-        return List.of();
-    }
-}
-```
-
-### PostProcessor
-
-Implement `PostProcessor` to add custom post-processing effects:
-
-```java
-public class MyEffect implements PostProcessor {
-    @Override
-    public String getName() {
-        return "MyEffect";
-    }
-
-    @Override
-    public int getOrder() {
-        return 500; // Execution order
-    }
-
-    @Override
-    public void process(long commandBuffer, TextureInputs inputs,
-                       TextureOutput output, int width, int height) {
-        // Apply custom post-processing
-    }
-}
-```
-
-## API Documentation
-
-### Core Classes
-
-- `RenderiumCore` - Central manager for all extensions and rendering technologies
-- `RenderExtension` - Extension point interface
-- `FrustumCuller` - Custom culling interface
-- `PostProcessor` - Post-processing effect interface
-
-### Super Resolution
-
-- `SuperResolutionManager` - Manages DLSS/FSR/XeSS technologies
-- `DLSSAdapter` - NVIDIA DLSS integration
-- `FSRAdapter` - AMD FSR integration
-- `XeSSAdapter` - Intel XeSS integration
-
-### Frame Generation
-
-- `FrameGeneratorManager` - Manages frame generation technologies
-- `DLSSFGAdapter` - DLSS Frame Generation
-- `FSRFGAdapter` - FSR Frame Generation
-
-### Reflex Low Latency
-
-- `ReflexManager` - NVIDIA Reflex low latency mode
-
-### Culling
-
-- `CullingController` - Coordinates multiple culling strategies
-- `BfsOcclusion` - BFS-based occlusion culling
-
-### Streamline SDK
-
-- `SLContext` - Streamline SDK context management
-- `VulkanStreamlineBridge` - Vulkan-Streamline integration
 
 ### Configuration
 
-- `RenderiumConfig` - Main configuration class
+- Main config class: `RenderiumConfig`
 - Config file location: `<game_dir>/config/renderium.properties`
 
 ## Dual Mode System
 
 ### Independent Mode
-Runs independently without Sodium, full feature set available.
+Runs independently without Sodium.
 
 ### Compatibility Mode (with Sodium)
-Extends Sodium settings interface via Mixin injection, dynamic linking mode, compatible with other mod ecosystem.
+Extends Sodium settings interface via Mixin injection (framework reserved).
 
-Mode detection:
 ```java
 RenderiumDualModeManager dualMode = RenderiumDualModeManager.getInstance();
 if (dualMode.isPerformanceModPresent()) {
-    // Sodium is present, running in compatibility mode
+    // Sodium detection (currently a placeholder)
 }
 ```
-
-## Integration with Minecraft 26.2
-
-Minecraft 26.2+ includes official Vulkan support. Renderium extends this by:
-
-1. **Mixin Injection**: Intercepts Minecraft's render pipeline at key points
-2. **Extension Callbacks**: Notifies registered extensions at appropriate times
-3. **Resource Access**: Provides access to Vulkan textures and command buffers
-4. **Pipeline Extension**: Allows inserting custom render passes
 
 ## Debug Mode
 
@@ -270,11 +128,18 @@ Enable debug logging with JVM arguments:
 -Drenderium.debug.verbose=true
 ```
 
-## AI Assistance Disclaimer
+## AI Assistance & Development Status
 
-This project is developed with significant AI assistance. Some code may contain errors, inconsistencies, or disorganized logic. Issues and Pull Requests for corrections are warmly welcome.
+**This project is developed with significant AI assistance.** The codebase contains:
 
-Compatibility-related issues (mod compatibility, Minecraft version compatibility, GPU/driver compatibility, etc.) are especially appreciated — we will address them as time permits.
+- **Skeleton code**: Many methods are placeholder implementations returning `true`/`false`/`null`
+- **Hardcoded values**: FFM struct offsets, resolution scale ratios, etc.
+- **Unimplemented features**: Mod detection, native acceleration library, parts of the Streamline SDK call chain
+- **API drift**: Some API examples from earlier README versions no longer match the actual code
+
+See [Skeleton and Gaps](.context/Renderium/skeleton-and-gaps.md) for the full list.
+
+Issues and Pull Requests for corrections are warmly welcome. Compatibility-related issues (mod compatibility, Minecraft version compatibility, GPU/driver compatibility, etc.) are especially appreciated.
 
 ## License & Compliance
 
@@ -288,13 +153,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 | NVIDIA DLSS SDK | NVIDIA RTX SDKs License | DLSS super resolution and frame generation |
 | LWJGL 3 | BSD License | Java native bindings |
 | FastUtil | Apache 2.0 | High-performance collections |
-| Sodium (Optional) | LGPL-3.0 License | Optional runtime dependency, dynamic linking via Mixin |
-
-### Compliance Statement
-
-- **Streamline SDK**: Distributed in original, unmodified form with complete copyright notices
-- **DLSS/DLSS-G**: Governed by NVIDIA RTX SDKs License, distributed as part of an application with substantial functionality
-- **Sodium**: Optional dependency, not a derivative work. Dynamic linking permitted under LGPL-3.0 Section 4
+| Sodium (Optional) | LGPL-3.0 License | Optional runtime dependency, dynamic linking |
 
 ## Disclaimer
 

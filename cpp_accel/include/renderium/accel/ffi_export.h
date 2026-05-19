@@ -19,7 +19,7 @@
 
 #pragma once
 
-#include <cstdint>
+#include <stdint.h>
 
 // 导出宏定义（与accel_config.h一致，但此头文件可独立使用）
 #ifdef _WIN32
@@ -28,7 +28,7 @@
     #else
         #define ACCEL_API __declspec(dllimport)
     #endif
-    #define ACCEL_CALL __cdecl
+    #define ACCEL_CALL
 #elif __GNUC__ >= 4
     #define ACCEL_API __attribute__((visibility("default")))
     #define ACCEL_CALL
