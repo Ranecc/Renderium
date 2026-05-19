@@ -80,8 +80,10 @@ public final class VulkanSyncManager {
      */
     public static void releaseFence(long fence) {
         if (fence == 0L) return;
-        try {
-            VulkanAPIRegistry.invoke("vkResetFences", deviceHandle, 1, new long[]{fence});
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment pFence = arena.allocate(ValueLayout.JAVA_LONG);
+            pFence.set(ValueLayout.JAVA_LONG, 0, fence);
+            VulkanAPIRegistry.invoke("vkResetFences", deviceHandle, 1, pFence.address());
         } catch (Throwable ignored) {}
         fencePool.offer(fence);
     }

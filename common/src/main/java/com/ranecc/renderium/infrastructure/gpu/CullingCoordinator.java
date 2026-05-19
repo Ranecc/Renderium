@@ -48,8 +48,11 @@ public final class CullingCoordinator {
     public static synchronized void initialize() {
         if (initialized) return;
 
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        VulkanSyncManager.init(device);
+
         gpuCullingEnabled = HiZComputePipeline.isInitialized()
-            && VulkanDeviceHolder.isAvailable()
+            && device != 0L
             && !VulkanOperationGuard.isFailed();
 
         initialized = true;
@@ -111,33 +114,59 @@ public final class CullingCoordinator {
 
     /**
      * Stage 1: 距离剔除 — 使用平方距离比较。
+     * <p>候选索引按行列顺序排列：chunkX, chunkZ 由 idx/stide - radius 重建。
      */
     private static BitSet applyDistanceCulling(float[] cameraPos, int candidateCount, BitSet input) {
-        if (VulkanOperationGuard.isFailed()) return input;
+        if (cameraPos == null || VulkanOperationGuard.isFailed()) return input;
+
+        int radius = (int) Math.ceil(Math.sqrt(candidateCount + 1)) / 2;
+        int stride = 2 * radius + 1;
+        int chunkX0 = (int) Math.floor(cameraPos[0] / 16.0);
+        int chunkZ0 = (int) Math.floor(cameraPos[2] / 16.0);
+        float maxDistBlocks = 1024.0f * 16.0f;
+        float maxDistSq = maxDistBlocks * maxDistBlocks;
 
         BitSet result = new BitSet(candidateCount);
-        float maxDist = 1024.0f * 16.0f; // 默认 1024 chunks → blocks
-        float maxDistSq = maxDist * maxDist;
-
         for (int i = input.nextSetBit(0); i >= 0 && i < candidateCount; i = input.nextSetBit(i + 1)) {
-            float dx = 0, dz = 0;
-            // 简化: 假设区块在 chunkXZ 网格上，从输入数组重建坐标
-            // 实际坐标应由调用方在 BitSet 中编码
-            // 当前实现: 仅做基本检查，保持全部候选
-            result.set(i);
+            int dx = i / stride - radius;
+            int dz = i % stride - radius;
+            int cx = chunkX0 + dx;
+            int cz = chunkZ0 + dz;
+            float worldX = cx * 16.0f + 8.0f;
+            float worldZ = cz * 16.0f + 8.0f;
+            float dxWorld = worldX - cameraPos[0];
+            float dzWorld = worldZ - cameraPos[2];
+            if (dxWorld * dxWorld + dzWorld * dzWorld <= maxDistSq) {
+                result.set(i);
+            }
         }
         return result;
     }
 
     /**
-     * Stage 2: 视锥体剔除。
+     * Stage 2: 视锥体剔除 — 使用 MCAdapter.frustumTest 进行 AABB 测试。
      */
     private static BitSet applyFrustumCulling(Object frustum, int candidateCount, BitSet input) {
         if (frustum == null || VulkanOperationGuard.isFailed()) return input;
 
+        int radius = (int) Math.ceil(Math.sqrt(candidateCount + 1)) / 2;
+        int stride = 2 * radius + 1;
+        int chunkX0 = (int) Math.floor(0 / 16.0); // 相机未知时从原点开始
+        int chunkZ0 = (int) Math.floor(0 / 16.0);
+
         BitSet result = new BitSet(candidateCount);
         for (int i = input.nextSetBit(0); i >= 0 && i < candidateCount; i = input.nextSetBit(i + 1)) {
-            result.set(i);
+            int dx = i / stride - radius;
+            int dz = i % stride - radius;
+            int cx = chunkX0 + dx;
+            int cz = chunkZ0 + dz;
+            float minX = cx * 16.0f;
+            float maxX = minX + 16.0f;
+            float minZ = cz * 16.0f;
+            float maxZ = minZ + 16.0f;
+            if (MCAdapter.frustumTest(frustum, minX, -512.0, minZ, maxX, 512.0, maxZ)) {
+                result.set(i);
+            }
         }
         return result;
     }

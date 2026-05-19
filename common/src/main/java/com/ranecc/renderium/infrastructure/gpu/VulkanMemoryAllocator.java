@@ -5,6 +5,9 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
+import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+
 /**
  * Vulkan 内存分配器 — 统一管理 Buffer/Image/Memory 的创建与销毁。
  *
@@ -166,7 +169,26 @@ public final class VulkanMemoryAllocator {
     }
 
     private static int findMemoryType(long device, long allocationSize, int requiredProperties) {
-        // 简化实现：假定 memoryTypeIndex = 0（大多数 Vulkan 实现支持）
-        return 0;
+        long physicalDevice = VulkanDeviceHolder.getInstance().getPhysicalDevice();
+        if (physicalDevice == 0L || device == 0L) return 0;
+
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment memProps = arena.allocate(1024);
+            VulkanAPIRegistry.invoke("vkGetPhysicalDeviceMemoryProperties", physicalDevice, memProps.address());
+
+            int memoryTypeCount = memProps.get(ValueLayout.JAVA_INT, 0);
+            int count = Math.min(memoryTypeCount, 32);
+
+            for (int i = 0; i < count; i++) {
+                long typeOffset = 8 + (long) i * 8;
+                int flags = memProps.get(ValueLayout.JAVA_INT, typeOffset);
+                if ((flags & requiredProperties) == requiredProperties) {
+                    return i;
+                }
+            }
+            return 0;
+        } catch (Throwable t) {
+            return 0;
+        }
     }
 }

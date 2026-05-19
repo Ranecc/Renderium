@@ -246,6 +246,9 @@ public final class VulkanFFMBinding {
     /** vkGetSemaphoreCounterValue: 查询信号量计数器 */
     private static volatile MethodHandle VK_GET_SEMAPHORE_COUNTER_VALUE;
 
+    /** vkGetPhysicalDeviceMemoryProperties: 查询物理设备内存属性 */
+    private static volatile MethodHandle VK_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES;
+
     // ============ Phase 5: Ray Tracing ============
 
     /** vkCreateAccelerationStructureKHR: 创建加速结构 */
@@ -353,6 +356,7 @@ public final class VulkanFFMBinding {
     public static MethodHandle getVkWaitSemaphores() { return VK_WAIT_SEMAPHORES; }
     public static MethodHandle getVkSignalSemaphore() { return VK_SIGNAL_SEMAPHORE; }
     public static MethodHandle getVkGetSemaphoreCounterValue() { return VK_GET_SEMAPHORE_COUNTER_VALUE; }
+    public static MethodHandle getVkGetPhysicalDeviceMemoryProperties() { return VK_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES; }
     public static MethodHandle getVkCreateAccelerationStructureKHR() { return VK_CREATE_ACCELERATION_STRUCTURE_KHR; }
     public static MethodHandle getVkDestroyAccelerationStructureKHR() { return VK_DESTROY_ACCELERATION_STRUCTURE_KHR; }
     public static MethodHandle getVkCmdBuildAccelerationStructuresKHR() { return VK_CMD_BUILD_ACCELERATION_STRUCTURES_KHR; }
@@ -884,6 +888,13 @@ public final class VulkanFFMBinding {
                             ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG)
             );
 
+            VK_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES = linker.downcallHandle(
+                    vulkanLookup.find("vkGetPhysicalDeviceMemoryProperties").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG)
+            );
+
             VK_CREATE_ACCELERATION_STRUCTURE_KHR = linker.downcallHandle(
                     vulkanLookup.find("vkCreateAccelerationStructureKHR").orElseThrow(),
                     FunctionDescriptor.of(ValueLayout.JAVA_INT,
@@ -1011,6 +1022,7 @@ public final class VulkanFFMBinding {
             java.util.Map.entry("vkWaitSemaphores", VK_WAIT_SEMAPHORES),
             java.util.Map.entry("vkSignalSemaphore", VK_SIGNAL_SEMAPHORE),
             java.util.Map.entry("vkGetSemaphoreCounterValue", VK_GET_SEMAPHORE_COUNTER_VALUE),
+            java.util.Map.entry("vkGetPhysicalDeviceMemoryProperties", VK_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES),
             java.util.Map.entry("vkCreateAccelerationStructureKHR", VK_CREATE_ACCELERATION_STRUCTURE_KHR),
             java.util.Map.entry("vkDestroyAccelerationStructureKHR", VK_DESTROY_ACCELERATION_STRUCTURE_KHR),
             java.util.Map.entry("vkCmdBuildAccelerationStructuresKHR", VK_CMD_BUILD_ACCELERATION_STRUCTURES_KHR),

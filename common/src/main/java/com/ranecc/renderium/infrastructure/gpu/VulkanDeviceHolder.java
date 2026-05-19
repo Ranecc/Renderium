@@ -27,6 +27,7 @@ public final class VulkanDeviceHolder {
     private final AtomicLong graphicsQueue = new AtomicLong(0L);
     private final AtomicLong computeQueue = new AtomicLong(0L);
     private final AtomicLong vkQueue = new AtomicLong(0L);
+    private final AtomicLong vkPhysicalDevice = new AtomicLong(0L);
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean degraded = new AtomicBoolean(false);
 
@@ -45,6 +46,9 @@ public final class VulkanDeviceHolder {
     public long getGraphicsQueue() { return graphicsQueue.get(); }
     public long getComputeQueue() { return computeQueue.get(); }
     public long getVkQueue() { return vkQueue.get(); }
+    public long getPhysicalDevice() { return vkPhysicalDevice.get(); }
+
+    public void setPhysicalDevice(long handle) { vkPhysicalDevice.set(handle); }
 
     public long getVkDevice() { return vkDevice.get(); }
     public long getVkDeviceHandle() { return vkDevice.get(); }
