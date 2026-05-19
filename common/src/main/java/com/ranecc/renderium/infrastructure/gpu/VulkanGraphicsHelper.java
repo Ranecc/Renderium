@@ -205,9 +205,9 @@ public final class VulkanGraphicsHelper {
     public static void bindAndDrawIndexed(long cmdBuffer, long vbo, long ibo, int indexCount) {
         if (!isAvailable() || cmdBuffer == 0L || vbo == 0L || ibo == 0L) return;
         try {
-            VulkanFFMBinding.getVkCmdBindVertexBuffers().invoke(cmdBuffer, 0, 1, vbo, 0L);
-            VulkanFFMBinding.getVkCmdBindIndexBuffer().invoke(cmdBuffer, ibo, 0L, 0);
-            VulkanFFMBinding.getVkCmdDrawIndexed().invoke(cmdBuffer, indexCount, 1, 0, 0, 0);
+            VulkanAPIRegistry.invoke("vkCmdBindVertexBuffers", cmdBuffer, 0, 1, vbo, 0L);
+            VulkanAPIRegistry.invoke("vkCmdBindIndexBuffer", cmdBuffer, ibo, 0L, 0);
+            VulkanAPIRegistry.invoke("vkCmdDrawIndexed", cmdBuffer, indexCount, 1, 0, 0, 0);
         } catch (Throwable t) {
             LOGGER.warning("bindAndDrawIndexed failed: " + t.getMessage());
         }
@@ -216,7 +216,7 @@ public final class VulkanGraphicsHelper {
     public static void copyBuffer(long cmdBuffer, long src, long dst, long size) {
         if (!isAvailable() || cmdBuffer == 0L || src == 0L || dst == 0L) return;
         try {
-            VulkanFFMBinding.getVkCmdCopyBuffer().invoke(cmdBuffer, src, dst, 1, 0L);
+            VulkanAPIRegistry.invoke("vkCmdCopyBuffer", cmdBuffer, src, dst, 1, 0L);
         } catch (Throwable t) {
             LOGGER.warning("copyBuffer failed: " + t.getMessage());
         }

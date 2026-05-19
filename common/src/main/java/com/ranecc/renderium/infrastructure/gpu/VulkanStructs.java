@@ -39,8 +39,12 @@ public final class VulkanStructs {
     public static final int VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO = 24;
     public static final int VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO = 27;
     public static final int VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO = 35;  // 紧凑版
-    public static final int VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO_ALIGNED = 48;  // 对齐版
+    public static final int VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO = 48;   // 标准版
+    public static final int VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO_ALIGNED = 48;  // 对齐版（别名）
     public static final int VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO = 44;
+    public static final int VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO = 5;              // VkMemoryAllocateInfo
+    public static final int VK_STRUCTURE_TYPE_SUBMIT_INFO = 4;                      // VkSubmitInfo
+    public static final int VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO = 43;  // VkDescriptorSetLayoutCreateInfo
     public static final int VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO = 1000203001;
     public static final int VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO = 1000203002;
     public static final int VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO = 1000203003;
@@ -240,7 +244,7 @@ public final class VulkanStructs {
 
     public static MemorySegment createMemoryAllocateInfo(Arena arena, long allocationSize, int memoryTypeIndex) {
         MemorySegment s = arena.allocate(MAI_TOTAL);
-        s.set(ValueLayout.JAVA_INT, 0, 0); // sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO
+        s.set(ValueLayout.JAVA_INT, 0, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO); // sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO (5)
         s.set(ValueLayout.ADDRESS, MAI_PNEXT, MemorySegment.NULL);
         s.set(ValueLayout.JAVA_LONG, MAI_ALLOCSIZE, allocationSize);
         s.set(ValueLayout.JAVA_INT, MAI_TYPEINDEX, memoryTypeIndex);
@@ -331,7 +335,7 @@ public final class VulkanStructs {
     public static MemorySegment createDescriptorSetLayoutCreateInfo(
             Arena arena, int bindingCount, MemorySegment pBindings, int flags) {
         MemorySegment s = arena.allocate(ValueLayout.JAVA_LONG, 5);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 0, 0L); // sType (caller fills)
+        s.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO); // sType = 43
         s.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L); // pNext
         s.setAtIndex(ValueLayout.JAVA_LONG, 2, (long) flags);
         s.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) bindingCount);
@@ -351,7 +355,7 @@ public final class VulkanStructs {
     public static MemorySegment createDescriptorSetAllocateInfoCompact(
             Arena arena, long descriptorPool, int setCount, long setLayoutHandle) {
         MemorySegment s = arena.allocate(DSAI_TOTAL);
-        s.set(ValueLayout.JAVA_INT, 0, 0); // sType (caller fills)
+        s.set(ValueLayout.JAVA_INT, 0, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO); // sType = 48
         s.set(ValueLayout.JAVA_LONG, DSAI_POOL, descriptorPool);
         s.set(ValueLayout.JAVA_INT, DSAI_SETCOUNT, setCount);
         s.set(ValueLayout.JAVA_LONG, DSAI_PSETLAYOUTS, setLayoutHandle);
@@ -363,12 +367,12 @@ public final class VulkanStructs {
     // ============================
     public static MemorySegment createSubmitInfo(Arena arena, long commandBuffer) {
         MemorySegment s = arena.allocate(ValueLayout.JAVA_LONG, 6);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 0, 0L); // sType=VK_STRUCTURE_TYPE_SUBMIT_INFO
+        s.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VK_STRUCTURE_TYPE_SUBMIT_INFO); // sType = VK_STRUCTURE_TYPE_SUBMIT_INFO (4)
         s.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L); // pNext
         s.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L); // waitSemaphoreCount
         s.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L); // pWaitSemaphores
         s.setAtIndex(ValueLayout.JAVA_LONG, 4, 1L); // commandBufferCount
-        // cmdBuffer address → caller must set
+        // cmdBuf address → caller must set
         s.setAtIndex(ValueLayout.JAVA_LONG, 5, commandBuffer);
         return s;
     }

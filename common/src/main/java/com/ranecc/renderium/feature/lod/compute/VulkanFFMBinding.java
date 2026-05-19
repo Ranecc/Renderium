@@ -9,6 +9,8 @@ import java.lang.invoke.MethodHandle;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+
 /**
  * Vulkan FFM (Foreign Function & Memory) 方法句柄绑定
  * <p>
@@ -932,10 +934,91 @@ public final class VulkanFFMBinding {
             );
 
             ffmLoaded = true;
-            LOGGER.info("[VulkanFFM] ✓ FFM Vulkan 方法句柄加载成功");
+            registerAllToRegistry();
+            LOGGER.info("[VulkanFFM] ✓ FFM Vulkan 方法句柄加载成功 (" + VulkanAPIRegistry.getRegisteredCount() + " APIs)");
         } catch (Throwable t) {
             LOGGER.log(Level.WARNING, "[VulkanFFM] FFM Vulkan 方法句柄加载失败: " + t.getMessage(), t);
             ffmLoaded = false;
         }
+    }
+
+    /**
+     * 将所有已加载的 Vulkan 方法句柄注册到 {@link VulkanAPIRegistry}。
+     * <p>由 {@link #loadFFMMethodHandles()} 在加载完成后调用。
+     */
+    private static void registerAllToRegistry() {
+        var all = java.util.Map.<String, java.lang.invoke.MethodHandle>ofEntries(
+            java.util.Map.entry("vkCreateShaderModule", VK_CREATE_SHADER_MODULE),
+            java.util.Map.entry("vkCreateComputePipelines", VK_CREATE_COMPUTE_PIPELINES),
+            java.util.Map.entry("vkDestroyShaderModule", VK_DESTROY_SHADER_MODULE),
+            java.util.Map.entry("vkDestroyPipeline", VK_DESTROY_PIPELINE),
+            java.util.Map.entry("vkDestroyPipelineLayout", VK_DESTROY_PIPELINE_LAYOUT),
+            java.util.Map.entry("vkDestroyDescriptorSetLayout", VK_DESTROY_DESCRIPTOR_SET_LAYOUT),
+            java.util.Map.entry("vkAllocateCommandBuffers", VK_ALLOCATE_COMMAND_BUFFERS),
+            java.util.Map.entry("vkBeginCommandBuffer", VK_BEGIN_COMMAND_BUFFER),
+            java.util.Map.entry("vkEndCommandBuffer", VK_END_COMMAND_BUFFER),
+            java.util.Map.entry("vkCmdBindPipeline", VK_CMD_BIND_PIPELINE),
+            java.util.Map.entry("vkCmdBindDescriptorSets", VK_CMD_BIND_DESCRIPTOR_SETS),
+            java.util.Map.entry("vkCmdDispatch", VK_CMD_DISPATCH),
+            java.util.Map.entry("vkCmdPipelineBarrier", VK_CMD_PIPELINE_BARRIER),
+            java.util.Map.entry("vkQueueSubmit", VK_QUEUE_SUBMIT),
+            java.util.Map.entry("vkWaitForFences", VK_WAIT_FOR_FENCES),
+            java.util.Map.entry("vkResetFences", VK_RESET_FENCES),
+            java.util.Map.entry("vkCreateFence", VK_CREATE_FENCE),
+            java.util.Map.entry("vkDestroyFence", VK_DESTROY_FENCE),
+            java.util.Map.entry("vkCreateCommandPool", VK_CREATE_COMMAND_POOL),
+            java.util.Map.entry("vkDestroyCommandPool", VK_DESTROY_COMMAND_POOL),
+            java.util.Map.entry("vkCreatePipelineLayout", VK_CREATE_PIPELINE_LAYOUT),
+            java.util.Map.entry("vkCreateDescriptorSetLayout", VK_CREATE_DESCRIPTOR_SET_LAYOUT),
+            java.util.Map.entry("vkCreateGraphicsPipelines", VK_CREATE_GRAPHICS_PIPELINES),
+            java.util.Map.entry("vkCmdDraw", VK_CMD_DRAW),
+            java.util.Map.entry("vkCreateRenderPass", VK_CREATE_RENDER_PASS),
+            java.util.Map.entry("vkDestroyRenderPass", VK_DESTROY_RENDER_PASS),
+            java.util.Map.entry("vkCmdBeginRenderPass", VK_CMD_BEGIN_RENDER_PASS),
+            java.util.Map.entry("vkCmdEndRenderPass", VK_CMD_END_RENDER_PASS),
+            java.util.Map.entry("vkCreateImage", VK_CREATE_IMAGE),
+            java.util.Map.entry("vkDestroyImage", VK_DESTROY_IMAGE),
+            java.util.Map.entry("vkCreateImageView", VK_CREATE_IMAGE_VIEW),
+            java.util.Map.entry("vkDestroyImageView", VK_DESTROY_IMAGE_VIEW),
+            java.util.Map.entry("vkCreateSampler", VK_CREATE_SAMPLER),
+            java.util.Map.entry("vkDestroySampler", VK_DESTROY_SAMPLER),
+            java.util.Map.entry("vkAllocateMemory", VK_ALLOCATE_MEMORY),
+            java.util.Map.entry("vkFreeMemory", VK_FREE_MEMORY),
+            java.util.Map.entry("vkBindImageMemory", VK_BIND_IMAGE_MEMORY),
+            java.util.Map.entry("vkGetImageMemoryRequirements", VK_GET_IMAGE_MEMORY_REQUIREMENTS),
+            java.util.Map.entry("vkCreateFramebuffer", VK_CREATE_FRAMEBUFFER),
+            java.util.Map.entry("vkDestroyFramebuffer", VK_DESTROY_FRAMEBUFFER),
+            java.util.Map.entry("vkCreateDescriptorPool", VK_CREATE_DESCRIPTOR_POOL),
+            java.util.Map.entry("vkDestroyDescriptorPool", VK_DESTROY_DESCRIPTOR_POOL),
+            java.util.Map.entry("vkAllocateDescriptorSets", VK_ALLOCATE_DESCRIPTOR_SETS),
+            java.util.Map.entry("vkUpdateDescriptorSets", VK_UPDATE_DESCRIPTOR_SETS),
+            java.util.Map.entry("vkFreeDescriptorSets", VK_FREE_DESCRIPTOR_SETS),
+            java.util.Map.entry("vkMapMemory", VK_MAP_MEMORY),
+            java.util.Map.entry("vkUnmapMemory", VK_UNMAP_MEMORY),
+            java.util.Map.entry("vkInvalidateMappedMemoryRanges", VK_INVALIDATE_MAPPED_MEMORY_RANGES),
+            java.util.Map.entry("vkFlushMappedMemoryRanges", VK_FLUSH_MAPPED_MEMORY_RANGES),
+            java.util.Map.entry("vkCmdCopyBuffer", VK_CMD_COPY_BUFFER),
+            java.util.Map.entry("vkCmdBindVertexBuffers", VK_CMD_BIND_VERTEX_BUFFERS),
+            java.util.Map.entry("vkCmdBindIndexBuffer", VK_CMD_BIND_INDEX_BUFFER),
+            java.util.Map.entry("vkCmdDrawIndexed", VK_CMD_DRAW_INDEXED),
+            java.util.Map.entry("vkCreateBuffer", VK_CREATE_BUFFER),
+            java.util.Map.entry("vkDestroyBuffer", VK_DESTROY_BUFFER),
+            java.util.Map.entry("vkGetBufferMemoryRequirements", VK_GET_BUFFER_MEMORY_REQUIREMENTS),
+            java.util.Map.entry("vkBindBufferMemory", VK_BIND_BUFFER_MEMORY),
+            java.util.Map.entry("vkFreeCommandBuffers", VK_FREE_COMMAND_BUFFERS),
+            java.util.Map.entry("vkCreateSemaphore", VK_CREATE_SEMAPHORE),
+            java.util.Map.entry("vkDestroySemaphore", VK_DESTROY_SEMAPHORE),
+            java.util.Map.entry("vkWaitSemaphores", VK_WAIT_SEMAPHORES),
+            java.util.Map.entry("vkSignalSemaphore", VK_SIGNAL_SEMAPHORE),
+            java.util.Map.entry("vkGetSemaphoreCounterValue", VK_GET_SEMAPHORE_COUNTER_VALUE),
+            java.util.Map.entry("vkCreateAccelerationStructureKHR", VK_CREATE_ACCELERATION_STRUCTURE_KHR),
+            java.util.Map.entry("vkDestroyAccelerationStructureKHR", VK_DESTROY_ACCELERATION_STRUCTURE_KHR),
+            java.util.Map.entry("vkCmdBuildAccelerationStructuresKHR", VK_CMD_BUILD_ACCELERATION_STRUCTURES_KHR),
+            java.util.Map.entry("vkCmdTraceRaysKHR", VK_CMD_TRACE_RAYS_KHR),
+            java.util.Map.entry("vkCreateRayTracingPipelinesKHR", VK_CREATE_RAY_TRACING_PIPELINES_KHR),
+            java.util.Map.entry("vkCmdCopyAccelerationStructureKHR", VK_CMD_COPY_ACCELERATION_STRUCTURE_KHR),
+            java.util.Map.entry("vkCmdDrawMeshTasksEXT", VK_CMD_DRAW_MESH_TASKS_EXT)
+        );
+        VulkanAPIRegistry.registerAll(all);
     }
 }
