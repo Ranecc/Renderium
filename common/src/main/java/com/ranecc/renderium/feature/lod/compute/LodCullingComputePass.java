@@ -18,6 +18,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.GPULODDataManager;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanStructs;
 import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 
 /**
@@ -230,6 +231,10 @@ public final class LodCullingComputePass {
     static long getVkDevice() { return vkDevice; }
     static long getCommandPool() { return commandPool; }
     public static long getFence() { return fence; }
+
+    public static long getHizBuildPipeline() { return hizBuildPipeline; }
+    public static long getHizOcclusionPipeline() { return hizOcclusionPipeline; }
+    public static long getHizDescriptorPool() { return hizDescriptorPool; }
     static long getComputeQueue() { return computeQueue; }
     static void setVkDevice(long v) { vkDevice = v; }
     static void setCommandPool(long v) { commandPool = v; }
@@ -780,8 +785,7 @@ public final class LodCullingComputePass {
                 createPipelineLayout();
 
                 // 创建 Descriptor Pool + 分配 DescriptorSets
-                HiZComputePipeline.createDescriptorPool();
-                hizDescriptorPool = HiZComputePipeline.getHizDescriptorPool();
+                createDescriptorPoolInternal();
                 allocateHiZDescriptorSets();
 
                 // 创建 Compute Pipelines
@@ -1312,6 +1316,30 @@ public final class LodCullingComputePass {
      *
      * @throws Exception 如果分配失败
      */
+    private static void createDescriptorPoolInternal() throws Exception {
+        MethodHandle vkCreateDescriptorPool = VulkanFFMBinding.getVkCreateDescriptorPool();
+        if (vkCreateDescriptorPool == null) {
+            throw new IllegalStateException("vkCreateDescriptorPool FFM 句柄未加载");
+        }
+        long dev = vkDevice;
+        try (Arena arena = Arena.ofConfined()) {
+            int[][] typeCounts = {
+                {11, 11},  {10, 10},  {12, 2},  {6, 2}
+            };
+            MemorySegment poolSizes = VulkanStructs.createPoolSizes(arena, typeCounts);
+            MemorySegment poolInfo = VulkanStructs.createDescriptorPoolCreateInfoAligned(
+                arena, 2, typeCounts.length, poolSizes);
+            MemorySegment poolOut = arena.allocate(ValueLayout.JAVA_LONG);
+            int result = (int) vkCreateDescriptorPool.invokeExact(
+                dev, poolInfo.address(), 0L, poolOut.address());
+            if (result != 0) throw new RuntimeException("vkCreateDescriptorPool 失败");
+            hizDescriptorPool = poolOut.get(ValueLayout.JAVA_LONG, 0);
+            LOGGER.fine("[LodCulling] DescriptorPool 创建成功: 0x" + Long.toHexString(hizDescriptorPool));
+        } catch (Throwable t) {
+            throw new RuntimeException("createDescriptorPoolInternal 失败", t);
+        }
+    }
+
     private static void allocateHiZDescriptorSets() throws Exception {
         MethodHandle vkAllocateDescriptorSets = VulkanFFMBinding.getVkAllocateDescriptorSets();
         if (!ffmLoaded || vkAllocateDescriptorSets == null) {
@@ -1790,7 +1818,7 @@ public final class LodCullingComputePass {
      * 【调用方式】
      * 每帧调用一次（或根据需要），分配的缓冲区在录制并提交后由 Command Pool 统一管理
      */
-    private static long allocateCommandBuffer(long device) {
+    public static long allocateCommandBuffer(long device) {
         if (!ffmLoaded || VK_ALLOCATE_COMMAND_BUFFERS == null) {
             LOGGER.severe("[LodCulling] FFM 方法句柄未加载，无法分配命令缓冲区");
             return 0L;
@@ -1862,7 +1890,7 @@ public final class LodCullingComputePass {
      *
      * @throws Exception 如果录制开始失败
      */
-    private static void beginCommandBuffer(long cmdBuf) throws Exception {
+    public static void beginCommandBuffer(long cmdBuf) throws Exception {
         if (!ffmLoaded || VK_BEGIN_COMMAND_BUFFER == null) {
             throw new IllegalStateException("FFM 方法句柄未加载");
         }
@@ -1900,7 +1928,7 @@ public final class LodCullingComputePass {
      *
      * @throws Exception 如果结束录制失败
      */
-    private static void endCommandBuffer(long cmdBuf) throws Exception {
+    public static void endCommandBuffer(long cmdBuf) throws Exception {
         if (!ffmLoaded || VK_END_COMMAND_BUFFER == null) {
             throw new IllegalStateException("FFM 方法句柄未加载");
         }
@@ -1937,7 +1965,7 @@ public final class LodCullingComputePass {
      *
      * @throws Exception 如果绑定或分发失败
      */
-    private static void bindAndDispatchHiZBuild(long cmdBuf, VulkanDeviceHolder holder) throws Exception {
+    public static void bindAndDispatchHiZBuild(long cmdBuf, VulkanDeviceHolder holder) throws Exception {
         // Step 1: 绑定 Pipeline
         bindPipeline(cmdBuf, hizBuildPipeline, "HiZ Build");
 
@@ -1986,7 +2014,7 @@ public final class LodCullingComputePass {
      *
      * @throws Exception 如果绑定或分发失败
      */
-    private static void bindAndDispatchOcclusionQuery(long cmdBuf, VulkanDeviceHolder holder) throws Exception {
+    public static void bindAndDispatchOcclusionQuery(long cmdBuf, VulkanDeviceHolder holder) throws Exception {
         // Step 1: 绑定 Pipeline
         bindPipeline(cmdBuf, hizOcclusionPipeline, "Occlusion Query");
 
@@ -2196,7 +2224,7 @@ public final class LodCullingComputePass {
      *
      * @throws Exception 如果插入屏障失败
      */
-    private static void insertMemoryBarrier(long cmdBuf) throws Exception {
+    public static void insertMemoryBarrier(long cmdBuf) throws Exception {
         if (!ffmLoaded || VK_CMD_PIPELINE_BARRIER == null) {
             LOGGER.warning("[LodCulling] FFM 方法句柄未加载，跳过内存屏障");
             return;

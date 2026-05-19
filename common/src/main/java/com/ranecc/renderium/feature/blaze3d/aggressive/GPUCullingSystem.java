@@ -273,8 +273,10 @@ private static byte[] FRUSTUM_CULLING_SPIRV;
                 .pPoolSizes(poolSizes).maxSets(1)
                 .flags(VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
             var poolPtr = stack.mallocLong(1);
-            if (vkCreateDescriptorPool(device, poolInfo, null, poolPtr) == VK_SUCCESS)
-                descriptorPool = poolPtr.get(0);
+            if (vkCreateDescriptorPool(device, poolInfo, null, poolPtr) != VK_SUCCESS) {
+                throw new RuntimeException("GPUCullingSystem: vkCreateDescriptorPool failed");
+            }
+            descriptorPool = poolPtr.get(0);
 
             // === 分配并更新 DescriptorSet ===
             if (descriptorPool != 0L && descriptorSetLayout != 0L) {

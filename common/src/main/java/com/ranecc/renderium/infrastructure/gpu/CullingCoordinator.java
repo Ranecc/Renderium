@@ -4,18 +4,17 @@ import java.util.BitSet;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
-import com.ranecc.renderium.feature.lod.compute.HiZComputePipeline;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 
 /**
  * 剔除调度中心 — 统一三级剔除管线的调度入口。
  *
- * <p>在 GPUCullingPipeline + LodCullingComputePass + HiZComputePipeline 之上提供
+ * <p>在 GPUCullingPipeline + LodCullingComputePass 之上提供
  * 一个统一的 {@link #execute(float[], Object, BitSet, int)} 入口。
  *
  * <h3>调度策略</h3>
  * <ul>
- *   <li>GPU 路径（优先级高）: HiZComputePipeline Compute Shader → AMD / NVIDIA GPU 加速</li>
+ *   <li>GPU 路径（优先级高）: LodCullingComputePass Compute Shader → AMD / NVIDIA GPU 加速</li>
  *   <li>CPU 路径（降级）: GPUCullingPipeline CPU fallback</li>
  * </ul>
  *
@@ -51,7 +50,7 @@ public final class CullingCoordinator {
         long device = VulkanDeviceHolder.getInstance().getDevice();
         VulkanSyncManager.init(device);
 
-        gpuCullingEnabled = HiZComputePipeline.isInitialized()
+        gpuCullingEnabled = LodCullingComputePass.isInitialized()
             && device != 0L
             && !VulkanOperationGuard.isFailed();
 
@@ -177,17 +176,17 @@ public final class CullingCoordinator {
     private static BitSet applyHiZOcclusion(float[] cameraPos, int candidateCount, BitSet input) {
         if (VulkanOperationGuard.isFailed()) return input;
 
-        // GPU 路径: 使用 HiZComputePipeline
+        // GPU 路径: 使用 LodCullingComputePass
         if (gpuCullingEnabled) {
             try {
                 long device = VulkanDeviceHolder.getInstance().getDevice();
-                long cmdBuf = HiZComputePipeline.allocateCommandBuffer(device);
+                long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
                 if (cmdBuf != 0L) {
-                    HiZComputePipeline.beginCommandBuffer(cmdBuf);
-                    HiZComputePipeline.bindAndDispatchHiZBuild(cmdBuf, VulkanDeviceHolder.getInstance());
-                    HiZComputePipeline.insertMemoryBarrier(cmdBuf);
-                    HiZComputePipeline.bindAndDispatchOcclusionQuery(cmdBuf, VulkanDeviceHolder.getInstance());
-                    HiZComputePipeline.endCommandBuffer(cmdBuf);
+                    LodCullingComputePass.beginCommandBuffer(cmdBuf);
+                    LodCullingComputePass.bindAndDispatchHiZBuild(cmdBuf, VulkanDeviceHolder.getInstance());
+                    LodCullingComputePass.insertMemoryBarrier(cmdBuf);
+                    LodCullingComputePass.bindAndDispatchOcclusionQuery(cmdBuf, VulkanDeviceHolder.getInstance());
+                    LodCullingComputePass.endCommandBuffer(cmdBuf);
 
                     long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
                     if (queue != 0L) {

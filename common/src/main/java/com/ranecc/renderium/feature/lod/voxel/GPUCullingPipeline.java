@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import com.ranecc.renderium.feature.lod.compute.HiZComputePipeline;
+import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
@@ -363,7 +363,7 @@ public class GPUCullingPipeline {
     /**
      * 执行 GPU 版本的剔除管线
      *
-     * <p>使用 HiZComputePipeline 的 Compute Shader 执行真正的 GPU 遮挡剔除。
+     * <p>使用 LodCullingComputePass 的 Compute Shader 执行真正的 GPU 遮挡剔除。
      * 流程：分配命令缓冲区 → 录制 HiZ Build → 屏障 → 录制 Occlusion Query → 提交 → 回读可见性
      */
     public BitSet executeGPUCulling(float[] cameraPos, Object frustum, int candidateCount) {
@@ -372,19 +372,19 @@ public class GPUCullingPipeline {
         }
 
         long device = VulkanDeviceHolder.getInstance().getDevice();
-        if (device == 0L || !HiZComputePipeline.isInitialized()) {
+        if (device == 0L || !LodCullingComputePass.isInitialized()) {
             return executeCPUCulling(cameraPos, frustum, candidateCount);
         }
 
         try {
-            long cmdBuf = HiZComputePipeline.allocateCommandBuffer(device);
+            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
             if (cmdBuf == 0L) return executeCPUCulling(cameraPos, frustum, candidateCount);
 
-            HiZComputePipeline.beginCommandBuffer(cmdBuf);
-            HiZComputePipeline.bindAndDispatchHiZBuild(cmdBuf, VulkanDeviceHolder.getInstance());
-            HiZComputePipeline.insertMemoryBarrier(cmdBuf);
-            HiZComputePipeline.bindAndDispatchOcclusionQuery(cmdBuf, VulkanDeviceHolder.getInstance());
-            HiZComputePipeline.endCommandBuffer(cmdBuf);
+            LodCullingComputePass.beginCommandBuffer(cmdBuf);
+            LodCullingComputePass.bindAndDispatchHiZBuild(cmdBuf, VulkanDeviceHolder.getInstance());
+            LodCullingComputePass.insertMemoryBarrier(cmdBuf);
+            LodCullingComputePass.bindAndDispatchOcclusionQuery(cmdBuf, VulkanDeviceHolder.getInstance());
+            LodCullingComputePass.endCommandBuffer(cmdBuf);
 
             long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
             if (queue == 0L) return executeCPUCulling(cameraPos, frustum, candidateCount);

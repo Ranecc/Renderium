@@ -5,7 +5,7 @@
 
 package com.ranecc.renderium.feature.blaze3d.aggressive;
 
-import com.ranecc.renderium.feature.lod.compute.HiZComputePipeline;
+import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.*;
@@ -135,13 +135,13 @@ public class CullingPipeline {
         VulkanDeviceHolder holder = VulkanDeviceHolder.getInstance();
         if (!holder.isAvailable()) return;
 
-        if (HiZComputePipeline.getHizBuildPipeline() != 0L) {
-            HiZComputePipeline.bindAndDispatchHiZBuild(cmdBufHandle, holder);
-            HiZComputePipeline.insertMemoryBarrier(cmdBufHandle);
+        if (LodCullingComputePass.getHizBuildPipeline() != 0L) {
+            LodCullingComputePass.bindAndDispatchHiZBuild(cmdBufHandle, holder);
+            LodCullingComputePass.insertMemoryBarrier(cmdBufHandle);
         }
-        if (HiZComputePipeline.getHizOcclusionPipeline() != 0L) {
-            HiZComputePipeline.bindAndDispatchOcclusionQuery(cmdBufHandle, holder);
-            HiZComputePipeline.insertMemoryBarrier(cmdBufHandle);
+        if (LodCullingComputePass.getHizOcclusionPipeline() != 0L) {
+            LodCullingComputePass.bindAndDispatchOcclusionQuery(cmdBufHandle, holder);
+            LodCullingComputePass.insertMemoryBarrier(cmdBufHandle);
         }
     }
 

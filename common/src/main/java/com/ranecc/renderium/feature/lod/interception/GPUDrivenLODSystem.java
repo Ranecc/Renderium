@@ -19,6 +19,7 @@ import java.util.logging.Logger;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
 import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 import com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper;
+import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 
 /**
@@ -394,7 +395,7 @@ public final class GPUDrivenLODSystem {
         try {
             // ======== 获取命令缓冲区 ========
             long device = VulkanBufferHelper.getDevice();
-            long cmdBuf = com.ranecc.renderium.feature.lod.compute.HiZComputePipeline.allocateCommandBuffer(device);
+            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
             if (cmdBuf == 0L) {
                 throw new RuntimeException("无法分配命令缓冲区");
             }
