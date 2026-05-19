@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
+import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
@@ -82,7 +83,7 @@ public final class VulkanMemoryAllocator {
         if (device == 0L || size == 0L) return new long[]{0L, 0L};
 
         if (isVmaMode()) {
-            VmaMemoryPools.PoolType poolType = usageToPoolType(usageBits);
+            VmaMemoryPools.PoolType poolType = resolvePoolType(usageBits, memoryPropsBits, size);
             if (poolType != null) {
                 VmaMemoryPools.PoolAllocation alloc = vmaPools.allocateFromPool(poolType, size);
                 if (alloc != null) {
@@ -209,12 +210,44 @@ public final class VulkanMemoryAllocator {
 
     // ==================== 内部方法 ====================
 
-    private static VmaMemoryPools.PoolType usageToPoolType(int usageBits) {
-        if ((usageBits & 0x0080) != 0) return VmaMemoryPools.PoolType.VERTEX_BUFFER;
-        if ((usageBits & 0x0040) != 0) return VmaMemoryPools.PoolType.INDEX_BUFFER;
-        if ((usageBits & 0x0010) != 0) return VmaMemoryPools.PoolType.UNIFORM_BUFFER;
-        if ((usageBits & 0x0001) != 0) return VmaMemoryPools.PoolType.STAGING_BUFFER;
-        if ((usageBits & 0x0020) != 0) return VmaMemoryPools.PoolType.RENDER_TARGET;
+    /**
+     * 动态选择最合适的 VMA 专用池。
+     *
+     * <p>同时考虑三种维度：
+     * <ol>
+     *   <li><b>内存属性</b> — 优先匹配 {@code memoryPropsBits} 要求的池（HOST_VISIBLE vs DEVICE_LOCAL）</li>
+     *   <li><b>Buffer 用途</b> — 在同类池中按 usageBits 选择</li>
+     *   <li><b>大小</b> — 跳过容量不适合的池（如 UNIFORM 最大 4MB）</li>
+     * </ol>
+     *
+     * @param usageBits       VkBufferUsageFlags
+     * @param memoryPropsBits VkMemoryPropertyFlags（调用方要求的内存属性）
+     * @param size            Buffer 大小
+     * @return 最匹配的 PoolType，无合适池时返回 null（触发 FFM 回退）
+     */
+    private static VmaMemoryPools.PoolType resolvePoolType(int usageBits, int memoryPropsBits, long size) {
+        boolean wantHostVisible = (memoryPropsBits & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0;
+        boolean isStaging = (usageBits & VulkanConst.BUFFER_USAGE_TRANSFER_SRC_BIT) != 0;
+        boolean isUniform = (usageBits & VulkanConst.BUFFER_USAGE_UNIFORM_BUFFER_BIT) != 0;
+        boolean isVertex = (usageBits & VulkanConst.BUFFER_USAGE_VERTEX_BUFFER_BIT) != 0;
+        boolean isIndex = (usageBits & VulkanConst.BUFFER_USAGE_INDEX_BUFFER_BIT) != 0;
+        boolean isStorage = (usageBits & VulkanConst.BUFFER_USAGE_STORAGE_BUFFER_BIT) != 0;
+
+        // 场景 A: 要求 HOST_VISIBLE → 优先匹配 STAGING / UNIFORM 池
+        if (wantHostVisible) {
+            if (isStaging) return VmaMemoryPools.PoolType.STAGING_BUFFER;
+            if (isUniform || size <= 4L * 1024 * 1024) return VmaMemoryPools.PoolType.UNIFORM_BUFFER;
+            return null;
+        }
+
+        // 场景 B: DEVICE_LOCAL 且无 VMA 专用池 → 跳过（无 STORAGE 池）
+        if (isStorage) return null;
+
+        // 场景 C: DEVICE_LOCAL — 按用途匹配
+        if (isVertex) return VmaMemoryPools.PoolType.VERTEX_BUFFER;
+        if (isIndex) return VmaMemoryPools.PoolType.INDEX_BUFFER;
+        if (isUniform) return VmaMemoryPools.PoolType.UNIFORM_BUFFER;
+
         return null;
     }
 

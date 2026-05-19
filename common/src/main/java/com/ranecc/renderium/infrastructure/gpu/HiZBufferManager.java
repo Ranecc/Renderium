@@ -13,6 +13,7 @@ import java.util.logging.Logger;
 
 import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
 
 /**
  * Hi-Z 纹理数组管理器（准备性类）
@@ -532,17 +533,7 @@ public final class HiZBufferManager {
             this.currentMipLevels = mipLevels;
 
             try (Arena arena = Arena.ofConfined()) {
-                // 获取 FFM MethodHandle
-                MethodHandle vkCreateImage = VulkanFFMBinding.getVkCreateImage();
-                MethodHandle vkDestroyImage = VulkanFFMBinding.getVkDestroyImage();
                 MethodHandle vkCreateImageView = VulkanFFMBinding.getVkCreateImageView();
-                MethodHandle vkGetImageMemoryRequirements = VulkanFFMBinding.getVkGetImageMemoryRequirements();
-                MethodHandle vkAllocateMemory = VulkanFFMBinding.getVkAllocateMemory();
-                MethodHandle vkBindImageMemory = VulkanFFMBinding.getVkBindImageMemory();
-                MethodHandle vkCreateBuffer = VulkanFFMBinding.getVkCreateBuffer();
-                MethodHandle vkDestroyBuffer = VulkanFFMBinding.getVkDestroyBuffer();
-                MethodHandle vkGetBufferMemoryRequirements = VulkanFFMBinding.getVkGetBufferMemoryRequirements();
-                MethodHandle vkBindBufferMemory = VulkanFFMBinding.getVkBindBufferMemory();
                 MethodHandle vkCreateSampler = VulkanFFMBinding.getVkCreateSampler();
 
                 // ==================== 1. 创建 Sampler ====================
@@ -575,7 +566,7 @@ public final class HiZBufferManager {
                 this.hiZSampler = pSampler.getAtIndex(ValueLayout.JAVA_LONG, 0);
                 LOGGER.fine("✓ Hi-Z Sampler 创建成功: 0x" + Long.toHexString(this.hiZSampler));
 
-                // ==================== 2. 创建 Hi-Z Image ====================
+                // ==================== 2. 创建 Hi-Z Image + 分配内存 ====================
                 MemorySegment imageCreateInfo = arena.allocate(SZ_IMAGE_CREATE_INFO);
                 imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_STYPE / 4, VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
                 imageCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_ICI_PNEXT / 8, 0L);
@@ -597,41 +588,13 @@ public final class HiZBufferManager {
                 imageCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_ICI_P_QUEUE_FAMILY_INDICES / 8, 0L);
                 imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_INITIAL_LAYOUT / 4, VK_IMAGE_LAYOUT_UNDEFINED);
 
-                MemorySegment pImage = arena.allocate(ValueLayout.JAVA_LONG);
-                int imageResult = (int) vkCreateImage.invokeExact(vkDevice,
-                    imageCreateInfo.address(), 0L, pImage.address());
-                if (imageResult != 0) {
-                    throw new RuntimeException("vkCreateImage 失败，VkResult=" + imageResult);
+                long[] imageResult = VulkanMemoryAllocator.createImage(vkDevice, imageCreateInfo.address());
+                if (imageResult[0] == 0L || imageResult[1] == 0L) {
+                    throw new RuntimeException("VulkanMemoryAllocator.createImage 失败");
                 }
-                this.hiZImageHandle = pImage.getAtIndex(ValueLayout.JAVA_LONG, 0);
+                this.hiZImageHandle = imageResult[0];
+                this.hiZDeviceMemory = imageResult[1];
                 LOGGER.fine("✓ Hi-Z Image 创建成功: 0x" + Long.toHexString(this.hiZImageHandle));
-
-                // ==================== 3. 获取内存需求并分配显存 ====================
-                MemorySegment memReqs = arena.allocate(SZ_MEMORY_REQUIREMENTS);
-                vkGetImageMemoryRequirements.invokeExact(vkDevice, this.hiZImageHandle, memReqs.address());
-                long imageMemSize = memReqs.getAtIndex(ValueLayout.JAVA_LONG, OFF_MEMREQ_SIZE / 8);
-                int memoryTypeBits = memReqs.getAtIndex(ValueLayout.JAVA_INT, (int)(OFF_MEMREQ_MEMORY_TYPE_BITS / 4));
-                int imageMemoryTypeIndex = Integer.numberOfTrailingZeros(memoryTypeBits);
-
-                MemorySegment allocInfo = arena.allocate(SZ_MEMORY_ALLOCATE_INFO);
-                allocInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_MAI_STYPE / 4, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
-                allocInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_MAI_PNEXT / 8, 0L);
-                allocInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_MAI_ALLOCATION_SIZE / 8, imageMemSize);
-                allocInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_MAI_MEMORY_TYPE_INDEX / 4, imageMemoryTypeIndex);
-
-                MemorySegment pMemory = arena.allocate(ValueLayout.JAVA_LONG);
-                int allocResult = (int) vkAllocateMemory.invokeExact(vkDevice, allocInfo.address(), 0L, pMemory.address());
-                if (allocResult != 0) {
-                    throw new RuntimeException("vkAllocateMemory (Image) 失败，VkResult=" + allocResult);
-                }
-                this.hiZDeviceMemory = pMemory.getAtIndex(ValueLayout.JAVA_LONG, 0);
-
-                int bindResult = (int) vkBindImageMemory.invokeExact(vkDevice,
-                    this.hiZImageHandle, this.hiZDeviceMemory, 0L);
-                if (bindResult != 0) {
-                    throw new RuntimeException("vkBindImageMemory 失败，VkResult=" + bindResult);
-                }
-                LOGGER.fine("✓ Image Memory 绑定成功: size=" + imageMemSize + " bytes");
 
                 // ==================== 4. 创建 Storage ImageViews ====================
                 for (int i = 0; i < mipLevels; i++) {
@@ -650,49 +613,14 @@ public final class HiZBufferManager {
                 }
                 LOGGER.fine("✓ ImageViews 创建完成: " + mipLevels + " storage + " + mipLevels + " sampler");
 
-                // ==================== 6. 创建 Config UBO Buffer ====================
-                MemorySegment bufferCreateInfo = arena.allocate(SZ_BUFFER_CREATE_INFO);
-                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_BCI_STYPE / 4, VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO);
-                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_BCI_PNEXT / 8, 0L);
-                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_BCI_FLAGS / 4, 0);
-                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_BCI_SIZE / 8, CONFIG_UBO_SIZE);
-                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_BCI_USAGE / 4, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_BCI_SHARING_MODE / 4, VK_SHARING_MODE_EXCLUSIVE);
-                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_BCI_QUEUE_FAMILY_INDEX_COUNT / 4, 0);
-                bufferCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_BCI_P_QUEUE_FAMILY_INDICES / 8, 0L);
-
-                MemorySegment pBuffer = arena.allocate(ValueLayout.JAVA_LONG);
-                int bufferResult = (int) vkCreateBuffer.invokeExact(vkDevice, bufferCreateInfo.address(), 0L, pBuffer.address());
-                if (bufferResult != 0) {
-                    throw new RuntimeException("vkCreateBuffer 失败，VkResult=" + bufferResult);
+                // ==================== 6. 创建 Config UBO Buffer + 分配内存 ====================
+                long[] bufferResult = VulkanMemoryAllocator.createHostVisibleBuffer(
+                    vkDevice, CONFIG_UBO_SIZE, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+                if (bufferResult[0] == 0L || bufferResult[1] == 0L) {
+                    throw new RuntimeException("VulkanMemoryAllocator.createHostVisibleBuffer 失败");
                 }
-                this.configBufferHandle = pBuffer.getAtIndex(ValueLayout.JAVA_LONG, 0);
-
-                // ==================== 7. 分配 + 绑定 Buffer Memory ====================
-                MemorySegment bufferMemReqs = arena.allocate(SZ_MEMORY_REQUIREMENTS);
-                vkGetBufferMemoryRequirements.invokeExact(vkDevice, this.configBufferHandle, bufferMemReqs.address());
-                long bufferMemSize = bufferMemReqs.getAtIndex(ValueLayout.JAVA_LONG, OFF_MEMREQ_SIZE / 8);
-                int bufferMemTypeBits = bufferMemReqs.getAtIndex(ValueLayout.JAVA_INT, (int)(OFF_MEMREQ_MEMORY_TYPE_BITS / 4));
-                int bufferMemoryTypeIndex = Integer.numberOfTrailingZeros(bufferMemTypeBits);
-
-                MemorySegment bufferAllocInfo = arena.allocate(SZ_MEMORY_ALLOCATE_INFO);
-                bufferAllocInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_MAI_STYPE / 4, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
-                bufferAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_MAI_PNEXT / 8, 0L);
-                bufferAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_MAI_ALLOCATION_SIZE / 8, bufferMemSize);
-                bufferAllocInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_MAI_MEMORY_TYPE_INDEX / 4, bufferMemoryTypeIndex);
-
-                MemorySegment pBufferMemory = arena.allocate(ValueLayout.JAVA_LONG);
-                int bufferAllocResult = (int) vkAllocateMemory.invokeExact(vkDevice, bufferAllocInfo.address(), 0L, pBufferMemory.address());
-                if (bufferAllocResult != 0) {
-                    throw new RuntimeException("vkAllocateMemory (Buffer) 失败，VkResult=" + bufferAllocResult);
-                }
-                this.configBufferMemory = pBufferMemory.getAtIndex(ValueLayout.JAVA_LONG, 0);
-
-                int bindBufferResult = (int) vkBindBufferMemory.invokeExact(vkDevice,
-                    this.configBufferHandle, this.configBufferMemory, 0L);
-                if (bindBufferResult != 0) {
-                    throw new RuntimeException("vkBindBufferMemory 失败，VkResult=" + bindBufferResult);
-                }
+                this.configBufferHandle = bufferResult[0];
+                this.configBufferMemory = bufferResult[1];
                 this.configBufferView = this.configBufferHandle;
                 LOGGER.fine("✓ Config UBO Buffer 创建完成: size=" + CONFIG_UBO_SIZE + " bytes");
             }
@@ -1196,9 +1124,6 @@ public final class HiZBufferManager {
         // 在本地变量中缓存 MethodHandle 避免重复查找
         MethodHandle vkDestroyImageView = VulkanFFMBinding.getVkDestroyImageView();
         MethodHandle vkDestroySampler = VulkanFFMBinding.getVkDestroySampler();
-        MethodHandle vkFreeMemory = VulkanFFMBinding.getVkFreeMemory();
-        MethodHandle vkDestroyBuffer = VulkanFFMBinding.getVkDestroyBuffer();
-        MethodHandle vkDestroyImage = VulkanFFMBinding.getVkDestroyImage();
 
         // 1. 销毁 Mipmap ImageViews（当前实际层数）
         for (int i = 0; i < this.currentMipLevels; i++) {
@@ -1231,38 +1156,15 @@ public final class HiZBufferManager {
         }
 
         // 3. 销毁 UBO Buffer + 显存
-        try {
-            if (this.configBufferHandle != 0L) {
-                if (this.configBufferMemory != 0L) {
-                    vkFreeMemory.invokeExact(vkDevice, this.configBufferMemory, 0L);
-                    this.configBufferMemory = 0L;
-                }
-                vkDestroyBuffer.invokeExact(vkDevice, this.configBufferHandle, 0L);
-                this.configBufferHandle = 0L;
-            }
-        } catch (Throwable t) {
-            LOGGER.finest("销毁 UBO Buffer 时忽略异常: " + t.getMessage());
-        }
+        VulkanMemoryAllocator.destroyBuffer(vkDevice, this.configBufferHandle, this.configBufferMemory);
+        this.configBufferHandle = 0L;
+        this.configBufferMemory = 0L;
         this.configBufferView = 0L;
 
         // 4. 销毁 Hi-Z Image + 显存
-        try {
-            if (this.hiZDeviceMemory != 0L) {
-                vkFreeMemory.invokeExact(vkDevice, this.hiZDeviceMemory, 0L);
-                this.hiZDeviceMemory = 0L;
-            }
-        } catch (Throwable t) {
-            LOGGER.finest("释放 Hi-Z Memory 时忽略异常: " + t.getMessage());
-        }
-
-        try {
-            if (this.hiZImageHandle != 0L) {
-                vkDestroyImage.invokeExact(vkDevice, this.hiZImageHandle, 0L);
-                this.hiZImageHandle = 0L;
-            }
-        } catch (Throwable t) {
-            LOGGER.finest("销毁 Hi-Z Image 时忽略异常: " + t.getMessage());
-        }
+        VulkanMemoryAllocator.destroyImage(vkDevice, this.hiZImageHandle, this.hiZDeviceMemory);
+        this.hiZImageHandle = 0L;
+        this.hiZDeviceMemory = 0L;
 
         this.currentWidth = 0;
         this.currentHeight = 0;

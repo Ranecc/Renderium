@@ -17,6 +17,8 @@ import org.lwjgl.vulkan.VkImageCreateInfo;
 import org.lwjgl.vulkan.VkImageViewCreateInfo;
 import org.lwjgl.vulkan.VK10;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.ValueLayout;
 import java.nio.LongBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -544,23 +546,31 @@ public final class VulkanGPUResourceManager {
                             .baseArrayLayer(0)
                             .layerCount(1));
 
-            // 准备输出
-            LongBuffer pView = stack.mallocLong(1);
+            // 分配输出缓冲区（使用 FFM Arena）
+            var viewArena = Arena.ofConfined();
+            var pView = viewArena.allocate(ValueLayout.JAVA_LONG);
 
-            // 调用 Vulkan API 创建视图（使用 VkDevice 包装器）
-            // 注意: LWJGL VkDevice 构造函数需要 VkPhysicalDevice，此处传 null（仅用于 API 调用）
-            int result = VK10.vkCreateImageView(
-                    new org.lwjgl.vulkan.VkDevice(vkDevice, null, null),
-                    viewInfo,
-                    null,
-                    pView
-            );
+            // 调用 Vulkan API 创建视图
+            int result;
+            try {
+                result = (int) VulkanAPIRegistry.invoke(
+                        "vkCreateImageView",
+                        vkDevice,
+                        viewInfo.address(),
+                        0L,
+                        pView.address()
+                );
+            } catch (Throwable t) {
+                throw new RuntimeException("vkCreateImageView 调用异常", t);
+            } finally {
+                viewArena.close();
+            }
             if (result != VK10.VK_SUCCESS) {
                 LOGGER.severe(String.format("vkCreateImageView 失败: VkResult=%d", result));
                 return 0L;
             }
 
-            long viewHandle = pView.get(0);
+            long viewHandle = pView.get(ValueLayout.JAVA_LONG, 0);
             totalViewsCreated.incrementAndGet();
 
             LOGGER.finest(String.format("createView[image=0x%X] → view=0x%X", image, viewHandle));

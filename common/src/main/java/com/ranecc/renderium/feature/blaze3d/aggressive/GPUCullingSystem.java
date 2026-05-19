@@ -3,7 +3,9 @@
 
 package com.ranecc.renderium.feature.blaze3d.aggressive;
 
+import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.*;
@@ -32,6 +34,8 @@ public class GPUCullingSystem implements AutoCloseable {
     protected static long cullingPipeline = 0L;
     protected static long chunkBoundsBuffer = 0L;
     protected static long indirectArgsBuffer = 0L;
+    private static long chunkBoundsMemory = 0L;
+    private static long indirectArgsMemory = 0L;
     private static long cullingShaderModule = 0L;
     private static long pipelineLayout = 0L;
     /** frustum_culling.comp 的 4 个 binding: SSBO(0/1/2) + UBO(3) */
@@ -203,22 +207,25 @@ public class GPUCullingSystem implements AutoCloseable {
             }
 
             // === VkBuffer: chunkBoundsBuffer (AABB, 每个 chunk 2×vec4 = 32 字节) ===
-            var boundsBufInfo = VkBufferCreateInfo.calloc(stack)
-                .sType(VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO)
-                .size(MAX_CHUNK_COUNT * 32L)
-                .usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-            var bufPtr1 = stack.mallocLong(1);
-            if (vkCreateBuffer(device, boundsBufInfo, null, bufPtr1) == VK_SUCCESS)
-                chunkBoundsBuffer = bufPtr1.get(0);
+            long vkDeviceHandle = VulkanDeviceHolder.getInstance().getDevice();
+            long[] boundsResult = VulkanMemoryAllocator.createDeviceLocalBuffer(
+                vkDeviceHandle,
+                MAX_CHUNK_COUNT * 32L,
+                VulkanConst.BUFFER_USAGE_STORAGE_BUFFER_BIT | VulkanConst.BUFFER_USAGE_TRANSFER_DST_BIT);
+            if (boundsResult[0] != 0L && boundsResult[1] != 0L) {
+                chunkBoundsBuffer = boundsResult[0];
+                chunkBoundsMemory = boundsResult[1];
+            }
 
             // === VkBuffer: indirectArgsBuffer (indirect draw, 每个 chunk 20 字节) ===
-            var indirectBufInfo = VkBufferCreateInfo.calloc(stack)
-                .sType(VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO)
-                .size(MAX_CHUNK_COUNT * 20L)
-                .usage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-            var bufPtr2 = stack.mallocLong(1);
-            if (vkCreateBuffer(device, indirectBufInfo, null, bufPtr2) == VK_SUCCESS)
-                indirectArgsBuffer = bufPtr2.get(0);
+            long[] indirectResult = VulkanMemoryAllocator.createDeviceLocalBuffer(
+                vkDeviceHandle,
+                MAX_CHUNK_COUNT * 20L,
+                VulkanConst.BUFFER_USAGE_STORAGE_BUFFER_BIT | VulkanConst.BUFFER_USAGE_TRANSFER_DST_BIT);
+            if (indirectResult[0] != 0L && indirectResult[1] != 0L) {
+                indirectArgsBuffer = indirectResult[0];
+                indirectArgsMemory = indirectResult[1];
+            }
 
             ownBuffers = true;
         }
@@ -227,12 +234,19 @@ public class GPUCullingSystem implements AutoCloseable {
     private void cleanupResources() {
         VkDevice device = RenderiumVulkanBridge.getDevice();
         if (device == null) return;
+        long vkDeviceHandle = VulkanDeviceHolder.getInstance().getDevice();
         if (cullingPipeline != 0L) { vkDestroyPipeline(device, cullingPipeline, null); cullingPipeline = 0L; }
         if (cullingShaderModule != 0L) { vkDestroyShaderModule(device, cullingShaderModule, null); cullingShaderModule = 0L; }
         if (pipelineLayout != 0L) { vkDestroyPipelineLayout(device, pipelineLayout, null); pipelineLayout = 0L; }
         if (descriptorSetLayout != 0L) { vkDestroyDescriptorSetLayout(device, descriptorSetLayout, null); descriptorSetLayout = 0L; }
-        if (chunkBoundsBuffer != 0L && ownBuffers) { vkDestroyBuffer(device, chunkBoundsBuffer, null); chunkBoundsBuffer = 0L; }
-        if (indirectArgsBuffer != 0L && ownBuffers) { vkDestroyBuffer(device, indirectArgsBuffer, null); indirectArgsBuffer = 0L; }
+        if (chunkBoundsBuffer != 0L && ownBuffers) {
+            VulkanMemoryAllocator.destroyBuffer(vkDeviceHandle, chunkBoundsBuffer, chunkBoundsMemory);
+            chunkBoundsBuffer = 0L; chunkBoundsMemory = 0L;
+        }
+        if (indirectArgsBuffer != 0L && ownBuffers) {
+            VulkanMemoryAllocator.destroyBuffer(vkDeviceHandle, indirectArgsBuffer, indirectArgsMemory);
+            indirectArgsBuffer = 0L; indirectArgsMemory = 0L;
+        }
         ownBuffers = false;
         FRUSTUM_CULLING_SPIRV = null;
     }
