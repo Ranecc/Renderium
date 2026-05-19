@@ -28,6 +28,7 @@ public final class VulkanDeviceHolder {
     private final AtomicLong computeQueue = new AtomicLong(0L);
     private final AtomicLong vkQueue = new AtomicLong(0L);
     private final AtomicLong vkPhysicalDevice = new AtomicLong(0L);
+    private final AtomicLong vkInstance = new AtomicLong(0L);
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean degraded = new AtomicBoolean(false);
 
@@ -36,6 +37,9 @@ public final class VulkanDeviceHolder {
      * 用于下游通过反射获取 LWJGL VkDevice
      */
     private static volatile Object vulkanDeviceObj = null;
+
+    /** 设备就绪后的回调（由 Feature 层注册，Platform 层触发） */
+    private static volatile Runnable onDeviceReady;
 
     private VulkanDeviceHolder() {}
 
@@ -49,10 +53,13 @@ public final class VulkanDeviceHolder {
     public long getPhysicalDevice() { return vkPhysicalDevice.get(); }
 
     public void setPhysicalDevice(long handle) { vkPhysicalDevice.set(handle); }
+    public void setVkInstance(long handle) { vkInstance.set(handle); }
 
     public long getVkDevice() { return vkDevice.get(); }
     public long getVkDeviceHandle() { return vkDevice.get(); }
     public long getVmaAllocator() { return vmaAllocator.get(); }
+    public long getVkPhysicalDevice() { return vkPhysicalDevice.get(); }
+    public long getVkInstance() { return vkInstance.get(); }
     /**
      * 获取 Mojang VulkanDevice 对象引用
      *
@@ -87,8 +94,18 @@ public final class VulkanDeviceHolder {
         this.computeQueue.set(cQueue);
         this.initialized.set(true);
         this.degraded.set(false);
+        Runnable cb = onDeviceReady;
+        if (cb != null) cb.run();
         LOGGER.info("VulkanDeviceHolder set: device=0x" + Long.toHexString(device)
             + " vma=0x" + Long.toHexString(vma));
+    }
+
+    /**
+     * 注册设备就绪回调。由 Feature 层在模块初始化时注册，
+     * 设备句柄设置完成后自动触发。
+     */
+    public static void setOnDeviceReady(Runnable callback) {
+        onDeviceReady = callback;
     }
 
     public void setQueue(long queue, int family) {

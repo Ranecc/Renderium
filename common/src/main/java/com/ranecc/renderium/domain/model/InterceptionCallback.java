@@ -1,16 +1,13 @@
 // Renderium - Blaze3D 拦截层系统
 // 异步拦截完成回调接口 - 支持异步拦截操作的通知机制
 
-package com.ranecc.renderium.feature.intercept.base;
-import com.ranecc.renderium.feature.intercept.base.RenderContext;
-import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
-import com.ranecc.renderium.feature.intercept.base.InterceptionCallback;
+package com.ranecc.renderium.domain.model;
 
 /**
  * 异步拦截完成回调接口
  * <p>
  * 定义异步拦截操作完成后的通知机制。
- * 当 {@link PreBlaze3DInterceptor#intercept(RenderContext)} 在异步模式下
+ * 当 {@code PreBlaze3DInterceptor#intercept(RenderContext)} 在异步模式下
  * 执行完成后，将通过此接口通知调用方。
  *
  * <h3>使用场景：</h3>
@@ -43,7 +40,6 @@ import com.ranecc.renderium.feature.intercept.base.InterceptionCallback;
  * });
  * </pre>
  *
- * @see PreBlaze3DInterceptor#setAsyncCallback(InterceptionCallback)
  * @see InterceptionResult
  * @since 5.1.0
  */

@@ -4,7 +4,6 @@
 package com.ranecc.renderium.platform.bridge.mc;
 
 import com.ranecc.renderium.domain.model.FrameData;
-import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import com.ranecc.renderium.platform.lifecycle.RenderiumLifecycleManager;
 
 /**

@@ -1,7 +1,7 @@
 // Renderium - 速度感知质量档位
 // 高速移动时粗层兜底，静止时细层享受——人眼在120°/s下本来就没有解析精细阴影的能力
 
-package com.ranecc.renderium.feature.chunk.manager;
+package com.ranecc.renderium.domain.model;
 
 /**
  * 速度感知渲染质量档位。

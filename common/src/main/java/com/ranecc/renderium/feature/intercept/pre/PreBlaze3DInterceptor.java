@@ -3,10 +3,9 @@
 
 package com.ranecc.renderium.feature.intercept.pre;
 import com.ranecc.renderium.domain.model.LODContext;
-import com.ranecc.renderium.feature.culling.core.CullingContext;
-import com.ranecc.renderium.feature.intercept.base.InterceptionCallback;
-import com.ranecc.renderium.feature.intercept.base.RenderContext;
-import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
+import com.ranecc.renderium.domain.model.InterceptionCallback;
+import com.ranecc.renderium.domain.model.RenderContext;
+import com.ranecc.renderium.domain.model.InterceptionResult;
 import com.ranecc.renderium.feature.culling.core.CullingContext;
 import com.ranecc.renderium.feature.intercept.handler.ModOutputHandler;
 

@@ -1,17 +1,14 @@
 // Renderium - Blaze3D 拦截层系统
 // 拦截结果数据类 - 封装前拦截层的处理结果和性能指标
 
-package com.ranecc.renderium.feature.intercept.base;
-import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
-import com.ranecc.renderium.feature.intercept.base.RenderContext;
+package com.ranecc.renderium.domain.model;
 
 import java.util.Objects;
-
 
 /**
  * 拦截结果数据类
  * <p>
- * 封装 {@link PreBlaze3DInterceptor} 的处理结果，
+ * 封装 {@code PreBlaze3DInterceptor} 的处理结果，
  * 包含修改后的渲染上下文、拦截统计信息和性能指标。
  * <p>
  * 此类为不可变对象，线程安全。
@@ -38,7 +35,6 @@ import java.util.Objects;
  *   <li><b>性能监控</b>：内置耗时统计，支持性能分析</li>
  * </ul>
  *
- * @see PreBlaze3DInterceptor#intercept(RenderContext)
  * @see RenderContext
  * @since 5.1.0
  */

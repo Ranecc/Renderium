@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
 
 /**
  * Vulkan GPU 资源管理器（全局单例）
@@ -482,21 +483,30 @@ public final class VulkanGPUResourceManager {
         }
 
         try {
-            // 从 VMA 专用池分配
-            VmaMemoryPools.PoolAllocation allocation =
-                    getMemoryPools().allocateFromPool(poolType, size);
-
-            if (allocation == null) {
-                LOGGER.severe(String.format("createBuffer VMA 分配失败 [size=%d]", size));
+            long device = getVkDevice();
+            int memoryProps;
+            switch (poolType) {
+                case UNIFORM_BUFFER:
+                case STAGING_BUFFER:
+                    memoryProps = VK10.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
+                        | VK10.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+                    break;
+                default:
+                    memoryProps = VK10.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+                    break;
+            }
+            long[] result = VulkanMemoryAllocator.createBuffer(device, size, usage, memoryProps);
+            if (result[0] == 0L) {
+                LOGGER.severe(String.format("createBuffer 分配失败 [size=%d]", size));
                 return GpuResource.INVALID;
             }
 
             totalBuffersCreated.incrementAndGet();
 
             LOGGER.finest(String.format("createBuffer [size=%d] → handle=%d, alloc=%d",
-                    size, allocation.buffer, allocation.allocation));
+                    size, result[0], result[1]));
 
-            return new GpuResource(allocation.buffer, allocation.allocation,
+            return new GpuResource(result[0], result[1],
                     (int) size, 1, 0, ResourceType.BUFFER);
 
         } catch (Exception e) {

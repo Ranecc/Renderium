@@ -548,15 +548,9 @@ public class ECSSceneGraph implements AutoCloseable {
         List<EntityData> visibleEntities = new ArrayList<>();
 
         try {
-            // TODO: 从 frustum 对象提取 6 个裁剪平面方程
-            //
-            // float[][] planes = extractFrustumPlanes(frustum);
-            // planes[0..5] = {left, right, bottom, top, near, far}
-            // 每个平面 = {a, b, c, d} (ax + by + cz + d = 0)
+            float[][] planes = extractFrustumPlanes(frustum);
 
-            // ========== 批量视锥体测试 ==========
             for (int i = 0; i < entityCount; i++) {
-                // 从 SoA 数组读取第 i 个实体的包围盒
                 float minX = boundingBoxMinX[i];
                 float minY = boundingBoxMinY[i];
                 float minZ = boundingBoxMinZ[i];
@@ -564,16 +558,7 @@ public class ECSSceneGraph implements AutoCloseable {
                 float maxY = boundingBoxMaxY[i];
                 float maxZ = boundingBoxMaxZ[i];
 
-                // TODO: 执行 AABB vs Frustum 测试
-                //
-                // bool visible = testAABBvsFrustum(
-                //     minX, minY, minZ, maxX, maxY, maxZ,
-                //     planes
-                // );
-
-                boolean visible = true; // TODO: 替换为实际测试
-
-                // 更新可见性标志
+                boolean visible = testAABBvsFrustum(minX, minY, minZ, maxX, maxY, maxZ, planes);
                 visibilityFlags[i] = visible;
 
                 if (visible) {
@@ -921,8 +906,67 @@ public class ECSSceneGraph implements AutoCloseable {
      * @return 编码后的整数 ID
      */
     private int encodeChunkId(int x, int y, int z) {
-        // 简单的空间哈希（生产环境应使用更好的编码方式）
-        return ((x & 0x3FF) << 21) | ((y & 0x7F) << 14) | (z & 0x3FF);
+        return ((x & 0x3FF) << 20) | ((z & 0x3FF) << 10) | (y & 0x3FF);
+    }
+
+    /**
+     * 从 frustum 对象提取 6 个裁剪平面方程。
+     * frustum 可以是 float[24]（6个平面×4分量）或
+     * 任何有 getFrustumPlanes() 返回 float[] 的对象。
+     */
+    private static float[][] extractFrustumPlanes(Object frustum) {
+        float[][] planes = new float[6][4];
+        if (frustum instanceof float[]) {
+            float[] fs = (float[]) frustum;
+            for (int i = 0; i < 6 && i * 4 + 3 < fs.length; i++) {
+                planes[i][0] = fs[i * 4];
+                planes[i][1] = fs[i * 4 + 1];
+                planes[i][2] = fs[i * 4 + 2];
+                planes[i][3] = fs[i * 4 + 3];
+            }
+        } else {
+            try {
+                var m = frustum.getClass().getMethod("getFrustumPlanes");
+                float[] fs = (float[]) m.invoke(frustum);
+                for (int i = 0; i < 6 && i * 4 + 3 < fs.length; i++) {
+                    planes[i][0] = fs[i * 4];
+                    planes[i][1] = fs[i * 4 + 1];
+                    planes[i][2] = fs[i * 4 + 2];
+                    planes[i][3] = fs[i * 4 + 3];
+                }
+            } catch (Exception e) {
+                for (int i = 0; i < 6; i++) planes[i][3] = -1.0f;
+            }
+        }
+        return planes;
+    }
+
+    /**
+     * AABB vs Frustum 测试 — 标准 6 平面测试法。
+     * 以包围盒 8 个顶点中离平面最负的顶点做测试，
+     * 若任何平面完全在外面则不可见（早停）。
+     */
+    private static boolean testAABBvsFrustum(float minX, float minY, float minZ,
+                                              float maxX, float maxY, float maxZ,
+                                              float[][] planes) {
+        for (int p = 0; p < 6; p++) {
+            float a = planes[p][0], b = planes[p][1];
+            float c = planes[p][2], d = planes[p][3];
+
+            float px = a >= 0 ? minX : maxX;
+            float py = b >= 0 ? minY : maxY;
+            float pz = c >= 0 ? minZ : maxZ;
+            float nx = a >= 0 ? maxX : minX;
+            float ny = b >= 0 ? maxY : minY;
+            float nz = c >= 0 ? maxZ : minZ;
+
+            float pDist = a * px + b * py + c * pz + d;
+            float nDist = a * nx + b * ny + c * nz + d;
+
+            if (nDist > 0) return false;
+            if (pDist > 0) continue;
+        }
+        return true;
     }
 
     /**

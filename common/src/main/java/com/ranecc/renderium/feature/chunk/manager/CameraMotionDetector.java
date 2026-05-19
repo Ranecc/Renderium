@@ -4,6 +4,7 @@
 
 package com.ranecc.renderium.feature.chunk.manager;
 
+import com.ranecc.renderium.domain.model.QualityMode;
 import com.ranecc.renderium.feature.chunk.build.ProgressiveMeshRefiner;
 
 import java.util.logging.Logger;

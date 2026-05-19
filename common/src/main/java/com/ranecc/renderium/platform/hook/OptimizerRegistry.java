@@ -4,14 +4,8 @@
 
 package com.ranecc.renderium.platform.hook;
 
-import com.ranecc.renderium.feature.blaze3d.MemoryOptimizer;
-import com.ranecc.renderium.feature.blaze3d.ShaderPipelineOptimizer;
-import com.ranecc.renderium.feature.blaze3d.VulkanCommandOptimizer;
-import com.ranecc.renderium.feature.blaze3d.FrameGraphOptimizer;
 import com.ranecc.renderium.platform.bridge.mc.VulkanCommandBatcher;
 import com.ranecc.renderium.tech.streamline.StreamlineSharedMemoryManager;
-import com.ranecc.renderium.feature.renderopt.MultiLevelCuller;
-import com.ranecc.renderium.feature.renderopt.ObjectPoolManager;
 
 /**
  * Central registry for all optimizer instances used by Mixin hooks.
@@ -39,35 +33,25 @@ public final class OptimizerRegistry {
 
     // ==================== Memory Optimization ====================
 
-    private static volatile MemoryOptimizer memoryOptimizer;
+    private static volatile MemOptimizer memoryOptimizer;
 
-    /**
-     * Get the MemoryOptimizer instance for Arena-based allocation.
-     *
-     * @return MemoryOptimizer instance, or null if not initialized
-     */
-    public static MemoryOptimizer getMemoryOptimizer() {
+    public static MemOptimizer getMemoryOptimizer() {
         return memoryOptimizer;
     }
 
-    /**
-     * Initialize MemoryOptimizer (called during module load).
-     *
-     * @param optimizer the MemoryOptimizer instance
-     */
-    public static void setMemoryOptimizer(MemoryOptimizer optimizer) {
+    public static void setMemoryOptimizer(MemOptimizer optimizer) {
         memoryOptimizer = optimizer;
     }
 
     // ==================== Pipeline Optimization ====================
 
-    private static volatile ShaderPipelineOptimizer pipelineOptimizer;
+    private static volatile Object pipelineOptimizer;
 
-    public static ShaderPipelineOptimizer getPipelineOptimizer() {
+    public static Object getPipelineOptimizer() {
         return pipelineOptimizer;
     }
 
-    public static void setPipelineOptimizer(ShaderPipelineOptimizer optimizer) {
+    public static void setPipelineOptimizer(Object optimizer) {
         pipelineOptimizer = optimizer;
     }
 
@@ -75,20 +59,18 @@ public final class OptimizerRegistry {
 
     /** @deprecated 由 commandBatcher 替代 */
     @Deprecated
-    private static volatile VulkanCommandOptimizer commandOptimizer;
+    private static volatile CommandOptimizer commandOptimizer;
 
     /** s7 原生命令批处理器 */
     private static volatile VulkanCommandBatcher commandBatcher;
 
-    /** @deprecated 由 getCommandBatcher() 替代 */
     @Deprecated
-    public static VulkanCommandOptimizer getCommandOptimizer() {
+    public static CommandOptimizer getCommandOptimizer() {
         return commandOptimizer;
     }
 
-    /** @deprecated 由 setCommandBatcher() 替代 */
     @Deprecated
-    public static void setCommandOptimizer(VulkanCommandOptimizer optimizer) {
+    public static void setCommandOptimizer(CommandOptimizer optimizer) {
         commandOptimizer = optimizer;
     }
 
@@ -102,13 +84,13 @@ public final class OptimizerRegistry {
 
     // ==================== FrameGraph Optimization ====================
 
-    private static volatile FrameGraphOptimizer frameGraphOptimizer;
+    private static volatile Object frameGraphOptimizer;
 
-    public static FrameGraphOptimizer getFrameGraphOptimizer() {
+    public static Object getFrameGraphOptimizer() {
         return frameGraphOptimizer;
     }
 
-    public static void setFrameGraphOptimizer(FrameGraphOptimizer optimizer) {
+    public static void setFrameGraphOptimizer(Object optimizer) {
         frameGraphOptimizer = optimizer;
     }
 
@@ -126,25 +108,25 @@ public final class OptimizerRegistry {
 
     // ==================== Culling System ====================
 
-    private static volatile MultiLevelCuller multiLevelCuller;
+    private static volatile Object multiLevelCuller;
 
-    public static MultiLevelCuller getMultiLevelCuller() {
+    public static Object getMultiLevelCuller() {
         return multiLevelCuller;
     }
 
-    public static void setMultiLevelCuller(MultiLevelCuller culler) {
+    public static void setMultiLevelCuller(Object culler) {
         multiLevelCuller = culler;
     }
 
     // ==================== Object Pooling ====================
 
-    private static volatile ObjectPoolManager objectPoolManager;
+    private static volatile Object objectPoolManager;
 
-    public static ObjectPoolManager getObjectPoolManager() {
+    public static Object getObjectPoolManager() {
         return objectPoolManager;
     }
 
-    public static void setObjectPoolManager(ObjectPoolManager manager) {
+    public static void setObjectPoolManager(Object manager) {
         objectPoolManager = manager;
     }
 

@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
-import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 
 /**
  * Phase 5: Vulkan Acceleration Structure 管理器
@@ -66,8 +66,7 @@ public final class VulkanAccelerationStructureManager {
 
     public static boolean isAvailable() {
         return VulkanDeviceHolder.isAvailable()
-            && VulkanFFMBinding.isFfmLoaded()
-            && VulkanFFMBinding.getVkCreateAccelerationStructureKHR() != null;
+            && VulkanAPIRegistry.isAvailable("vkCreateAccelerationStructureKHR");
     }
 
     /**
@@ -84,8 +83,8 @@ public final class VulkanAccelerationStructureManager {
             asCreateInfo.set(ValueLayout.JAVA_INT, 16, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL);
 
             long[] outAS = new long[1];
-            int result = (int) VulkanFFMBinding.getVkCreateAccelerationStructureKHR()
-                .invoke(device, asCreateInfo.address(), 0L, outAS);
+            int result = (int) VulkanAPIRegistry.invoke("vkCreateAccelerationStructureKHR",
+                device, asCreateInfo.address(), 0L, outAS);
             if (result == VK_SUCCESS) {
                 tlas.set(outAS[0]);
                 LOGGER.info("TLAS created: 0x" + Long.toHexString(outAS[0])
@@ -138,8 +137,8 @@ public final class VulkanAccelerationStructureManager {
             asCreateInfo.set(ValueLayout.ADDRESS, 40, buildInfo);
 
             long[] outBLAS = new long[1];
-            int result = (int) VulkanFFMBinding.getVkCreateAccelerationStructureKHR()
-                .invoke(device, asCreateInfo.address(), 0L, outBLAS);
+            int result = (int) VulkanAPIRegistry.invoke("vkCreateAccelerationStructureKHR",
+                device, asCreateInfo.address(), 0L, outBLAS);
             if (result == VK_SUCCESS) {
                 LOGGER.fine("BLAS created: 0x" + Long.toHexString(outBLAS[0])
                     + " tris=" + indexCount / 3);
@@ -192,8 +191,8 @@ public final class VulkanAccelerationStructureManager {
             MemorySegment ppRangeInfo = arena.allocate(8);
             ppRangeInfo.set(ValueLayout.ADDRESS, 0, rangeInfo);
 
-            VulkanFFMBinding.getVkCmdBuildAccelerationStructuresKHR()
-                .invoke(cmdBuf, 1, geoInfo.address(), ppRangeInfo.address());
+            VulkanAPIRegistry.invoke("vkCmdBuildAccelerationStructuresKHR",
+                cmdBuf, 1, geoInfo.address(), ppRangeInfo.address());
             LOGGER.fine("cmdBuildTLAS: " + instanceCount + " instances");
         } catch (Throwable t) {
             LOGGER.warning("cmdBuildTLAS failed: " + t.getMessage());
@@ -212,10 +211,10 @@ public final class VulkanAccelerationStructureManager {
             MemorySegment hitSBT = arena.allocate(24);
             MemorySegment callableSBT = arena.allocate(24);
             // All zeroed = no SBT entries (fallback path)
-            VulkanFFMBinding.getVkCmdTraceRaysKHR()
-                .invoke(cmdBuf, raygenSBT.address(), missSBT.address(),
-                        hitSBT.address(), callableSBT.address(),
-                        width, height, depth);
+            VulkanAPIRegistry.invoke("vkCmdTraceRaysKHR",
+                cmdBuf, raygenSBT.address(), missSBT.address(),
+                hitSBT.address(), callableSBT.address(),
+                width, height, depth);
         } catch (Throwable t) {
             LOGGER.warning("cmdTraceRays failed: " + t.getMessage());
         }
@@ -229,8 +228,7 @@ public final class VulkanAccelerationStructureManager {
         long device = VulkanDeviceHolder.getInstance().getDevice();
         if (device == 0L) return;
         try {
-            VulkanFFMBinding.getVkDestroyAccelerationStructureKHR()
-                .invoke(device, asHandle, 0L);
+            VulkanAPIRegistry.invoke("vkDestroyAccelerationStructureKHR", device, asHandle, 0L);
         } catch (Throwable ignored) {}
     }
 

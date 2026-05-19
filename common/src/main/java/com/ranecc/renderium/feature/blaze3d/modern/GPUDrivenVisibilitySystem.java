@@ -8,6 +8,7 @@
 package com.ranecc.renderium.feature.blaze3d.modern;
 
 import com.ranecc.renderium.feature.blaze3d.aggressive.GPUCullingSystem;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -232,6 +233,15 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
     /** Pass 3: Compact + Indirect Draw Generation Compute Pipeline */
     private Object compactAndDrawPipeline;
+
+    /** 全局 bindless DescriptorPool（SSBO + Sampler binding 按需分配） */
+    private long descPool;
+    /** 全局 DescriptorSet */
+    private long descSet;
+    /** 全局 bindless DescriptorSet Layout */
+    private long descSetLayout;
+    /** Compute Pipeline Layout（父类 pipelineLayout 是 private，自行缓存） */
+    private long computePipelineLayout;
 
     // ==================== MR1 GPU Buffer（三阶段中间数据） ====================
 
@@ -1230,15 +1240,6 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
      * @param size     大小（字节）
      * @param data     填充数据（32位值）
      */
-    private void fillBuffer(Object encoder, Object buffer, long offset, long size, int data) {
-        // TODO: 实现实际的 Buffer Fill 操作
-        // 当前实现为存根，仅记录日志
-        // 实际实现应调用:
-        //   - Vulkan: vkCmdFillBuffer(commandBuffer, buffer, offset, size, data)
-        //   - 或使用 Compute Shader 清零
-        LOGGER.fine(String.format("fillBuffer: offset=%d, size=%d, data=0x%08X", offset, size, data));
-    }
-
     private void executeFrustumCullPass(Object encoder, Object cameraData, int registeredChunks) {
         try {
             // 步骤 1: 绑定 Pass 1 Compute Pipeline
@@ -1618,49 +1619,236 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
      * 绑定 Compute Pipeline
      */
     private void bindComputePipeline(Object encoder, Object pipeline) {
-        // 实际集成: encoder.bindComputePipeline(pipeline)
+        long cmdBuf = extractHandle(encoder);
+        long pipelineHandle = extractHandle(pipeline);
+        if (cmdBuf == 0L || pipelineHandle == 0L) return;
+        try {
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, pipelineHandle);
+        } catch (Throwable t) {
+            LOGGER.warning("vkCmdBindPipeline 失败: " + t.getMessage());
+        }
     }
 
     /**
      * 绑定 Storage Buffer 到指定 binding 点
      */
     private void bindStorageBuffer(Object encoder, int binding, Object buffer) {
-        // 实际集成: encoder.bindStorageBuffer(binding, buffer)
+        long cmdBuf = extractHandle(encoder);
+        long bufHandle = extractHandle(buffer);
+        if (cmdBuf == 0L || bufHandle == 0L) return;
+        lazyInitDescriptors();
+        if (descSet == 0L || computePipelineLayout == 0L) return;
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L) return;
+        try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
+            var bufInfo = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
+            bufInfo.buffer(bufHandle).offset(0).range(0x7FFFFFFF);
+
+            var writeDesc = org.lwjgl.vulkan.VkWriteDescriptorSet.calloc(1, stack);
+            writeDesc.get(0).sType(org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                .dstSet(descSet).dstBinding(binding).descriptorCount(1)
+                .descriptorType(org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .pBufferInfo(bufInfo);
+
+            VulkanAPIRegistry.invoke("vkUpdateDescriptorSets",
+                device, 1, writeDesc.address(), 0, 0L);
+
+            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
+                cmdBuf, 1, computePipelineLayout, 0, 1, new long[]{descSet}, null);
+        } catch (Throwable t) {
+            LOGGER.warning("bindStorageBuffer 失败: " + t.getMessage());
+        }
+    }
+
+    private void lazyInitDescriptors() {
+        if (descSet != 0L) return;
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L) return;
+        try (var arena = java.lang.foreign.Arena.ofConfined()) {
+            try {
+            var intLayout = java.lang.foreign.ValueLayout.JAVA_INT;
+            var longLayout = java.lang.foreign.ValueLayout.JAVA_LONG;
+
+            // VkDescriptorSetLayoutBinding: [binding(int), descriptorType(int), descriptorCount(int),
+            //                                stageFlags(int), pImmutableSamplers(long)] = 24 bytes each
+            int bindingSize = 24;
+            int bindingCount = 8;
+            var bindings = arena.allocate(bindingSize * bindingCount);
+            for (int i = 0; i < 7; i++) {
+                bindings.setAtIndex(intLayout, (i * bindingSize / 4L) + 0, i);       // binding
+                bindings.setAtIndex(intLayout, (i * bindingSize / 4L) + 1, 12);       // VK_DESCRIPTOR_TYPE_STORAGE_BUFFER = 12
+                bindings.setAtIndex(intLayout, (i * bindingSize / 4L) + 2, 1);        // descriptorCount
+                bindings.setAtIndex(intLayout, (i * bindingSize / 4L) + 3, 0x00002000); // VK_SHADER_STAGE_COMPUTE_BIT
+            }
+            // binding 7: CombinedImageSampler
+            bindings.setAtIndex(intLayout, (7 * bindingSize / 4L) + 1, 11);  // VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER = 11
+
+            // VkDescriptorSetLayoutCreateInfo: [sType(long), pNext(long), flags(long), bindingCount(long), pBindings(long)] = 40 bytes
+            var layoutInfo = arena.allocate(longLayout, 5);
+            layoutInfo.setAtIndex(longLayout, 0, 19L);  // VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO
+            layoutInfo.setAtIndex(longLayout, 1, 0L);   // pNext
+            layoutInfo.setAtIndex(longLayout, 2, 0L);   // flags
+            layoutInfo.setAtIndex(longLayout, 3, (long) bindingCount);
+            layoutInfo.setAtIndex(longLayout, 4, bindings.address());
+
+            var layoutOut = arena.allocate(longLayout);
+            if ((int) VulkanAPIRegistry.invoke("vkCreateDescriptorSetLayout",
+                    device, layoutInfo.address(), 0L, layoutOut.address()) != 0) return;
+            descSetLayout = layoutOut.getAtIndex(longLayout, 0);
+            if (descSetLayout == 0L) return;
+
+            // VkDescriptorPoolSize: [type(int), descriptorCount(int)] = 8 bytes each
+            var poolSizes = arena.allocate(intLayout, 4);
+            poolSizes.setAtIndex(intLayout, 0, 12);  // VK_DESCRIPTOR_TYPE_STORAGE_BUFFER = 12
+            poolSizes.setAtIndex(intLayout, 1, 7);   // 7 SSBOs
+            poolSizes.setAtIndex(intLayout, 2, 11);  // VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER = 11
+            poolSizes.setAtIndex(intLayout, 3, 1);   // 1 Sampler
+
+            // VkDescriptorPoolCreateInfo: [sType(long), pNext(long), flags(long), maxSets(long),
+            //                              poolSizeCount(long), pPoolSizes(long)] = 48 bytes
+            var poolInfo = arena.allocate(longLayout, 6);
+            poolInfo.setAtIndex(longLayout, 0, 20L);  // VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
+            poolInfo.setAtIndex(longLayout, 1, 0L);
+            poolInfo.setAtIndex(longLayout, 2, 2L);   // VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT
+            poolInfo.setAtIndex(longLayout, 3, 1L);   // maxSets
+            poolInfo.setAtIndex(longLayout, 4, 2L);   // poolSizeCount
+            poolInfo.setAtIndex(longLayout, 5, poolSizes.address());
+
+            var poolOut = arena.allocate(longLayout);
+            if ((int) VulkanAPIRegistry.invoke("vkCreateDescriptorPool",
+                    device, poolInfo.address(), 0L, poolOut.address()) != 0) return;
+            descPool = poolOut.getAtIndex(longLayout, 0);
+            if (descPool == 0L) return;
+
+            // VkDescriptorSetAllocateInfo: [sType(long), pNext(long), descriptorPool(long),
+            //                              descriptorSetCount(long), pSetLayouts(long)] = 40 bytes
+            var setLayoutAddr = arena.allocate(longLayout);
+            setLayoutAddr.setAtIndex(longLayout, 0, descSetLayout);
+            var allocInfo = arena.allocate(longLayout, 5);
+            allocInfo.setAtIndex(longLayout, 0, 21L);  // VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO
+            allocInfo.setAtIndex(longLayout, 1, 0L);
+            allocInfo.setAtIndex(longLayout, 2, descPool);
+            allocInfo.setAtIndex(longLayout, 3, 1L);
+            allocInfo.setAtIndex(longLayout, 4, setLayoutAddr.address());
+
+            var dsOut = arena.allocate(longLayout);
+            if ((int) VulkanAPIRegistry.invoke("vkAllocateDescriptorSets",
+                    device, allocInfo.address(), dsOut.address()) != 0) return;
+            descSet = dsOut.getAtIndex(longLayout, 0);
+            } catch (Throwable t) {
+                LOGGER.warning("lazyInitDescriptors 失败: " + t.getMessage());
+            }
+        }
     }
 
     /**
      * 绑定 Sampled Image + Sampler
      */
     private void bindSampledImage(Object encoder, int binding, Object image, Object sampler) {
-        // 实际集成: encoder.bindSampledImage(binding, image, sampler)
+        long cmdBuf = extractHandle(encoder);
+        long imageView = extractHandle(image);
+        long samplerHandle = extractHandle(sampler);
+        if (cmdBuf == 0L || imageView == 0L || samplerHandle == 0L) return;
+        lazyInitDescriptors();
+        if (descSet == 0L || computePipelineLayout == 0L) return;
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L) return;
+        try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
+            var imgInfo = org.lwjgl.vulkan.VkDescriptorImageInfo.calloc(1, stack);
+            imgInfo.sampler(samplerHandle).imageView(imageView)
+                .imageLayout(org.lwjgl.vulkan.VK10.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+            var writeDesc = org.lwjgl.vulkan.VkWriteDescriptorSet.calloc(1, stack);
+            writeDesc.get(0).sType(org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                .dstSet(descSet).dstBinding(binding).descriptorCount(1)
+                .descriptorType(org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .pImageInfo(imgInfo);
+
+            VulkanAPIRegistry.invoke("vkUpdateDescriptorSets",
+                device, 1, writeDesc.address(), 0, 0L);
+            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
+                cmdBuf, 1, computePipelineLayout, 0, 1, new long[]{descSet}, null);
+        } catch (Throwable t) {
+            LOGGER.warning("bindSampledImage 失败: " + t.getMessage());
+        }
     }
 
-    /**
-     * 推送常量数据到 Shader
-     */
     private void pushConstants(Object encoder, Object params) {
-        // 实际集成: encoder.pushConstants(params)
+        long cmdBuf = extractHandle(encoder);
+        if (cmdBuf == 0L || params == null || computePipelineLayout == 0L) return;
+        try {
+            var fields = params.getClass().getFields();
+            java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined();
+            try {
+                int totalSize = 0;
+                for (var f : fields) {
+                    if (f.getType() == float.class) totalSize += 4;
+                    else if (f.getType() == int.class) totalSize += 4;
+                    else if (f.getType() == float[].class) totalSize += ((float[]) f.get(params)).length * 4;
+                }
+                var seg = arena.allocate(totalSize);
+                int offset = 0;
+                for (var f : fields) {
+                    Class<?> t = f.getType();
+                    if (t == float.class) {
+                        seg.set(java.lang.foreign.ValueLayout.JAVA_FLOAT, offset, f.getFloat(params));
+                        offset += 4;
+                    } else if (t == int.class) {
+                        seg.set(java.lang.foreign.ValueLayout.JAVA_INT, offset, f.getInt(params));
+                        offset += 4;
+                    } else if (t == float[].class) {
+                        float[] arr = (float[]) f.get(params);
+                        for (int i = 0; i < arr.length; i++) {
+                            seg.set(java.lang.foreign.ValueLayout.JAVA_FLOAT, offset, arr[i]);
+                            offset += 4;
+                        }
+                    }
+                }
+                VulkanAPIRegistry.invoke("vkCmdPushConstants",
+                    cmdBuf, computePipelineLayout, 0x00002000, 0, totalSize, seg.address());
+            } finally { arena.close(); }
+        } catch (Throwable t) {
+            LOGGER.warning("pushConstants 失败: " + t.getMessage());
+        }
     }
 
-    /**
-     * 用指定值填充缓冲区区域（快速清零）
-     */
-    private void fillBuffer(Object buffer, long offset, long size, int value) {
-        // 实际集成: vkCmdFillBuffer(commandBuffer, buffer, offset, size, value)
+    private void fillBuffer(Object encoder, Object buffer, long offset, long size, int value) {
+        long cmdBuf = extractHandle(encoder);
+        long bufHandle = extractHandle(buffer);
+        if (cmdBuf == 0L || bufHandle == 0L) return;
+        try {
+            VulkanAPIRegistry.invoke("vkCmdFillBuffer", cmdBuf, bufHandle, offset, size, value);
+        } catch (Throwable t) {
+            LOGGER.warning("vkCmdFillBuffer 失败: " + t.getMessage());
+        }
     }
 
-    /**
-     * 调度 Compute Shader
-     */
-    private void dispatchCompute(Object encoder, int x, int y, int z) {
-        // 实际集成: encoder.dispatch(x, y, z)
-    }
-
-    /**
-     * 发出内存屏障
-     */
     private void emitMemoryBarrier(Object encoder, int srcAccess, int dstAccess) {
-        // 实际集成: encoder.memoryBarrier(srcAccess, dstAccess)
+        long cmdBuf = extractHandle(encoder);
+        if (cmdBuf == 0L) return;
+        try {
+            VulkanAPIRegistry.invoke("vkCmdPipelineBarrier",
+                cmdBuf, 0x00000800, 0x00000800, 0, 1, new long[]{0L, 0L, 0L, 0L, 0L}, 0, 0L, 0, 0L);
+        } catch (Throwable t) {
+            LOGGER.warning("vkCmdPipelineBarrier 失败: " + t.getMessage());
+        }
+    }
+
+    private void dispatchCompute(Object encoder, int groupCountX, int groupCountY, int groupCountZ) {
+        long cmdBuf = extractHandle(encoder);
+        if (cmdBuf == 0L) return;
+        try {
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupCountX, groupCountY, groupCountZ);
+        } catch (Throwable t) {
+            LOGGER.warning("vkCmdDispatch 失败: " + t.getMessage());
+        }
+    }
+
+    private static long extractHandle(Object obj) {
+        if (obj == null) return 0L;
+        if (obj instanceof Number) return ((Number) obj).longValue();
+        if (obj instanceof org.lwjgl.system.Pointer) return ((org.lwjgl.system.Pointer) obj).address();
+        return 0L;
     }
 
     // ==================== MR1 参数结构体定义 ====================

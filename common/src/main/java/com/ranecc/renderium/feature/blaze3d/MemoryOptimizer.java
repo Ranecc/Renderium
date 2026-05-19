@@ -4,12 +4,10 @@
 package com.ranecc.renderium.feature.blaze3d;
 
 import com.ranecc.renderium.feature.blaze3d.memory.MemoryPressureLevel;
-
 import com.ranecc.renderium.feature.blaze3d.memory.GradualMemoryManager;
-
 import com.ranecc.renderium.domain.model.config.MemoryConfig;
-
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
+import com.ranecc.renderium.platform.hook.MemOptimizer;
 
 import java.util.BitSet;
 import java.util.Deque;
@@ -21,32 +19,8 @@ import java.util.logging.Logger;
  * 显存 Arena 管理器
  * <p>
  * 基于 Arena 内存管理思想，实现零碎片、高性能的显存分配。
- * 参考 `vulkan-memory-arena-guide.md` 中的三种 Arena 模式：
- *
- * <h2>Arena 类型：</h2>
- * <pre>
- * ┌─────────────────────────────────────────────────────────────┐
- * │ 1. Per-Frame Arena - 临时数据（Staging/Uniform）        │
- * │    特点：帧结束时整体重置，零碎片                      │
- * ├─────────────────────────────────────────────────────────────┤
- * │ 2. Ring Buffer Arena - 动态 Uniform/Vertex Buffer      │
- * │    特点：循环使用，GPU 滞后读取                        │
- * ├─────────────────────────────────────────────────────────────┤
- * │ 3. Pool Arena - 固定大小块（Descriptor Set/小型Buffer）│
- * │    特点：O(1) 分配释放，位图管理                       │
- * └─────────────────────────────────────────────────────────────┘
- * </pre>
- *
- * <h3>设计参考：</h3>
- * <ul>
- *   <li>Vulkan Memory Arena Guide (vulkan-memory-arena-guide.md)</li>
- *   <li>兼容模式 Vulkan 优化指南 (compatibility-mode-optimization.md)</li>
- * </ul>
- *
- * @author Renderium Team
- * @since 2.0.0
  */
-public class MemoryOptimizer implements AutoCloseable {
+public class MemoryOptimizer implements AutoCloseable, MemOptimizer {
 
     private static final Logger LOGGER = Logger.getLogger(MemoryOptimizer.class.getName());
 

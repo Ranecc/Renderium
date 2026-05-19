@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
-import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 
 /**
  * 全局 Vulkan DescriptorPool / Bindless DescriptorSet 管理器
@@ -56,7 +56,7 @@ public final class VulkanDescriptorManager {
     public static long getBindlessLayout() { return bindlessSetLayout.get(); }
 
     public static boolean isAvailable() {
-        return VulkanDeviceHolder.isAvailable() && VulkanFFMBinding.isFfmLoaded();
+        return VulkanDeviceHolder.isAvailable() && VulkanAPIRegistry.isAvailable("vkCreateDescriptorPool");
     }
 
     public static boolean isBindlessReady() {
@@ -82,8 +82,8 @@ public final class VulkanDescriptorManager {
                 arena, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT, BINDLESS_TARGET_SLOTS, 4, sizes);
 
             long[] outPool = new long[1];
-            int result = (int) VulkanFFMBinding.getVkCreateDescriptorPool()
-                .invoke(device, createInfo.address(), 0L, outPool);
+            int result = (int) VulkanAPIRegistry.invoke("vkCreateDescriptorPool",
+                device, createInfo.address(), 0L, outPool);
             if (result == VK_SUCCESS) {
                 descriptorPool.set(outPool[0]);
                 LOGGER.info("Global DescriptorPool created: 0x" + Long.toHexString(outPool[0]));
@@ -150,8 +150,8 @@ public final class VulkanDescriptorManager {
             layoutInfo.set(ValueLayout.ADDRESS, 16, bindings);
 
             long[] outLayout = new long[1];
-            int result = (int) VulkanFFMBinding.getVkCreateDescriptorSetLayout()
-                .invoke(device, layoutInfo.address(), 0L, outLayout);
+            int result = (int) VulkanAPIRegistry.invoke("vkCreateDescriptorSetLayout",
+                device, layoutInfo.address(), 0L, outLayout);
             if (result != VK_SUCCESS) return false;
             bindlessSetLayout.set(outLayout[0]);
 
@@ -160,8 +160,8 @@ public final class VulkanDescriptorManager {
             allocInfo.set(ValueLayout.JAVA_INT, 0, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
 
             long[] outSet = new long[1];
-            result = (int) VulkanFFMBinding.getVkAllocateDescriptorSets()
-                .invoke(device, allocInfo.address(), 0L, outSet);
+            result = (int) VulkanAPIRegistry.invoke("vkAllocateDescriptorSets",
+                device, allocInfo.address(), outSet);
             if (result == VK_SUCCESS) {
                 bindlessDescriptorSet.set(outSet[0]);
                 LOGGER.info("Bindless DescriptorSet allocated: layout=0x"
@@ -200,7 +200,7 @@ public final class VulkanDescriptorManager {
                 writes.set(ValueLayout.JAVA_LONG, offset + 24, buffers[i * 3]);
                 writes.set(ValueLayout.JAVA_LONG, offset + 32, buffers[i * 3 + 1]);
             }
-            VulkanFFMBinding.getVkUpdateDescriptorSets().invoke(device, count, writes.address(), 0, 0L);
+            VulkanAPIRegistry.invoke("vkUpdateDescriptorSets", device, count, writes.address(), 0, 0L);
             return true;
         } catch (Throwable t) {
             LOGGER.warning("updateBindlessStorageBuffers failed: " + t.getMessage());
@@ -215,7 +215,7 @@ public final class VulkanDescriptorManager {
         long set = bindlessDescriptorSet.get();
         if (set == 0L || cmdBuf == 0L || pipelineLayout == 0L) return false;
         try {
-            VulkanFFMBinding.getVkCmdBindDescriptorSets().invoke(
+            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
                 cmdBuf, 0, pipelineLayout, 0, 1, set, 0, 0L);
             return true;
         } catch (Throwable t) {
@@ -233,14 +233,14 @@ public final class VulkanDescriptorManager {
         long layout = bindlessSetLayout.getAndSet(0L);
         if (layout != 0L) {
             try {
-                VulkanFFMBinding.getVkDestroyDescriptorSetLayout().invoke(device, layout, 0L);
+                VulkanAPIRegistry.invoke("vkDestroyDescriptorSetLayout", device, layout, 0L);
             } catch (Throwable ignored) {}
         }
 
         long pool = descriptorPool.getAndSet(0L);
         if (pool != 0L) {
             try {
-                VulkanFFMBinding.getVkDestroyDescriptorPool().invoke(device, pool, 0L);
+                VulkanAPIRegistry.invoke("vkDestroyDescriptorPool", device, pool, 0L);
             } catch (Throwable ignored) {}
         }
         created.set(false);

@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
-import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 
 /**
  * Renderium Vulkan 光影工作台。
@@ -475,8 +475,8 @@ public final class ShaderWorkbench {
         if (device != 0L) {
             for (var entry : injectionShaderModules.entrySet()) {
                 try {
-                    VulkanFFMBinding.getVkDestroyShaderModule()
-                        .invoke(device, entry.getValue(), 0L);
+                    VulkanAPIRegistry.invoke("vkDestroyShaderModule",
+                        device, entry.getValue(), 0L);
                 } catch (Throwable ignored) {}
             }
         }

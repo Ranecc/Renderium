@@ -1,5 +1,7 @@
+// Renderium - 拦截器系统
+// 渲染上下文 — 拦截器系统的核心上下文对象
+
 package com.ranecc.renderium.feature.intercept.base;
-import com.ranecc.renderium.feature.intercept.base.RenderContext;
 
 /**
  * 渲染上下文 — 拦截器系统的核心上下文对象

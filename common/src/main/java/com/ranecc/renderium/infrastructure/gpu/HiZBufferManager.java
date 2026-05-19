@@ -11,7 +11,7 @@ import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.util.logging.Logger;
 
-import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
 
@@ -533,8 +533,6 @@ public final class HiZBufferManager {
             this.currentMipLevels = mipLevels;
 
             try (Arena arena = Arena.ofConfined()) {
-                MethodHandle vkCreateImageView = VulkanFFMBinding.getVkCreateImageView();
-                MethodHandle vkCreateSampler = VulkanFFMBinding.getVkCreateSampler();
 
                 // ==================== 1. 创建 Sampler ====================
                 MemorySegment samplerCreateInfo = arena.allocate(SZ_SAMPLER_CREATE_INFO);
@@ -558,8 +556,8 @@ public final class HiZBufferManager {
                 samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_UNNORMALIZED_COORDINATES / 4, 0);
 
                 MemorySegment pSampler = arena.allocate(ValueLayout.JAVA_LONG);
-                int samplerResult = (int) vkCreateSampler.invokeExact(vkDevice,
-                    samplerCreateInfo.address(), 0L, pSampler.address());
+                int samplerResult = (int) VulkanAPIRegistry.invoke("vkCreateSampler",
+                    vkDevice, samplerCreateInfo.address(), 0L, pSampler.address());
                 if (samplerResult != 0) {
                     throw new RuntimeException("vkCreateSampler 失败，VkResult=" + samplerResult);
                 }
@@ -598,7 +596,7 @@ public final class HiZBufferManager {
 
                 // ==================== 4. 创建 Storage ImageViews ====================
                 for (int i = 0; i < mipLevels; i++) {
-                    long viewHandle = createImageView(vkDevice, arena, vkCreateImageView,
+                    long viewHandle = createImageView(vkDevice, arena,
                         this.hiZImageHandle, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT,
                         VK_IMAGE_ASPECT_COLOR_BIT, i, 1);
                     this.hiZMipmapImageViews[i] = viewHandle;
@@ -606,7 +604,7 @@ public final class HiZBufferManager {
 
                 // ==================== 5. 创建 Sampler ImageViews ====================
                 for (int i = 0; i < mipLevels; i++) {
-                    long viewHandle = createImageView(vkDevice, arena, vkCreateImageView,
+                    long viewHandle = createImageView(vkDevice, arena,
                         this.hiZImageHandle, VK_IMAGE_VIEW_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT,
                         VK_IMAGE_ASPECT_COLOR_BIT, i, 1);
                     this.hiZMipmapSamplerViews[i] = viewHandle;
@@ -657,7 +655,7 @@ public final class HiZBufferManager {
      * @param levelCount    Mip 层级数量
      * @return VkImageView 句柄
      */
-    private long createImageView(long vkDevice, Arena arena, MethodHandle vkCreateImageView,
+    private long createImageView(long vkDevice, Arena arena,
                                   long image, int viewType, int format, int aspectMask,
                                   int baseMipLevel, int levelCount) throws Throwable {
         MemorySegment viewCreateInfo = arena.allocate(SZ_IMAGE_VIEW_CREATE_INFO);
@@ -678,7 +676,8 @@ public final class HiZBufferManager {
         viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_SUBRESOURCE_LAYER_COUNT / 4, 1);
 
         MemorySegment pView = arena.allocate(ValueLayout.JAVA_LONG);
-        int result = (int) vkCreateImageView.invokeExact(vkDevice, viewCreateInfo.address(), 0L, pView.address());
+        int result = (int) VulkanAPIRegistry.invoke("vkCreateImageView",
+            vkDevice, viewCreateInfo.address(), 0L, pView.address());
         if (result != 0) {
             throw new RuntimeException("vkCreateImageView 失败，VkResult=" + result);
         }
@@ -1121,15 +1120,12 @@ public final class HiZBufferManager {
         long vkDevice = deviceHolder.getVkDeviceHandle();
         if (vkDevice == 0L) return;
 
-        // 在本地变量中缓存 MethodHandle 避免重复查找
-        MethodHandle vkDestroyImageView = VulkanFFMBinding.getVkDestroyImageView();
-        MethodHandle vkDestroySampler = VulkanFFMBinding.getVkDestroySampler();
-
         // 1. 销毁 Mipmap ImageViews（当前实际层数）
         for (int i = 0; i < this.currentMipLevels; i++) {
             try {
                 if (this.hiZMipmapImageViews[i] != 0L) {
-                    vkDestroyImageView.invokeExact(vkDevice, this.hiZMipmapImageViews[i], 0L);
+                    VulkanAPIRegistry.invoke("vkDestroyImageView",
+                        vkDevice, this.hiZMipmapImageViews[i], 0L);
                     this.hiZMipmapImageViews[i] = 0L;
                 }
             } catch (Throwable t) {
@@ -1137,7 +1133,8 @@ public final class HiZBufferManager {
             }
             try {
                 if (this.hiZMipmapSamplerViews[i] != 0L) {
-                    vkDestroyImageView.invokeExact(vkDevice, this.hiZMipmapSamplerViews[i], 0L);
+                    VulkanAPIRegistry.invoke("vkDestroyImageView",
+                        vkDevice, this.hiZMipmapSamplerViews[i], 0L);
                     this.hiZMipmapSamplerViews[i] = 0L;
                 }
             } catch (Throwable t) {
@@ -1148,7 +1145,8 @@ public final class HiZBufferManager {
         // 2. 销毁 Sampler
         try {
             if (this.hiZSampler != 0L) {
-                vkDestroySampler.invokeExact(vkDevice, this.hiZSampler, 0L);
+                VulkanAPIRegistry.invoke("vkDestroySampler",
+                    vkDevice, this.hiZSampler, 0L);
                 this.hiZSampler = 0L;
             }
         } catch (Throwable t) {

@@ -13,22 +13,19 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.ranecc.renderium.domain.model.FrameData;
-import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 import com.ranecc.renderium.application.core.RenderiumCore;
 import com.ranecc.renderium.tech.streamline.SLContext;
 import com.ranecc.renderium.tech.streamline.FrameEvaluator;
 import com.ranecc.renderium.tech.streamline.VulkanStreamlineBridge;
-import com.ranecc.renderium.feature.intercept.pre.PreBlaze3DInterceptor;
-import com.ranecc.renderium.feature.intercept.pre.DefaultPreInterceptor;
-import com.ranecc.renderium.feature.intercept.post.PostBlaze3DInterceptor;
-import com.ranecc.renderium.feature.intercept.post.DefaultPostInterceptor;
+import com.ranecc.renderium.platform.hook.PreInterceptor;
+import com.ranecc.renderium.platform.hook.PostInterceptor;
 import com.ranecc.renderium.domain.model.LODContext;
-import com.ranecc.renderium.feature.culling.core.CullingContext;
-import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
+import com.ranecc.renderium.domain.model.CullingContext;
+import com.ranecc.renderium.domain.model.RenderContext;
+import com.ranecc.renderium.domain.model.InterceptionResult;
 import com.ranecc.renderium.domain.model.InterceptedFrameData;
-import com.ranecc.renderium.feature.intercept.base.RenderContext;
 
 /**
  * 后端拦截器 - 双拦截层协调器（v5.1 架构）
@@ -71,10 +68,8 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
  * <p>单例模式，使用 AtomicBoolean 保证初始化安全。
  * 核心方法应在渲染线程调用。
  *
- * @see PreBlaze3DInterceptor 前拦截层接口
- * @see PostBlaze3DInterceptor 后拦截层接口
- * @see DefaultPreInterceptor 默认前拦截器实现
- * @see DefaultPostInterceptor 默认后拦截器实现
+ * @see PreInterceptor 前拦截层接口（平台钩子）
+ * @see PostInterceptor 后拦截层接口（平台钩子）
  * @since 5.0 (v5.1 升级为双拦截层架构)
  */
 public final class BackendInterceptor {
@@ -110,20 +105,20 @@ public final class BackendInterceptor {
      * <p>
      * 负责在 Blaze3D 渲染之前执行的操作：
      * 模组检测、LOD 预处理注入、剔除优化注入等。
-     *
-     * @see PreBlaze3DInterceptor
+     * <p>
+     * 运行时通过 {@link PreInterceptor} 接口向下转型访问。
      */
-    private PreBlaze3DInterceptor preInterceptor;
+    private Object preInterceptor;
 
     /**
      * 后拦截层实例（v5.1 新增/增强）
      * <p>
      * 负责在 Blaze3D 渲染之后执行的操作：
      * 帧捕获、超分辨率、帧生成、EffectPipeline 后处理等。
-     *
-     * @see PostBlaze3DInterceptor
+     * <p>
+     * 运行时通过 {@link PostInterceptor} 接口向下转型访问。
      */
-    private PostBlaze3DInterceptor postInterceptor;
+    private Object postInterceptor;
 
     /** 是否启用双拦截层架构（v5.1 新增） */
     private volatile boolean dualInterceptionEnabled = true;
@@ -198,16 +193,18 @@ public final class BackendInterceptor {
      * 初始化后端拦截器（v5.1 升级：初始化双拦截层）
      * <p>
      * 从 {@link RenderiumCore} 获取必要的组件引用，
-     * 验证配置有效性，初始化前/后双拦截层。
+     * 验证配置有效性，通过传入的 pre/post Object 实例初始化双拦截层。
      * <p>
      * 必须在 {@link RenderiumCore#initialize(long)} 之后调用。
      *
-     * @param config Renderium 配置（不能为 null）
+     * @param config        Renderium 配置（不能为 null）
+     * @param preInterceptor  前拦截层实例（Object，运行时通过 {@link PreInterceptor} 转型）
+     * @param postInterceptor 后拦截层实例（Object，运行时通过 {@link PostInterceptor} 转型）
      * @return true 表示初始化成功，false 表示失败（将回退到原始渲染）
      * @throws IllegalStateException 如果已关闭或重复初始化
      * @throws IllegalArgumentException 如果 config 为 null
      */
-    public boolean initialize(RenderiumConfig config) {
+    public boolean initialize(RenderiumConfig config, Object preInterceptor, Object postInterceptor) {
         // 参数校验
         if (config == null) {
             throw new IllegalArgumentException("配置不能为 null");
@@ -247,7 +244,11 @@ public final class BackendInterceptor {
                 // 不返回 false，允许仅后处理模式运行
             }
 
-            // ========== v5.1 新增：初始化双拦截层 ==========
+            // ========== 保存双拦截层实例 ==========
+            this.preInterceptor = preInterceptor;
+            this.postInterceptor = postInterceptor;
+
+            // ========== 初始化双拦截层 ==========
             initializeDualInterceptionLayers(core);
 
             // 标记初始化完成
@@ -268,9 +269,11 @@ public final class BackendInterceptor {
     }
 
     /**
-     * 初始化双拦截层（v5.1 新增方法）
+     * 初始化双拦截层
      * <p>
-     * 创建并初始化 PreBlaze3DInterceptor 和 PostBlaze3DInterceptor 实例。
+     * 对已传入的 pre/post 实例执行初始化，并配置 LOD/剔除/EffectPipeline 等。
+     * 不再直接创建 DefaultPreInterceptor/DefaultPostInterceptor 实例，
+     * 从而消除对 feature 包的编译期依赖。
      *
      * @param core RenderiumCore 实例
      */
@@ -282,47 +285,52 @@ public final class BackendInterceptor {
 
         try {
             // ======== 初始化前拦截层 ========
-            preInterceptor = DefaultPreInterceptor.getInstance();
-            boolean preInitSuccess = preInterceptor.initialize();
+            boolean preInitSuccess = false;
+            if (preInterceptor instanceof PreInterceptor) {
+                PreInterceptor pre = (PreInterceptor) preInterceptor;
+                preInitSuccess = pre.initialize();
 
-            if (preInitSuccess) {
-                // 配置 LOD 注入（可选）
-                if (config != null) {
-                    LODContext lodCtx = new LODContext.Builder()
-                        .maxDistance(128)
-                        .transitionRange(24, 32)
-                        .billboardEnabled(true)
-                        .atmosphericPerspectiveEnabled(true)
-                        .build();
-                    preInterceptor.injectLOD(lodCtx);
+                if (preInitSuccess) {
+                    // 配置 LOD 注入（可选）
+                    if (config != null) {
+                        LODContext lodCtx = new LODContext.Builder()
+                            .maxDistance(128)
+                            .transitionRange(24, 32)
+                            .billboardEnabled(true)
+                            .atmosphericPerspectiveEnabled(true)
+                            .build();
+                        pre.injectLOD(lodCtx);
 
-                    // 配置剔除注入（可选）
-                    CullingContext cullCtx = new CullingContext(
-                        32,
-                        config.isFrustumCullingEnabled(),
-                        config.isOcclusionCullingEnabled()
-                    );
-                    preInterceptor.injectCulling(cullCtx);
+                        // 配置剔除注入（可选）
+                        CullingContext cullCtx = new CullingContext.Builder()
+                            .maxDrawDistance(32)
+                            .frustumCullingEnabled(config.isFrustumCullingEnabled())
+                            .occlusionCullingEnabled(config.isOcclusionCullingEnabled())
+                            .build();
+                        pre.injectCulling(cullCtx);
+                    }
+
+                    LOGGER.info("前拦截层 (PreInterceptor) 初始化成功");
+                } else {
+                    LOGGER.warning("前拦截层初始化失败，将跳过模组检测和 LOD/剔除注入");
                 }
-
-                LOGGER.info("前拦截层 (PreBlaze3DInterceptor) 初始化成功");
             } else {
-                LOGGER.warning("前拦截层初始化失败，将跳过模组检测和 LOD/剔除注入");
+                LOGGER.warning("前拦截层实例未实现 PreInterceptor 接口，跳过前拦截层");
             }
 
             // ======== 初始化后拦截层 ========
-            postInterceptor = DefaultPostInterceptor.getInstance();
-            boolean postInitSuccess = postInterceptor.initialize();
+            boolean postInitSuccess = false;
+            if (postInterceptor instanceof PostInterceptor) {
+                PostInterceptor post = (PostInterceptor) postInterceptor;
+                postInitSuccess = post.initialize();
 
-            if (postInitSuccess) {
-                // 将现有的 EffectPipeline 引用传递给后拦截层
-                if (effectPipeline != null && postInterceptor instanceof DefaultPostInterceptor) {
-                    ((DefaultPostInterceptor) postInterceptor).setEffectPipeline(effectPipeline);
+                if (postInitSuccess) {
+                    LOGGER.info("后拦截层 (PostInterceptor) 初始化成功");
+                } else {
+                    LOGGER.warning("后拦截层初始化失败，将使用 v5.0 兼容模式处理后处理");
                 }
-
-                LOGGER.info("后拦截层 (PostBlaze3DInterceptor) 初始化成功");
             } else {
-                LOGGER.warning("后拦截层初始化失败，将使用 v5.0 兼容模式处理后处理");
+                LOGGER.warning("后拦截层实例未实现 PostInterceptor 接口，跳过后拦截层");
             }
 
         } catch (Exception e) {
@@ -375,21 +383,27 @@ public final class BackendInterceptor {
     }
 
     /**
-     * 关闭双拦截层（v5.1 新增方法）
+     * 关闭双拦截层
      */
     private void shutdownDualInterceptionLayers() {
         try {
             // 关闭前拦截层
-            if (preInterceptor != null && preInterceptor.isInitialized()) {
-                preInterceptor.shutdown();
-                LOGGER.fine("前拦截层已关闭");
+            if (preInterceptor instanceof PreInterceptor) {
+                PreInterceptor pre = (PreInterceptor) preInterceptor;
+                if (pre.isInitialized()) {
+                    pre.shutdown();
+                    LOGGER.fine("前拦截层已关闭");
+                }
             }
             preInterceptor = null;
 
             // 关闭后拦截层
-            if (postInterceptor != null && postInterceptor.isInitialized()) {
-                postInterceptor.shutdown();
-                LOGGER.fine("后拦截层已关闭");
+            if (postInterceptor instanceof PostInterceptor) {
+                PostInterceptor post = (PostInterceptor) postInterceptor;
+                if (post.isInitialized()) {
+                    post.shutdown();
+                    LOGGER.fine("后拦截层已关闭");
+                }
             }
             postInterceptor = null;
 
@@ -458,8 +472,8 @@ public final class BackendInterceptor {
      * @return 最终处理的 FrameData 对象，
      *         如果处理失败则返回 null（应回退到原始渲染路径）
      * @throws IllegalArgumentException 如果 context 为 null
-     * @see PreBlaze3DInterceptor#intercept(RenderContext)
-     * @see PostBlaze3DInterceptor#postProcess(FrameData)
+     * @see PreInterceptor#intercept(RenderContext)
+     * @see PostInterceptor#postProcess(FrameData)
      * @since 5.1
      */
     public FrameData executeFrame(RenderContext context) {
@@ -479,13 +493,16 @@ public final class BackendInterceptor {
         try {
             // ======== 阶段 1：前拦截（Pre-Blaze3D） ========
             InterceptionResult preResult = null;
-            if (dualInterceptionEnabled && preInterceptor != null && preInterceptor.isInitialized()) {
-                preResult = preInterceptor.intercept(context);
+            if (dualInterceptionEnabled && preInterceptor instanceof PreInterceptor) {
+                PreInterceptor pre = (PreInterceptor) preInterceptor;
+                if (pre.isInitialized()) {
+                    preResult = pre.intercept(context);
 
-                if (preResult != null && !preResult.isSuccess()
-                    && preResult.getStatus() == InterceptionResult.Status.FAILURE) {
-                    // 前拦截失败，记录警告但不中断
-                    LOGGER.warning("前拦截失败: " + preResult.getMessage());
+                    if (preResult != null && !preResult.isSuccess()
+                        && preResult.getStatus() == InterceptionResult.Status.FAILURE) {
+                        // 前拦截失败，记录警告但不中断
+                        LOGGER.warning("前拦截失败: " + preResult.getMessage());
+                    }
                 }
             }
 
@@ -496,12 +513,15 @@ public final class BackendInterceptor {
 
             // ======== 阶段 3：后拦截（Post-Blaze3D） ========
             InterceptedFrameData finalFrame = null;
-            if (dualInterceptionEnabled && postInterceptor != null && postInterceptor.isInitialized()) {
-                // 从 RenderContext 构建 FrameData
-                FrameData frameData = buildFrameDataFromContext(context);
+            if (dualInterceptionEnabled && postInterceptor instanceof PostInterceptor) {
+                PostInterceptor post = (PostInterceptor) postInterceptor;
+                if (post.isInitialized()) {
+                    // 从 RenderContext 构建 FrameData
+                    FrameData frameData = buildFrameDataFromContext(context);
 
-                // 调用后拦截层
-                finalFrame = postInterceptor.postProcess(frameData);
+                    // 调用后拦截层
+                    finalFrame = post.postProcess(frameData);
+                }
             } else {
                 // 降级到 v5.0 兼容模式
                 LOGGER.fine("后拦截层不可用，使用 v5.0 兼容模式");
@@ -1125,13 +1145,13 @@ public final class BackendInterceptor {
      * 获取前拦截层实例（v5.1 新增）
      * <p>
      * 返回当前配置的前拦截层实例，
-     * 可用于直接调用前拦截层的特定功能。
+     * 可通过 {@code instanceof PreInterceptor} 检查后向下转型使用。
      *
-     * @return PreBlaze3DInterceptor 实例，如果未初始化或已禁用则返回 null
-     * @see PreBlaze3DInterceptor
+     * @return 前拦截层 Object 实例（运行时 instanceof {@link PreInterceptor}），
+     *         如果未初始化或已禁用则返回 null
      * @since 5.1
      */
-    public PreBlaze3DInterceptor getPreInterceptor() {
+    public Object getPreInterceptor() {
         if (!dualInterceptionEnabled) {
             return null;
         }
@@ -1142,13 +1162,13 @@ public final class BackendInterceptor {
      * 获取后拦截层实例（v5.1 新增）
      * <p>
      * 返回当前配置的后拦截层实例，
-     * 可用于直接调用后拦截层的特定功能。
+     * 可通过 {@code instanceof PostInterceptor} 检查后向下转型使用。
      *
-     * @return PostBlaze3DInterceptor 实例，如果未初始化或已禁用则返回 null
-     * @see PostBlaze3DInterceptor
+     * @return 后拦截层 Object 实例（运行时 instanceof {@link PostInterceptor}），
+     *         如果未初始化或已禁用则返回 null
      * @since 5.1
      */
-    public PostBlaze3DInterceptor getPostInterceptor() {
+    public Object getPostInterceptor() {
         if (!dualInterceptionEnabled) {
             return null;
         }
@@ -1162,9 +1182,11 @@ public final class BackendInterceptor {
      * @since 5.1
      */
     public boolean isDualInterceptionEnabled() {
-        return dualInterceptionEnabled
-            && preInterceptor != null && preInterceptor.isInitialized()
-            && postInterceptor != null && postInterceptor.isInitialized();
+        boolean preAvailable = preInterceptor instanceof PreInterceptor
+            && ((PreInterceptor) preInterceptor).isInitialized();
+        boolean postAvailable = postInterceptor instanceof PostInterceptor
+            && ((PostInterceptor) postInterceptor).isInitialized();
+        return dualInterceptionEnabled && preAvailable && postAvailable;
     }
 
     /**

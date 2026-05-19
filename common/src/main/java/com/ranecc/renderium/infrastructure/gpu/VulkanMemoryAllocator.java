@@ -9,7 +9,6 @@ import java.util.logging.Logger;
 
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
-import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 
 /**

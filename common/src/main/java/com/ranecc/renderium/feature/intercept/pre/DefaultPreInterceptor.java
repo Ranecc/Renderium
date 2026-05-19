@@ -4,10 +4,10 @@
 package com.ranecc.renderium.feature.intercept.pre;
 
 import com.ranecc.renderium.domain.model.LODContext;
+import com.ranecc.renderium.domain.model.InterceptionCallback;
+import com.ranecc.renderium.domain.model.InterceptionResult;
+import com.ranecc.renderium.domain.model.RenderContext;
 import com.ranecc.renderium.feature.culling.core.CullingContext;
-import com.ranecc.renderium.feature.intercept.base.InterceptionCallback;
-import com.ranecc.renderium.feature.intercept.base.InterceptionResult;
-import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.intercept.handler.ModOutputContext;
 import com.ranecc.renderium.feature.intercept.handler.ModOutputHandler;
 import java.util.Map;
@@ -430,12 +430,10 @@ public final class DefaultPreInterceptor implements PreBlaze3DInterceptor {
      * @return 检测到的模组 ID 数组
      */
     private String[] detectAndProcessMods(RenderContext context) {
-        java.util.List<String> loadedModsList = context.getLoadedMods();
-        if (loadedModsList == null || loadedModsList.isEmpty()) {
+        String[] loadedMods = context.getLoadedMods();
+        if (loadedMods == null || loadedMods.length == 0) {
             return new String[0];
         }
-
-        String[] loadedMods = loadedModsList.toArray(new String[0]);
         StringBuilder detectedList = new StringBuilder();
 
         for (String modId : loadedMods) {

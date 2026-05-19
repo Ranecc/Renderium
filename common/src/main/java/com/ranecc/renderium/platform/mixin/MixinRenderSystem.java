@@ -13,7 +13,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
-import com.ranecc.renderium.feature.blaze3d.stylizedrt.StreamlineIntegration;
 
 /**
  * RenderSystem Mixin — Vulkan 设备句柄提取（零反射版 v2）
@@ -101,15 +100,10 @@ public abstract class MixinRenderSystem {
                 vkInstanceHandle = vkDeviceHandle;
             }
 
-            try {
-                StreamlineIntegration streamline = new StreamlineIntegration();
-                streamline.initialize(vkInstanceHandle, vkPhysicalDeviceHandle, vkDeviceHandle);
-                LOGGER.info(String.format(
-                    "Renderium: Vulkan 句柄提取成功 [device=0x%X, physDev=0x%X, instance=0x%X, vma=0x%X, gQ=0x%X, compQ=0x%X]",
-                    vkDeviceHandle, vkPhysicalDeviceHandle, vkInstanceHandle, vmaAllocator, gQueue, cQueue));
-            } catch (Exception slEx) {
-                LOGGER.warning("Streamline SDK 初始化失败: " + slEx.getMessage());
-            }
+            VulkanDeviceHolder.getInstance().setVkInstance(vkInstanceHandle);
+            LOGGER.info(String.format(
+                "Renderium: Vulkan 句柄提取成功 [device=0x%X, physDev=0x%X, instance=0x%X, vma=0x%X, gQ=0x%X, compQ=0x%X]",
+                vkDeviceHandle, vkPhysicalDeviceHandle, vkInstanceHandle, vmaAllocator, gQueue, cQueue));
 
         } catch (GpuDeviceLossException e) {
             LOGGER.log(Level.SEVERE, "Vulkan 设备丢失", e);

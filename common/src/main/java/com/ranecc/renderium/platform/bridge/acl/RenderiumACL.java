@@ -3,22 +3,15 @@
 //
 // 设计约束:
 // 1. 不含任何 Minecraft 类引用（不 import net.minecraft.*）
-// 2. 所有参数为基本类型或简单 DTO
-// 3. Mixin 层只需调用 RenderiumACL，无需了解底层子系统
+// 2. 不含任何 Feature 层类引用（通过 Object 引用子系统）
+// 3. 所有参数为基本类型或简单 DTO
+// 4. Mixin 层只需调用 RenderiumACL，无需了解底层实现
 //
-// MC 版本更新时，只需更新 Mixin 类和本类的适配逻辑，
-// feature/chunk/ 下的优化子系统完全不动。
+// MC 版本更新时，只需更新 Mixin 类
 
 package com.ranecc.renderium.platform.bridge.acl;
 
-import com.ranecc.renderium.feature.blaze3d.aggressive.CullingPipeline;
-import com.ranecc.renderium.feature.blaze3d.aggressive.GPUCullingSystem;
-import com.ranecc.renderium.feature.chunk.build.ChunkBuildPipeline;
-import com.ranecc.renderium.feature.chunk.build.ChunkBuildTask;
-import com.ranecc.renderium.feature.chunk.manager.RenderSectionManager;
-import com.ranecc.renderium.feature.chunk.manager.RenderiumCullingScheduler;
-import com.ranecc.renderium.feature.chunk.manager.RenderiumZoomAPI;
-import com.ranecc.renderium.feature.chunk.sort.TranslucentSortEngine;
+import com.ranecc.renderium.domain.model.QualityMode;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -27,28 +20,8 @@ import java.util.logging.Logger;
 /**
  * 统一防腐层 (Anti-Corruption Layer)。
  *
- * <p>这是 Mixin 层与 feature/chunk/ 优化子系统之间的唯一桥梁。
- *
- * <h2>数据流</h2>
- * <pre>
- * MC LevelRenderer.renderLevel()
- *   → MixinLevelRendererACL.onRenderFrame()        (thin glue, <=10行)
- *     → RenderiumACL.onRenderFrame(x, y, z, ...)   (防腐层)
- *       → RenderiumCullingScheduler.onFrame(...)   (调度中心)
- *         → CameraMotionDetector.updateFrame()     (唯一信号源)
- *         → RenderSectionManager.updateFrame()     (区块生命周期)
- *         → GPUCullingSystem.dispatchFrustumCull() (GPU剔除)
- *         → ChunkBuildPipeline.scheduleFrame()     (多线程构建)
- *         → TranslucentSortEngine.sort()           (透明排序)
- * </pre>
- *
- * <h2>MC版本变更保护</h2>
- * 当 MC 版本更新导致 Mixin 目标类变化时：
- * <ol>
- *   <li>更新 Mixin 注入点和方法签名</li>
- *   <li>如果 RenderiumACL 的接口需要调整，在此类做适配</li>
- *   <li>feature/chunk/ 下所有类完全不需要改动</li>
- * </ol>
+ * <p>这是 Mixin 层与 feature/ 优化子系统之间的唯一桥梁。
+ * 不直接引用任何 Feature 类，通过 Object 引用 + 构造函数注入。
  */
 public final class RenderiumACL {
 
@@ -57,19 +30,19 @@ public final class RenderiumACL {
     /** 单例 */
     private static volatile RenderiumACL instance;
 
-    // ==================== 子系统引用 ====================
+    // ==================== 子系统引用（Object 类型，运行时由 Feature 层注入） ====================
 
-    /** 统一调度中心（拥有所有子系统的引用） */
-    private RenderiumCullingScheduler scheduler;
+    /** 统一调度中心 Object=RenderiumCullingScheduler */
+    private volatile Object scheduler;
 
-    /** 区块渲染段管理器 */
-    private RenderSectionManager sectionManager;
+    /** 区块渲染段管理器 Object=RenderSectionManager */
+    private volatile Object sectionManager;
 
-    /** 区块构建管线 */
-    private ChunkBuildPipeline buildPipeline;
+    /** 区块构建管线 Object=ChunkBuildPipeline */
+    private volatile Object buildPipeline;
 
-    /** 透明面排序引擎 */
-    private TranslucentSortEngine sortEngine;
+    /** 透明面排序引擎 Object=TranslucentSortEngine */
+    private volatile Object sortEngine;
 
     /** 是否已初始化 */
     private volatile boolean initialized;
@@ -79,33 +52,22 @@ public final class RenderiumACL {
     private RenderiumACL() {}
 
     /**
-     * 初始化防腐层（在 Minecraft 加载完成后调用，由 Mod 入口触发）。
+     * 初始化防腐层（由 Mod 入口在 Minecraft 加载后调用）。
      *
-     * @param cpuCores 可用 CPU 核心数 (Runtime.getRuntime().availableProcessors())
+     * @param schedulerObj   调度中心 (RenderiumCullingScheduler)
+     * @param sectionManagerObj 区块管理器 (RenderSectionManager)
+     * @param buildPipelineObj  构建管线 (ChunkBuildPipeline)
+     * @param sortEngineObj     排序引擎 (TranslucentSortEngine)
      */
-    public synchronized void init(int cpuCores) {
+    public synchronized void init(Object schedulerObj, Object sectionManagerObj,
+                                  Object buildPipelineObj, Object sortEngineObj) {
         if (initialized) return;
-
-        this.buildPipeline = new ChunkBuildPipeline(cpuCores);
-        this.sectionManager = new RenderSectionManager(buildPipeline);
-        this.scheduler = new RenderiumCullingScheduler(sectionManager, buildPipeline);
-        this.sortEngine = new TranslucentSortEngine();
-
-        // 启动多线程 Worker 池
-        buildPipeline.start();
-
-        // 初始化 GPU 三级剔除管线（L1 Frustum + L2 Hi-Z + L3 IndirectDraw）
-        GPUCullingSystem gpuCulling = GPUCullingSystem.getInstance();
-        gpuCulling.initialize();
-        CullingPipeline cullPipeline = new CullingPipeline();
-        cullPipeline.initialize(gpuCulling);
-        scheduler.setCullingPipeline(cullPipeline);
-
-        // 注册 Zoom API
-        RenderiumZoomAPI.init(scheduler.getDetector());
-
+        this.scheduler = schedulerObj;
+        this.sectionManager = sectionManagerObj;
+        this.buildPipeline = buildPipelineObj;
+        this.sortEngine = sortEngineObj;
         this.initialized = true;
-        LOGGER.info("RenderiumACL 初始化完成: " + (cpuCores) + " worker(s), CullingPipeline 已注入");
+        LOGGER.info("RenderiumACL 初始化完成");
     }
 
     // ==================== 单例 ====================
@@ -121,122 +83,147 @@ public final class RenderiumACL {
 
     // ==================== ACL 方法：帧入口 ====================
 
-    /**
-     * 每帧渲染入口 —— 这是 Mixin 唯一需要调用的帧方法。
-     *
-     * @param camX/camY/camZ   相机世界坐标 (blocks)
-     * @param yaw/pitch        相机偏航/俯仰角 (°)
-     * @param deltaTime        帧间隔 (秒)
-     * @param fovDegrees       当前视场角 (°)，用于 Zoom 被动检测
-     * @param renderDistBlocks 渲染距离 (blocks)
-     */
     public void onRenderFrame(double camX, double camY, double camZ,
                                double yaw, double pitch,
                                double deltaTime, double fovDegrees,
                                double renderDistBlocks) {
         if (!initialized) return;
-        scheduler.onFrame(camX, camY, camZ, yaw, pitch,
-            deltaTime, renderDistBlocks, null);
+        try {
+            java.lang.reflect.Method onFrame = scheduler.getClass().getMethod(
+                "onFrame", double.class, double.class, double.class,
+                double.class, double.class, double.class, double.class, Object.class);
+            onFrame.invoke(scheduler, camX, camY, camZ, yaw, pitch,
+                deltaTime, renderDistBlocks, null);
+        } catch (Exception e) {
+            LOGGER.warning("onRenderFrame 调用失败: " + e.getMessage());
+        }
     }
 
     // ==================== ACL 方法：区块事件 ====================
 
-    /**
-     * 区块被加载/添加。
-     *
-     * @param chunkX/chunkY/chunkZ 区块坐标 (chunk 空间，非 block 空间)
-     * @param blocks    方块数据 [16][16][16] int 数组，每个元素为 block ID
-     */
     public void onChunkAdded(int chunkX, int chunkY, int chunkZ,
                               int[][][] blocks) {
         if (!initialized) return;
-        sectionManager.onSectionAdded(chunkX, chunkY, chunkZ, blocks);
+        try {
+            java.lang.reflect.Method onAdded = sectionManager.getClass().getMethod(
+                "onSectionAdded", int.class, int.class, int.class, int[][][].class);
+            onAdded.invoke(sectionManager, chunkX, chunkY, chunkZ, blocks);
+        } catch (Exception e) {
+            LOGGER.warning("onChunkAdded 调用失败: " + e.getMessage());
+        }
     }
 
-    /**
-     * 区块被卸载/移除。
-     */
     public void onChunkRemoved(int chunkX, int chunkY, int chunkZ) {
         if (!initialized) return;
-        sectionManager.onSectionRemoved(chunkX, chunkY, chunkZ);
+        try {
+            java.lang.reflect.Method onRemoved = sectionManager.getClass().getMethod(
+                "onSectionRemoved", int.class, int.class, int.class);
+            onRemoved.invoke(sectionManager, chunkX, chunkY, chunkZ);
+        } catch (Exception e) {
+            LOGGER.warning("onChunkRemoved 调用失败: " + e.getMessage());
+        }
     }
 
-    /**
-     * 区块内容发生变化（方块放置/破坏/更新）。
-     *
-     * @param blocks 新的方块数据 [16][16][16]
-     */
     public void onChunkChanged(int chunkX, int chunkY, int chunkZ,
                                 int[][][] blocks) {
         if (!initialized) return;
-        sectionManager.onSectionChanged(chunkX, chunkY, chunkZ, blocks);
+        try {
+            java.lang.reflect.Method onChanged = sectionManager.getClass().getMethod(
+                "onSectionChanged", int.class, int.class, int.class, int[][][].class);
+            onChanged.invoke(sectionManager, chunkX, chunkY, chunkZ, blocks);
+        } catch (Exception e) {
+            LOGGER.warning("onChunkChanged 调用失败: " + e.getMessage());
+        }
     }
 
     // ==================== ACL 方法：爆炸 ====================
 
-    /**
-     * 爆炸/大量方块变化 —— 触发粗网格优先策略。
-     *
-     * @param affectedChunkKeys 受影响区块的 key 列表
-     *                          (key = ((chunkX << 42) | ((chunkZ & 0x3FFFFF) << 20) | (chunkY & 0xFFFFF)))
-     */
     public void onExplosion(List<Long> affectedChunkKeys) {
         if (!initialized) return;
-        sectionManager.notifyExplosion(affectedChunkKeys);
+        try {
+            java.lang.reflect.Method notifyExplosion = sectionManager.getClass().getMethod(
+                "notifyExplosion", List.class);
+            notifyExplosion.invoke(sectionManager, affectedChunkKeys);
+        } catch (Exception e) {
+            LOGGER.warning("onExplosion 调用失败: " + e.getMessage());
+        }
     }
 
     // ==================== ACL 方法：透明排序 ====================
 
-    /**
-     * 对透明四边形进行排序。
-     *
-     * @param quads     透明四边形数组
-     * @param cameraX/Y/Z 相机位置 (world)
-     * @return 排序后的 quad 索引数组
-     */
     public int[] onTransparentSort(Object[] quads,
                                     double cameraX, double cameraY,
                                     double cameraZ) {
         if (!initialized || quads == null || quads.length == 0) {
             return new int[0];
         }
-        // 转换到 TranslucentSortEngine 的内部类型
-        TranslucentSortEngine.TranslucentQuad[] internalQuads =
-            new TranslucentSortEngine.TranslucentQuad[quads.length];
-        for (int i = 0; i < quads.length; i++) {
-            // 实际类型转换由 ACL 适配层负责
-            // 此处为占位——真实实现需要从 MC 的透明四边形提取数据
-            internalQuads[i] = (TranslucentSortEngine.TranslucentQuad) quads[i];
+        try {
+            java.lang.reflect.Method sort = sortEngine.getClass().getMethod(
+                "sort", Object[].class, double.class, double.class,
+                double.class, int.class, int.class, boolean.class);
+            return (int[]) sort.invoke(sortEngine, quads, cameraX, cameraY, cameraZ,
+                0, 0, false);
+        } catch (Exception e) {
+            LOGGER.warning("onTransparentSort 调用失败: " + e.getMessage());
+            return new int[0];
         }
-        return sortEngine.sort(internalQuads, cameraX, cameraY, cameraZ,
-            0, 0, false);
     }
 
-    // ==================== 查询 API（Mixin 调用者使用） ====================
+    // ==================== 查询 API ====================
 
-    /** @return 调度中心是否已初始化就绪 */
     public boolean isReady() { return initialized && scheduler != null; }
 
-    /** @return 当前可见 chunk 数量 */
     public int getVisibleChunkCount() {
-        return scheduler != null ? scheduler.getVisibleChunks().size() : 0;
+        if (scheduler == null) return 0;
+        try {
+            java.lang.reflect.Method getVisible = scheduler.getClass().getMethod("getVisibleChunks");
+            Object visible = getVisible.invoke(scheduler);
+            return visible instanceof List ? ((List<?>) visible).size() : 0;
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
-    /** @return 调度中心实例（用于更高级的 Debug/Profiling 查询） */
-    public RenderiumCullingScheduler getScheduler() { return scheduler; }
+    public Object getScheduler() { return scheduler; }
 
-    /** @return Culling 专用 ACL */
     public CullingACL getCullingACL() {
-        return CullingACL.getInstance(scheduler);
+        if (scheduler == null) return null;
+        try {
+            java.lang.reflect.Method getDetector = scheduler.getClass().getMethod("getDetector");
+            Object detector = getDetector.invoke(scheduler);
+            if (detector == null) return null;
+
+            Class<?> dClass = detector.getClass();
+            double omega = (double) dClass.getMethod("getOmega").invoke(detector);
+            double linearVel = (double) dClass.getMethod("getLinearVelocity").invoke(detector);
+            double fov = (double) dClass.getMethod("getCurrentFov").invoke(detector);
+            QualityMode qualityMode = (QualityMode) dClass.getMethod("getQualityMode").invoke(detector);
+            double[] predictedPos = (double[]) dClass.getMethod("getPredictedPosition").invoke(detector);
+            double boundaryL1 = (double) dClass.getMethod("getConsistencyBoundaryL1").invoke(detector);
+            double boundaryL2 = (double) dClass.getMethod("getConsistencyBoundaryL2").invoke(detector);
+            boolean zooming = (boolean) dClass.getMethod("isZoomingActive").invoke(detector);
+            boolean screenshotRefining = (boolean) dClass.getMethod("isScreenshotRefining").invoke(detector);
+
+            return new CullingACL(omega, linearVel, fov, qualityMode, predictedPos,
+                boundaryL1, boundaryL2, zooming, screenshotRefining);
+        } catch (Exception e) {
+            LOGGER.warning("getCullingACL 调用失败: " + e.getMessage());
+            return null;
+        }
     }
 
     // ==================== 生命周期 ====================
 
-    /** 关闭防腐层，释放所有子系统资源 */
     public void shutdown() {
         if (!initialized) return;
-        List<ChunkBuildTask> remaining = buildPipeline.shutdown();
-        LOGGER.info("RenderiumACL 关闭: " + remaining.size() + " 个残留任务已丢弃");
+        try {
+            java.lang.reflect.Method shutdown = buildPipeline.getClass().getMethod("shutdown");
+            Object remaining = shutdown.invoke(buildPipeline);
+            int count = remaining instanceof List ? ((List<?>) remaining).size() : 0;
+            LOGGER.info("RenderiumACL 关闭: " + count + " 个残留任务已丢弃");
+        } catch (Exception e) {
+            LOGGER.warning("shutdown 调用失败: " + e.getMessage());
+        }
         initialized = false;
     }
 }

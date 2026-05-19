@@ -8,9 +8,8 @@ import com.ranecc.renderium.tech.stub.renderbackendproxy.RenderBackendProxy;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.lang.invoke.MethodHandle;
 import java.util.logging.Logger;
-import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 
@@ -226,13 +225,7 @@ public final class FBOInteropHandler {
             vulkanToGLSemaphore = 0L;
             return;
         }
-        if (!VulkanFFMBinding.isFfmLoaded()) {
-            glToVulkanSemaphore = 0L;
-            vulkanToGLSemaphore = 0L;
-            return;
-        }
-        MethodHandle vkCreateSemaphore = VulkanFFMBinding.getVkCreateSemaphore();
-        if (vkCreateSemaphore == null) {
+        if (!VulkanAPIRegistry.isAvailable("vkCreateSemaphore")) {
             glToVulkanSemaphore = 0L;
             vulkanToGLSemaphore = 0L;
             return;
@@ -242,10 +235,12 @@ public final class FBOInteropHandler {
 
             var outSem = arena.allocate(ValueLayout.JAVA_LONG);
 
-            int r1 = (int) vkCreateSemaphore.invokeExact(deviceHandle, ciAligned.address(), 0L, outSem.address());
+            int r1 = (int) VulkanAPIRegistry.invoke("vkCreateSemaphore",
+                deviceHandle, ciAligned.address(), 0L, outSem.address());
             glToVulkanSemaphore = r1 == 0 ? outSem.get(ValueLayout.JAVA_LONG, 0) : 0L;
 
-            int r2 = (int) vkCreateSemaphore.invokeExact(deviceHandle, ciAligned.address(), 0L, outSem.address());
+            int r2 = (int) VulkanAPIRegistry.invoke("vkCreateSemaphore",
+                deviceHandle, ciAligned.address(), 0L, outSem.address());
             vulkanToGLSemaphore = r2 == 0 ? outSem.get(ValueLayout.JAVA_LONG, 0) : 0L;
 
             LOGGER.fine(String.format(

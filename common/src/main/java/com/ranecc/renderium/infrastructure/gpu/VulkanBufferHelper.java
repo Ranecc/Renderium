@@ -5,8 +5,6 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
-import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
-
 /**
  * Vulkan Buffer 创建与销毁辅助
  *
@@ -59,8 +57,8 @@ public final class VulkanBufferHelper {
         if (!isAvailable() || device == 0L || vkMemory == 0L || data == null) return false;
         try (Arena arena = Arena.ofConfined()) {
             var ppData = arena.allocate(8);
-            int result = (int) VulkanFFMBinding.getVkMapMemory()
-                .invoke(device, vkMemory, offset, (long) data.length, 0, ppData);
+            int result = (int) VulkanAPIRegistry.invoke(
+                "vkMapMemory", device, vkMemory, offset, (long) data.length, 0, ppData.address());
             if (result != VK_SUCCESS) return false;
 
             long ptr = ppData.get(ValueLayout.JAVA_LONG, 0);
@@ -68,9 +66,8 @@ public final class VulkanBufferHelper {
             var seg = java.lang.foreign.MemorySegment.ofAddress(ptr)
                 .reinterpret(data.length);
             for (int i = 0; i < data.length; i++) seg.set(ValueLayout.JAVA_BYTE, i, data[i]);
-            VulkanFFMBinding.getVkFlushMappedMemoryRanges()
-                .invoke(device, 1, arena.allocate(32).address());
-            VulkanFFMBinding.getVkUnmapMemory().invoke(device, vkMemory);
+            VulkanAPIRegistry.invoke("vkFlushMappedMemoryRanges", device, 1, ppData.address());
+            VulkanAPIRegistry.invoke("vkUnmapMemory", device, vkMemory);
             return true;
         } catch (Throwable t) {
             LOGGER.warning("uploadData failed: " + t.getMessage());

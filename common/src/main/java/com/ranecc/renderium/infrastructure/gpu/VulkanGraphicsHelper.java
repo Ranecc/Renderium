@@ -4,10 +4,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.lang.invoke.MethodHandle;
 import java.util.logging.Logger;
-
-import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 
 /**
  * Vulkan 全屏渲染辅助类
@@ -57,7 +54,7 @@ public final class VulkanGraphicsHelper {
     }
 
     public static boolean isAvailable() {
-        return VulkanFFMBinding.isFfmLoaded() && VulkanDeviceHolder.isAvailable();
+        return VulkanAPIRegistry.isAvailable("vkCmdBindPipeline") && VulkanDeviceHolder.isAvailable();
     }
 
     /**
@@ -85,7 +82,7 @@ public final class VulkanGraphicsHelper {
             createInfo.set(ValueLayout.JAVA_LONG, 24, subpass.address());
 
             long[] outPass = new long[1];
-            int result = (int) VulkanFFMBinding.getVkCreateRenderPass().invoke(device, createInfo.address(), 0L, outPass);
+            int result = (int) VulkanAPIRegistry.invoke("vkCreateRenderPass", device, createInfo.address(), 0L, outPass);
             return result == VK_SUCCESS ? outPass[0] : 0L;
         } catch (Throwable t) {
             LOGGER.warning("createSimpleRenderPass failed: " + t.getMessage());
@@ -118,7 +115,7 @@ public final class VulkanGraphicsHelper {
             viewportState.set(ValueLayout.JAVA_INT, 28, 1);
 
             long[] outPipeline = new long[1];
-            int result = (int) VulkanFFMBinding.getVkCreateGraphicsPipelines().invoke(
+            int result = (int) VulkanAPIRegistry.invoke("vkCreateGraphicsPipelines",
                 device, 0L, 1, 0L, 0L, outPipeline);
             return result == VK_SUCCESS ? outPipeline[0] : 0L;
         } catch (Throwable t) {
@@ -135,10 +132,10 @@ public final class VulkanGraphicsHelper {
                                                int width, int height, float[] uniforms) {
         if (!isAvailable() || cmdBuffer == 0L) return;
         try {
-            VulkanFFMBinding.getVkCmdBindPipeline().invoke(
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline",
                 cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
-            VulkanFFMBinding.getVkCmdDraw().invoke(cmdBuffer, 3, 1, 0, 0);
+            VulkanAPIRegistry.invoke("vkCmdDraw", cmdBuffer, 3, 1, 0, 0);
         } catch (Throwable t) {
             LOGGER.warning("drawFullScreenTriangle failed: " + t.getMessage());
         }
@@ -147,7 +144,7 @@ public final class VulkanGraphicsHelper {
     public static void destroyPipeline(long device, long pipeline) {
         if (device == 0L || pipeline == 0L) return;
         try {
-            VulkanFFMBinding.getVkDestroyPipeline().invoke(device, pipeline, 0L);
+            VulkanAPIRegistry.invoke("vkDestroyPipeline", device, pipeline, 0L);
         } catch (Throwable t) {
             LOGGER.warning("destroyPipeline failed: " + t.getMessage());
         }
@@ -156,7 +153,7 @@ public final class VulkanGraphicsHelper {
     public static void destroyRenderPass(long device, long renderPass) {
         if (device == 0L || renderPass == 0L) return;
         try {
-            VulkanFFMBinding.getVkDestroyRenderPass().invoke(device, renderPass, 0L);
+            VulkanAPIRegistry.invoke("vkDestroyRenderPass", device, renderPass, 0L);
         } catch (Throwable t) {
             LOGGER.warning("destroyRenderPass failed: " + t.getMessage());
         }
@@ -165,7 +162,7 @@ public final class VulkanGraphicsHelper {
     public static void destroyShaderModule(long device, long module) {
         if (device == 0L || module == 0L) return;
         try {
-            VulkanFFMBinding.getVkDestroyShaderModule().invoke(device, module, 0L);
+            VulkanAPIRegistry.invoke("vkDestroyShaderModule", device, module, 0L);
         } catch (Throwable t) {
             LOGGER.warning("destroyShaderModule failed: " + t.getMessage());
         }
@@ -174,7 +171,7 @@ public final class VulkanGraphicsHelper {
     public static void destroyImageView(long device, long view) {
         if (device == 0L || view == 0L) return;
         try {
-            VulkanFFMBinding.getVkDestroyImageView().invoke(device, view, 0L);
+            VulkanAPIRegistry.invoke("vkDestroyImageView", device, view, 0L);
         } catch (Throwable t) {
             LOGGER.warning("destroyImageView failed: " + t.getMessage());
         }
@@ -183,7 +180,7 @@ public final class VulkanGraphicsHelper {
     public static void destroyFramebuffer(long device, long fb) {
         if (device == 0L || fb == 0L) return;
         try {
-            VulkanFFMBinding.getVkDestroyFramebuffer().invoke(device, fb, 0L);
+            VulkanAPIRegistry.invoke("vkDestroyFramebuffer", device, fb, 0L);
         } catch (Throwable t) {
             LOGGER.warning("destroyFramebuffer failed: " + t.getMessage());
         }
@@ -192,7 +189,7 @@ public final class VulkanGraphicsHelper {
     public static void memoryBarrier(long cmdBuffer) {
         if (!isAvailable() || cmdBuffer == 0L) return;
         try {
-            VulkanFFMBinding.getVkCmdPipelineBarrier().invoke(
+            VulkanAPIRegistry.invoke("vkCmdPipelineBarrier",
                 cmdBuffer,
                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,

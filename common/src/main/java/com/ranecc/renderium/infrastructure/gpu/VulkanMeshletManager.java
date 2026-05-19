@@ -5,7 +5,7 @@ import java.lang.foreign.ValueLayout;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
-import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 
 /**
  * Phase 6: Vulkan Meshlet 管理器
@@ -64,8 +64,7 @@ public final class VulkanMeshletManager {
 
     public static boolean isAvailable() {
         return VulkanDeviceHolder.isAvailable()
-            && VulkanFFMBinding.isFfmLoaded()
-            && VulkanFFMBinding.getVkCmdDrawMeshTasksEXT() != null;
+            && VulkanAPIRegistry.isAvailable("vkCmdDrawMeshTasksEXT");
     }
 
     /**
@@ -154,8 +153,7 @@ public final class VulkanMeshletManager {
         if (!isAvailable() || cmdBuf == 0L || meshletCount <= 0) return;
         int groupsX = (meshletCount + 31) / 32;
         try {
-            VulkanFFMBinding.getVkCmdDrawMeshTasksEXT()
-                .invoke(cmdBuf, groupsX, 1, 1);
+            VulkanAPIRegistry.invoke("vkCmdDrawMeshTasksEXT", cmdBuf, groupsX, 1, 1);
         } catch (Throwable t) {
             LOGGER.warning("cmdDrawMeshTasks failed: " + t.getMessage());
         }

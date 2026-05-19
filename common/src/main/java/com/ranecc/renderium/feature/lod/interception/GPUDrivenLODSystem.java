@@ -8,7 +8,6 @@ package com.ranecc.renderium.feature.lod.interception;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.lang.invoke.MethodHandle;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -17,7 +16,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
-import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
@@ -612,10 +611,7 @@ public final class GPUDrivenLODSystem {
     private void dispatchCompute(long cmdBuf, int workgroupCount) {
         if (VulkanOperationGuard.isFailed() || cmdBuf == 0L) return;
         try {
-            MethodHandle vkCmdDispatch = VulkanFFMBinding.getVkCmdDispatch();
-            if (vkCmdDispatch != null) {
-                vkCmdDispatch.invoke(cmdBuf, workgroupCount, 1, 1);
-            }
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, workgroupCount, 1, 1);
         } catch (Throwable t) {
             LOGGER.warning("dispatchCompute failed: " + t.getMessage());
         }
@@ -627,10 +623,7 @@ public final class GPUDrivenLODSystem {
     private void computeMemoryBarrier() {
         if (VulkanOperationGuard.isFailed()) return;
         try {
-            MethodHandle barrier = VulkanFFMBinding.getVkCmdPipelineBarrier();
-            if (barrier != null) {
-                barrier.invoke(0L, 2, 2, 0, 0, 0L, 0, 0L, 0, 0L);
-            }
+            VulkanAPIRegistry.invoke("vkCmdPipelineBarrier", 0L, 2, 2, 0, 0, 0L, 0, 0L, 0, 0L);
         } catch (Throwable t) {
             LOGGER.warning("computeMemoryBarrier failed: " + t.getMessage());
         }
@@ -647,8 +640,8 @@ public final class GPUDrivenLODSystem {
             long device = VulkanBufferHelper.getDevice();
             long mapSize = (long) expectedCount * LOD_OUTPUT_STRIDE;
             var ppData = arena.allocate(ValueLayout.JAVA_LONG);
-            int result = (int) VulkanFFMBinding.getVkMapMemory().invoke(
-                device, lodResultBufferMemory, 0L, mapSize, 0, ppData);
+            int result = (int) VulkanAPIRegistry.invoke(
+                "vkMapMemory", device, lodResultBufferMemory, 0L, mapSize, 0, ppData);
             if (result != 0) return new ConcurrentHashMap<>();
             long ptr = ppData.get(ValueLayout.JAVA_LONG, 0);
             if (ptr == 0L) return new ConcurrentHashMap<>();
@@ -659,7 +652,7 @@ public final class GPUDrivenLODSystem {
                 resultMap.put(seg.get(ValueLayout.JAVA_INT, off + 8),
                               seg.get(ValueLayout.JAVA_INT, off));
             }
-            VulkanFFMBinding.getVkUnmapMemory().invoke(device, lodResultBufferMemory);
+            VulkanAPIRegistry.invoke("vkUnmapMemory", device, lodResultBufferMemory);
             return resultMap;
         } catch (Throwable t) {
             LOGGER.warning("readLODResults failed: " + t.getMessage());
@@ -675,13 +668,11 @@ public final class GPUDrivenLODSystem {
             return new IndirectDrawCommand[0];
         }
         try (Arena arena = Arena.ofConfined()) {
-            MethodHandle vkMapMemory = VulkanFFMBinding.getVkMapMemory();
-            if (vkMapMemory == null) return new IndirectDrawCommand[0];
-
             long device = VulkanBufferHelper.getDevice();
             var ppData = arena.allocate(ValueLayout.JAVA_LONG);
             long mapSize = (long) expectedCount * INDIRECT_COMMAND_STRIDE;
-            int result = (int) vkMapMemory.invoke(device, indirectCommandBufferMemory, 0L, mapSize, 0, ppData);
+            int result = (int) VulkanAPIRegistry.invoke(
+                "vkMapMemory", device, indirectCommandBufferMemory, 0L, mapSize, 0, ppData);
             if (result != 0) return new IndirectDrawCommand[0];
 
             long ptr = ppData.get(ValueLayout.JAVA_LONG, 0);
@@ -698,7 +689,7 @@ public final class GPUDrivenLODSystem {
                     seg.get(ValueLayout.JAVA_INT, off + 12),
                     seg.get(ValueLayout.JAVA_INT, off + 16));
             }
-            VulkanFFMBinding.getVkUnmapMemory().invoke(device, indirectCommandBufferMemory);
+            VulkanAPIRegistry.invoke("vkUnmapMemory", device, indirectCommandBufferMemory);
             return cmds;
         } catch (Throwable t) {
             LOGGER.warning("readIndirectCommands failed: " + t.getMessage());
