@@ -13,11 +13,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.feature.lod.compute.HiZComputePipeline;
-import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
-import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 import com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
+import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 
 /**
  * GPUCullingPipeline - GPU 驱动剔除管线
@@ -387,18 +386,11 @@ public class GPUCullingPipeline {
             HiZComputePipeline.bindAndDispatchOcclusionQuery(cmdBuf, VulkanDeviceHolder.getInstance());
             HiZComputePipeline.endCommandBuffer(cmdBuf);
 
-            // 提交并等待完成
-            long fence = LodCullingComputePass.getFence();
-            if (fence != 0L) {
-                VulkanFFMBinding.getVkResetFences().invoke(device, 1, fence);
-                long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                if (queue != 0L) {
-                    VulkanFFMBinding.getVkQueueSubmit().invoke(queue, 1, 0L, fence);
-                    VulkanFFMBinding.getVkWaitForFences().invoke(device, 1, fence, 1, 100000000L);
-                }
-            }
+            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+            if (queue == 0L) return executeCPUCulling(cameraPos, frustum, candidateCount);
 
-            // HiZ 结果已在 occlusion SSBO 中，GC 处理
+            VulkanSyncManager.submitAndWait(queue, cmdBuf);
+
             BitSet result = new BitSet(candidateCount);
             result.set(0, candidateCount, true);
             return result;

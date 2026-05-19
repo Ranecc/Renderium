@@ -43,6 +43,9 @@ public final class VulkanAPIRegistry {
      * 注册一个 Vulkan API 函数。
      */
     public static void register(String apiName, MethodHandle handle) {
+        if (sealed) {
+            throw new IllegalStateException("VulkanAPIRegistry 已密封，无法注册: " + apiName);
+        }
         if (handle == null) {
             LOGGER.warning("VulkanAPIRegistry: " + apiName + " 注册的 MethodHandle 为 null");
             return;
@@ -54,6 +57,9 @@ public final class VulkanAPIRegistry {
      * 批量注册 Vulkan API 函数。
      */
     public static void registerAll(Map<String, MethodHandle> apis) {
+        if (sealed) {
+            throw new IllegalStateException("VulkanAPIRegistry 已密封，无法批量注册");
+        }
         if (apis != null) {
             HANDLES.putAll(apis);
         }
@@ -100,18 +106,18 @@ public final class VulkanAPIRegistry {
             throw new IllegalStateException("Vulkan API 未注册: " + apiName
                 + " — 请检查 VulkanFFMBinding 初始化是否完成");
         }
-        return (T) handle.invoke(args);
+        return (T) handle.invokeWithArguments(args);
     }
 
     /**
-     * 调用指定 Vulkan API（使用 invokeExact，不进行类型适配）。
+     * 调用指定 Vulkan API（使用 invokeWithArguments，展开可变参数数组）。
      */
     public static Object invokeExact(String apiName, Object... args) throws Throwable {
         MethodHandle handle = HANDLES.get(apiName);
         if (handle == null) {
             throw new IllegalStateException("Vulkan API 未注册: " + apiName);
         }
-        return handle.invokeExact(args);
+        return handle.invokeWithArguments(args);
     }
 
     /**
