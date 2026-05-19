@@ -57,7 +57,8 @@ public final class VulkanMemoryAllocator {
             MemorySegment memReqs = arena.allocate(32);
             VulkanAPIRegistry.invoke("vkGetBufferMemoryRequirements", device, vkBuffer, memReqs.address());
             long memSize = memReqs.get(ValueLayout.JAVA_LONG, 0);
-            int memType = findMemoryType(device, memSize, memoryPropsBits);
+            int typeFilter = memReqs.get(ValueLayout.JAVA_INT, 16);
+            int memType = findMemoryType(device, typeFilter, memoryPropsBits);
 
             return new long[]{vkBuffer, allocateAndBindMemory(device, vkBuffer, memSize, memType)};
         } catch (Throwable t) {
@@ -98,8 +99,9 @@ public final class VulkanMemoryAllocator {
                 MemorySegment memReqs = arena.allocate(32);
                 VulkanAPIRegistry.invoke("vkGetImageMemoryRequirements", device, vkImage, memReqs.address());
                 long memSize = memReqs.get(ValueLayout.JAVA_LONG, 0);
+                int typeFilter = memReqs.get(ValueLayout.JAVA_INT, 16);
 
-                int memType = findMemoryType(device, memSize, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                int memType = findMemoryType(device, typeFilter, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
                 return new long[]{vkImage, allocateAndBindImageMemory(device, vkImage, memSize, memType)};
             }
         } catch (Throwable t) {
@@ -168,7 +170,15 @@ public final class VulkanMemoryAllocator {
         }
     }
 
-    private static int findMemoryType(long device, long allocationSize, int requiredProperties) {
+    /**
+     * 查找匹配指定 propertyFlags 和 typeFilter 的内存类型索引。
+     *
+     * @param device            VkDevice (用于日志)
+     * @param typeFilter        memoryTypeBits 位掩码（来自 VkMemoryRequirements）
+     * @param requiredProperties VkMemoryPropertyFlags 必须的属性位
+     * @return 匹配的内存类型索引，未找到返回 0
+     */
+    private static int findMemoryType(long device, int typeFilter, int requiredProperties) {
         long physicalDevice = VulkanDeviceHolder.getInstance().getPhysicalDevice();
         if (physicalDevice == 0L || device == 0L) return 0;
 
@@ -180,9 +190,11 @@ public final class VulkanMemoryAllocator {
             int count = Math.min(memoryTypeCount, 32);
 
             for (int i = 0; i < count; i++) {
-                long typeOffset = 8 + (long) i * 8;
+                // VkMemoryType = [propertyFlags(4B), heapIndex(4B)] = 8B per entry
+                // memoryTypes[] starts at offset 4 (after memoryTypeCount)
+                long typeOffset = 4 + (long) i * 8;
                 int flags = memProps.get(ValueLayout.JAVA_INT, typeOffset);
-                if ((flags & requiredProperties) == requiredProperties) {
+                if ((typeFilter & (1 << i)) != 0 && (flags & requiredProperties) == requiredProperties) {
                     return i;
                 }
             }

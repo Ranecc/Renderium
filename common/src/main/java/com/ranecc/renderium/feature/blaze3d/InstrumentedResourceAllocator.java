@@ -14,6 +14,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
+
 /**
  * 仪器化资源分配器 📊
  * <p>
@@ -577,9 +580,10 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
 
     // ==================== 内部方法：池化逻辑 ====================
 
-    // ==================== 自定义池跟踪 ====================
+    /** 自定义池缓存命中的估算大小阈值（字节） */
+    private static final long CUSTOM_POOL_SIZE_THRESHOLD = 16 * 1024 * 1024; // 16MB
 
-    /** 池化资源跟踪表 (resourceId hash → poolTag) */
+    /** 池化资源跟踪表 (identityHashCode × stride → poolTag) */
     private final java.util.concurrent.ConcurrentHashMap<Long, PoolTag> pooledResources = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** 池化资源的最小哈希分布步长 */
@@ -628,7 +632,52 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
             return (T) frameAlloc;
         }
 
+        // 尝试通过 VulkanMemoryAllocator 直接创建（适用于大块资源）
+        if (size > MemoryOptimizer.DEFAULT_POOL_BLOCK_SIZE && size <= CUSTOM_POOL_SIZE_THRESHOLD) {
+            T vkResource = tryAcquireFromVulkanAllocator(descriptor, size);
+            if (vkResource != null) {
+                return vkResource;
+            }
+        }
+
         return null;
+    }
+
+    /**
+     * 通过 VulkanMemoryAllocator 直接创建 GPU 资源。
+     * <p>当 MemoryOptimizer 池化未命中时作为第二级后备。
+     */
+    @SuppressWarnings("unchecked")
+    private <T> T tryAcquireFromVulkanAllocator(ResourceDescriptor<T> descriptor, long size) {
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L) return null;
+
+        try {
+            String descStr = descriptor.toString().toLowerCase();
+            int usageBits = 0;
+            if (descStr.contains("uniform")) {
+                usageBits = 0x0040; // VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+            } else if (descStr.contains("vertex")) {
+                usageBits = 0x0001; // VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+            } else if (descStr.contains("index")) {
+                usageBits = 0x0002; // VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+            } else if (descStr.contains("staging")) {
+                usageBits = 0x0100; // VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+            } else if (descStr.contains("storage")) {
+                usageBits = 0x0080; // VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+            } else {
+                return null;
+            }
+
+            long[] result = VulkanMemoryAllocator.createHostVisibleBuffer(device, size, usageBits);
+            if (result[0] == 0L || result[1] == 0L) return null;
+
+            pooledResources.put((long) System.identityHashCode(result) * POOL_HASH_STRIDE, PoolTag.RING_BUFFER);
+            return (T) result;
+        } catch (Exception e) {
+            LOGGER.fine("tryAcquireFromVulkanAllocator 失败: " + e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -639,9 +688,12 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
         PoolTag tag = pooledResources.remove(resourceHash);
         if (tag == null) return false;
 
-        // Per-Frame 和 Ring Buffer Arena 不需要手动释放
         if (tag == PoolTag.POOL_BLOCK && resource instanceof MemoryOptimizer.BlockAllocation) {
             memoryOptimizer.freePoolBlock(((MemoryOptimizer.BlockAllocation) resource).blockIndex);
+        } else if (tag == PoolTag.RING_BUFFER && resource instanceof long[]) {
+            long[] handles = (long[]) resource;
+            long device = VulkanDeviceHolder.getInstance().getDevice();
+            VulkanMemoryAllocator.destroyBuffer(device, handles[0], handles[1]);
         }
         return true;
     }
