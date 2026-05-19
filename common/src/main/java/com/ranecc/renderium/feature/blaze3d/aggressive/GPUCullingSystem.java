@@ -32,15 +32,24 @@ public class GPUCullingSystem implements AutoCloseable {
     public static final float DEFAULT_RENDER_DISTANCE = 16.0f;
 
     protected static long cullingPipeline = 0L;
-    protected static long chunkBoundsBuffer = 0L;
-    protected static long indirectArgsBuffer = 0L;
-    private static long chunkBoundsMemory = 0L;
-    private static long indirectArgsMemory = 0L;
-    private static long cullingShaderModule = 0L;
-    private static long pipelineLayout = 0L;
-    /** frustum_culling.comp 的 4 个 binding: SSBO(0/1/2) + UBO(3) */
-    private static long descriptorSetLayout = 0L;
-    private static byte[] FRUSTUM_CULLING_SPIRV;
+protected static long chunkBoundsBuffer = 0L;
+protected static long indirectArgsBuffer = 0L;
+private static long chunkBoundsMemory = 0L;
+private static long indirectArgsMemory = 0L;
+private static long cullingShaderModule = 0L;
+private static long pipelineLayout = 0L;
+/** frustum_culling.comp 的 4 个 binding: SSBO(0/1/2) + UBO(3) */
+private static long descriptorSetLayout = 0L;
+private static long descriptorPool = 0L;
+private static long descriptorSet = 0L;
+/** binding=1/2/3 对应 visibility 输出、原子计数器、Camera UBO */
+private static long visibilityBuffer = 0L;
+private static long visibilityMemory = 0L;
+private static long counterBuffer = 0L;
+private static long counterMemory = 0L;
+private static long cameraUBO = 0L;
+private static long cameraUBOMemory = 0L;
+private static byte[] FRUSTUM_CULLING_SPIRV;
 
     /** 是否需要销毁 chunkBoundsBuffer/indirectArgsBuffer（外部创建标记） */
     private static volatile boolean ownBuffers;
@@ -94,6 +103,13 @@ public class GPUCullingSystem implements AutoCloseable {
         long startNs = System.nanoTime();
         int dispatchX = Math.max(1, (int) Math.ceil((double) registeredChunkCount / WORKGROUP_SIZE));
         vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, cullingPipeline);
+        if (descriptorSet != 0L && pipelineLayout != 0L) {
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                var dsBuffer = stack.mallocLong(1).put(0, descriptorSet);
+                vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE,
+                    pipelineLayout, 0, dsBuffer, null);
+            }
+        }
         vkCmdDispatch(cmdBuf, dispatchX, 1, 1);
         totalCullingPasses.incrementAndGet();
         totalCullingTimeNanos.addAndGet(System.nanoTime() - startNs);
@@ -212,19 +228,95 @@ public class GPUCullingSystem implements AutoCloseable {
                 vkDeviceHandle,
                 MAX_CHUNK_COUNT * 32L,
                 VulkanConst.BUFFER_USAGE_STORAGE_BUFFER_BIT | VulkanConst.BUFFER_USAGE_TRANSFER_DST_BIT);
-            if (boundsResult[0] != 0L && boundsResult[1] != 0L) {
-                chunkBoundsBuffer = boundsResult[0];
-                chunkBoundsMemory = boundsResult[1];
+            if (boundsResult[0] == 0L || boundsResult[1] == 0L) {
+                throw new RuntimeException("GPUCullingSystem: chunkBoundsBuffer 分配失败");
             }
+            chunkBoundsBuffer = boundsResult[0];
+            chunkBoundsMemory = boundsResult[1];
 
             // === VkBuffer: indirectArgsBuffer (indirect draw, 每个 chunk 20 字节) ===
             long[] indirectResult = VulkanMemoryAllocator.createDeviceLocalBuffer(
                 vkDeviceHandle,
                 MAX_CHUNK_COUNT * 20L,
                 VulkanConst.BUFFER_USAGE_STORAGE_BUFFER_BIT | VulkanConst.BUFFER_USAGE_TRANSFER_DST_BIT);
-            if (indirectResult[0] != 0L && indirectResult[1] != 0L) {
-                indirectArgsBuffer = indirectResult[0];
-                indirectArgsMemory = indirectResult[1];
+            if (indirectResult[0] == 0L || indirectResult[1] == 0L) {
+                throw new RuntimeException("GPUCullingSystem: indirectArgsBuffer 分配失败");
+            }
+            indirectArgsBuffer = indirectResult[0];
+            indirectArgsMemory = indirectResult[1];
+
+            // === 额外 Buffer: visibilityBuffer(输出), counterBuffer(原子计数), cameraUBO(UBO) ===
+            long[] visResult = VulkanMemoryAllocator.createDeviceLocalBuffer(
+                vkDeviceHandle, MAX_CHUNK_COUNT * 4L,
+                VulkanConst.BUFFER_USAGE_STORAGE_BUFFER_BIT);
+            if (visResult[0] == 0L) throw new RuntimeException("visibilityBuffer 分配失败");
+            visibilityBuffer = visResult[0]; visibilityMemory = visResult[1];
+
+            long[] cntResult = VulkanMemoryAllocator.createHostVisibleBuffer(
+                vkDeviceHandle, 4L,
+                VulkanConst.BUFFER_USAGE_STORAGE_BUFFER_BIT | VulkanConst.BUFFER_USAGE_TRANSFER_DST_BIT);
+            if (cntResult[0] == 0L) throw new RuntimeException("counterBuffer 分配失败");
+            counterBuffer = cntResult[0]; counterMemory = cntResult[1];
+
+            long[] uboResult = VulkanMemoryAllocator.createHostVisibleBuffer(
+                vkDeviceHandle, 80L,
+                VulkanConst.BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+            if (uboResult[0] == 0L) throw new RuntimeException("cameraUBO 分配失败");
+            cameraUBO = uboResult[0]; cameraUBOMemory = uboResult[1];
+
+            // === DescriptorPool ===
+            var poolSizes = VkDescriptorPoolSize.calloc(2, stack);
+            poolSizes.get(0).type(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(3);
+            poolSizes.get(1).type(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER).descriptorCount(1);
+            var poolInfo = VkDescriptorPoolCreateInfo.calloc(stack)
+                .sType(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO)
+                .pPoolSizes(poolSizes).maxSets(1)
+                .flags(VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT);
+            var poolPtr = stack.mallocLong(1);
+            if (vkCreateDescriptorPool(device, poolInfo, null, poolPtr) == VK_SUCCESS)
+                descriptorPool = poolPtr.get(0);
+
+            // === 分配并更新 DescriptorSet ===
+            if (descriptorPool != 0L && descriptorSetLayout != 0L) {
+                var dsLayoutPtr2 = stack.mallocLong(1).put(0, descriptorSetLayout);
+                var allocInfo = VkDescriptorSetAllocateInfo.calloc(stack)
+                    .sType(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO)
+                    .descriptorPool(descriptorPool)
+                    .pSetLayouts(dsLayoutPtr2);
+                var dsPtr = stack.mallocLong(1);
+                if (vkAllocateDescriptorSets(device, allocInfo, dsPtr) == VK_SUCCESS)
+                    descriptorSet = dsPtr.get(0);
+
+                if (descriptorSet != 0L) {
+                    var buf0 = VkDescriptorBufferInfo.calloc(1, stack);
+                    buf0.buffer(chunkBoundsBuffer).offset(0).range(MAX_CHUNK_COUNT * 32L);
+                    var buf1 = VkDescriptorBufferInfo.calloc(1, stack);
+                    buf1.buffer(visibilityBuffer).offset(0).range(MAX_CHUNK_COUNT * 4L);
+                    var buf2 = VkDescriptorBufferInfo.calloc(1, stack);
+                    buf2.buffer(counterBuffer).offset(0).range(4L);
+                    var buf3 = VkDescriptorBufferInfo.calloc(1, stack);
+                    buf3.buffer(cameraUBO).offset(0).range(80L);
+
+                    var writeDescs = VkWriteDescriptorSet.calloc(4, stack);
+                    writeDescs.get(0).sType(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                        .dstSet(descriptorSet).dstBinding(0).descriptorCount(1)
+                        .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                        .pBufferInfo(buf0);
+                    writeDescs.get(1).sType(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                        .dstSet(descriptorSet).dstBinding(1).descriptorCount(1)
+                        .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                        .pBufferInfo(buf1);
+                    writeDescs.get(2).sType(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                        .dstSet(descriptorSet).dstBinding(2).descriptorCount(1)
+                        .descriptorType(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                        .pBufferInfo(buf2);
+                    writeDescs.get(3).sType(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                        .dstSet(descriptorSet).dstBinding(3).descriptorCount(1)
+                        .descriptorType(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                        .pBufferInfo(buf3);
+
+                    vkUpdateDescriptorSets(device, writeDescs, null);
+                }
             }
 
             ownBuffers = true;
@@ -235,6 +327,19 @@ public class GPUCullingSystem implements AutoCloseable {
         VkDevice device = RenderiumVulkanBridge.getDevice();
         if (device == null) return;
         long vkDeviceHandle = VulkanDeviceHolder.getInstance().getDevice();
+        if (descriptorPool != 0L) { vkDestroyDescriptorPool(device, descriptorPool, null); descriptorPool = 0L; }
+        if (cameraUBO != 0L && ownBuffers) {
+            VulkanMemoryAllocator.destroyBuffer(vkDeviceHandle, cameraUBO, cameraUBOMemory);
+            cameraUBO = 0L; cameraUBOMemory = 0L;
+        }
+        if (counterBuffer != 0L && ownBuffers) {
+            VulkanMemoryAllocator.destroyBuffer(vkDeviceHandle, counterBuffer, counterMemory);
+            counterBuffer = 0L; counterMemory = 0L;
+        }
+        if (visibilityBuffer != 0L && ownBuffers) {
+            VulkanMemoryAllocator.destroyBuffer(vkDeviceHandle, visibilityBuffer, visibilityMemory);
+            visibilityBuffer = 0L; visibilityMemory = 0L;
+        }
         if (cullingPipeline != 0L) { vkDestroyPipeline(device, cullingPipeline, null); cullingPipeline = 0L; }
         if (cullingShaderModule != 0L) { vkDestroyShaderModule(device, cullingShaderModule, null); cullingShaderModule = 0L; }
         if (pipelineLayout != 0L) { vkDestroyPipelineLayout(device, pipelineLayout, null); pipelineLayout = 0L; }
@@ -249,6 +354,7 @@ public class GPUCullingSystem implements AutoCloseable {
         }
         ownBuffers = false;
         FRUSTUM_CULLING_SPIRV = null;
+        descriptorSet = 0L;
     }
 
     private int getChunkIndex(int x, int y, int z) {

@@ -50,12 +50,10 @@ public final class VulkanMemoryAllocator {
     /** 由 VMA 分配的 Buffer 句柄集合，供 destroy 时路由 */
     private static final Set<Long> vmaManagedBuffers = ConcurrentHashMap.newKeySet();
 
-    /** 由 VMA 分配的 Image 句柄集合 */
-    private static final Set<Long> vmaManagedImages = ConcurrentHashMap.newKeySet();
-
     /**
-     * 启用 VMA 路由模式。启用后 createBuffer/createImage 会优先通过
+     * 启用 VMA 路由模式。启用后 createBuffer 会优先通过
      * {@link VmaMemoryPools} 的专用池分配，仅在不匹配池类型时回退到 FFM 路径。
+     * Image 分配始终走 FFM 路径。
      */
     public static void setVmaMode(long vmaAllocatorHandle, VmaMemoryPools pools) {
         VulkanMemoryAllocator.vmaAllocatorHandle = vmaAllocatorHandle;
@@ -138,15 +136,6 @@ public final class VulkanMemoryAllocator {
     public static long[] createImage(long device, long imageCreateInfoAddr) {
         if (device == 0L || imageCreateInfoAddr == 0L) return new long[]{0L, 0L};
 
-        if (isVmaMode()) {
-            VmaMemoryPools.PoolAllocation alloc = vmaPools.allocateFromPool(
-                VmaMemoryPools.PoolType.TEXTURE, 0L);
-            if (alloc != null) {
-                vmaManagedImages.add(alloc.buffer);
-                return new long[]{alloc.buffer, alloc.allocation};
-            }
-        }
-
         try {
             long[] outImg = new long[1];
             int result = (int) VulkanAPIRegistry.invoke(
@@ -192,14 +181,10 @@ public final class VulkanMemoryAllocator {
     // ==================== Image 销毁 ====================
 
     /**
-     * 销毁 Image + 释放内存。自动判断走 VMA 路径或 FFM 路径。
+     * 销毁 Image + 释放内存。
      */
     public static void destroyImage(long device, long vkImage, long vkMemoryOrAllocation) {
         if (device == 0L) return;
-        if (vmaManagedImages.remove(vkImage)) {
-            VmaMemoryPools.deallocateImage(vmaAllocatorHandle, vkImage, vkMemoryOrAllocation);
-            return;
-        }
         try {
             if (vkImage != 0L) VulkanAPIRegistry.invoke("vkDestroyImage", device, vkImage, 0L);
             if (vkMemoryOrAllocation != 0L) VulkanAPIRegistry.invoke("vkFreeMemory", device, vkMemoryOrAllocation, 0L);

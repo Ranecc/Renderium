@@ -16,6 +16,8 @@ import com.ranecc.renderium.feature.blaze3d.VersionAdapter;
 import com.ranecc.renderium.feature.blaze3d.MethodSignature;
 import com.ranecc.renderium.feature.blaze3d.RenderiumProfiler;
 import com.ranecc.renderium.feature.blaze3d.ResourceStats;
+import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
+import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
 
 import java.util.List;
 import java.util.Map;
@@ -978,9 +980,14 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
                 // 但 context.getPhysicalDeviceMemoryProperties() 返回 Object。
                 // 进行安全类型转换，若类型不匹配则传入空数组（VmaMemoryPools 内部会处理）。
                 int[] memProps = (memPropsRaw instanceof int[]) ? (int[]) memPropsRaw : new int[0];
-                com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.getInstance().initializePools(vmaAllocator, memProps);
+                VmaMemoryPools.getInstance().initializePools(vmaAllocator, memProps);
                 mixinRegistrationStatus.put("VmaMemoryPools", "✓ 已初始化 (6 个专用池)");
                 LOGGER.info("│  ✓ VmaMemoryPools: 6 个专用池已创建      │");
+
+                // 激活 VulkanMemoryAllocator 的 VMA 路由
+                VulkanMemoryAllocator.setVmaMode(vmaAllocator, VmaMemoryPools.getInstance());
+                mixinRegistrationStatus.put("VulkanMemoryAllocator", "✓ VMA 路由已激活");
+                LOGGER.info("│  ✓ VulkanMemoryAllocator: VMA 路由已启用   │");
 
             } catch (Exception e) {
                 mixinRegistrationStatus.put("VmaMemoryPools", "✗ 初始化失败: " + e.getMessage());
