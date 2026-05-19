@@ -3,6 +3,8 @@
 
 package com.ranecc.renderium.tech.framegen;
 
+import com.ranecc.renderium.domain.enums.FrameGenMode;
+
 /**
  * 帧生成器接口
  * <p>

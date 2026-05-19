@@ -582,9 +582,6 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
     /** 池化资源跟踪表 (resourceId hash → poolTag) */
     private final java.util.concurrent.ConcurrentHashMap<Long, PoolTag> pooledResources = new java.util.concurrent.ConcurrentHashMap<>();
 
-    /** 资源 ID 生成器 */
-    private final java.util.concurrent.atomic.AtomicLong resourceIdGenerator = new java.util.concurrent.atomic.AtomicLong(1);
-
     /** 池化资源的最小哈希分布步长 */
     private static final long POOL_HASH_STRIDE = 2654435761L;
 
@@ -615,14 +612,11 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
         long size = estimateResourceSize(descriptor);
         if (size <= 0) return null;
 
-        // 分配资源 ID（用于池化标记）
-        long resourceTag = resourceIdGenerator.getAndIncrement();
-
         // 尝试从 Pool Arena 获取（适用固定大小块）
         if (size <= MemoryOptimizer.DEFAULT_POOL_BLOCK_SIZE) {
             var alloc = memoryOptimizer.allocateFromPool();
             if (alloc != null) {
-                pooledResources.put(resourceTag * POOL_HASH_STRIDE, PoolTag.POOL_BLOCK);
+                pooledResources.put((long) System.identityHashCode(alloc) * POOL_HASH_STRIDE, PoolTag.POOL_BLOCK);
                 return (T) alloc;
             }
         }
@@ -630,7 +624,7 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
         // 尝试从 Per-Frame Arena 获取（适用临时数据）
         var frameAlloc = memoryOptimizer.allocateFromFrame(size, 16L);
         if (frameAlloc != null) {
-            pooledResources.put(resourceTag * POOL_HASH_STRIDE, PoolTag.PER_FRAME);
+            pooledResources.put((long) System.identityHashCode(frameAlloc) * POOL_HASH_STRIDE, PoolTag.PER_FRAME);
             return (T) frameAlloc;
         }
 

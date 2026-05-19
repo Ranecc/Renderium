@@ -8,7 +8,6 @@ import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -594,35 +593,17 @@ public final class HiZComputePipeline {
             // - offset: 起始偏移量为 0
             // - size: 最大 128 字节（Vulkan 规范要求的最低保证值）
             // 结构体字段: [0] stageFlags, [1] offset, [2] size
-            MemorySegment pushConstantRange = arena.allocate(ValueLayout.JAVA_LONG, 3);
-            pushConstantRange.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VK_SHADER_STAGE_COMPUTE_BIT);  // stageFlags = COMPUTE
-            pushConstantRange.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);   // offset = 0
-            pushConstantRange.setAtIndex(ValueLayout.JAVA_LONG, 2, 128L); // size = 128 bytes
+            MemorySegment pushConstantRange = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createPushConstantRange(
+                arena, VK_SHADER_STAGE_COMPUTE_BIT, 0, 128);
 
             // ==================== Descriptor Set Layouts 数组 ====================
-            // 将两个 Descriptor Set Layout 句柄存入数组
-            // Hi-Z Build Pipeline 使用 setLayouts[0], Occlusion Query 使用 setLayouts[1]
             MemorySegment setLayoutsArr = arena.allocate(ValueLayout.JAVA_LONG, 2);
-            setLayoutsArr.setAtIndex(ValueLayout.JAVA_LONG, 0, hizBuildDescSetLayout);       // setLayouts[0]: HiZ Build DSL
-            setLayoutsArr.setAtIndex(ValueLayout.JAVA_LONG, 1, hizOcclusionDescSetLayout);  // setLayouts[1]: Occlusion DSL
+            setLayoutsArr.setAtIndex(ValueLayout.JAVA_LONG, 0, hizBuildDescSetLayout);
+            setLayoutsArr.setAtIndex(ValueLayout.JAVA_LONG, 1, hizOcclusionDescSetLayout);
 
             // ==================== VkPipelineLayoutCreateInfo ====================
-            // 结构体字段布局:
-            // [0] sType          = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO (12)
-            // [1] pNext          = null
-            // [2] flags          = 0 (无特殊标志)
-            // [3] setLayoutCount = 2 (两个 Descriptor Set Layout)
-            // [4] pSetLayouts    = setLayoutsArr 地址
-            // [5] pushConstantRangeCount = 1 (一个 Push Constant 范围)
-            // [6] pPushConstantRanges = pushConstantRange 地址
-            MemorySegment layoutCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
-            layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 12L);                       // sType = PIPELINE_LAYOUT_CREATE_INFO
-            layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                        // pNext = null
-            layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                        // flags = 0
-            layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 2L);                        // setLayoutCount = 2
-            layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, setLayoutsArr.address());   // pSetLayouts
-            layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, 1L);                        // pushConstantRangeCount = 1
-            layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, pushConstantRange.address()); // pPushConstantRanges
+            MemorySegment layoutCreateInfo = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createPipelineLayoutCreateInfo(
+                arena, 2, setLayoutsArr, 1, pushConstantRange);
 
             // 输出参数：Pipeline Layout 句柄
             MemorySegment layoutOut = arena.allocate(ValueLayout.JAVA_LONG);
@@ -684,13 +665,8 @@ public final class HiZComputePipeline {
             poolSizes.setAtIndex(ValueLayout.JAVA_INT, 7, 2);   // HiZConfig + OcclusionConfig
 
             // VkDescriptorPoolCreateInfo: [sType, pNext, flags, maxSets, poolSizeCount, pPoolSizes] = 6 longs
-            MemorySegment poolInfo = arena.allocate(ValueLayout.JAVA_LONG, 6);
-            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 35L);                      // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
-            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                       // pNext
-            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                       // flags = 0
-            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 2L);                       // maxSets = 2 (Build + Occlusion)
-            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 4L);                       // poolSizeCount = 4
-            poolInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, poolSizes.address());      // pPoolSizes
+            MemorySegment poolInfo = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createDescriptorPoolCreateInfoAligned(
+                arena, 2, 4, poolSizes);
 
             MemorySegment poolOut = arena.allocate(ValueLayout.JAVA_LONG);
             int result;
@@ -735,60 +711,27 @@ public final class HiZComputePipeline {
 
         try (Arena arena = Arena.ofConfined()) {
             // ==================== 准备着色器入口点名称 "main" ====================
-            // Vulkan 要求 pName 指向以 null 结尾的 UTF-8 字符串
-            // 使用 asByteBuffer().put() 写入字节数组（兼容所有 Java 版本）
-            byte[] mainBytes = "main\0".getBytes(StandardCharsets.UTF_8);
-            MemorySegment mainName = arena.allocate(mainBytes.length, 1);
-            mainName.asByteBuffer().put(mainBytes);
-
-            // ==================== 构建 VkPipelineShaderStageCreateInfo 辅助方法 ====================
             // 每个 Stage CreateInfo 占用 7 个 JAVA_LONG 字段:
             // [0] sType(10), [1] pNext, [2] flags, [3] stage, [4] module, [5] pName(ptr), [6] pSpecializationInfo
 
             // --- Hi-Z Build Shader Stage ---
-            MemorySegment hizStageInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
-            hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 10L);                                // sType = PIPELINE_SHADER_STAGE_CREATE_INFO
-            hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                                 // pNext = null
-            hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                                 // flags = 0
-            hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) VK_SHADER_STAGE_COMPUTE_BIT); // stage = COMPUTE
-            hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, hizBuildShaderModule);                // module = HiZ Build SM
-            hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, 0L);                                 // pSpecializationInfo = null
+            MemorySegment hizStageInfo = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createShaderStageCreateInfo(
+                arena, VK_SHADER_STAGE_COMPUTE_BIT, hizBuildShaderModule);
 
             // --- Occlusion Query Shader Stage ---
-            MemorySegment occStageInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
-            occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 10L);                                // sType = PIPELINE_SHADER_STAGE_CREATE_INFO
-            occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                                 // pNext = null
-            occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                                 // flags = 0
-            occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) VK_SHADER_STAGE_COMPUTE_BIT); // stage = COMPUTE
-            occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, hizOcclusionShaderModule);            // module = Occlusion SM
-            occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, 0L);                                 // pSpecializationInfo = null
+            MemorySegment occStageInfo = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createShaderStageCreateInfo(
+                arena, VK_SHADER_STAGE_COMPUTE_BIT, hizOcclusionShaderModule);
 
             // ==================== 构建 VkComputePipelineCreateInfo 数组 ====================
-            // 每个 Compute Pipeline CreateInfo 占用 6 个 JAVA_LONG 字段:
-            // [0] sType(24), [1] pNext, [2] flags, [3] stage(ptr), [4] layout, [5] basePipelineHandle, + basePipelineIndex(int)
-
-            // 使用 7 个字段来容纳最后的 basePipelineIndex (作为第 7 个 long 的低 32 位)
             int createInfoFieldCount = 7;
 
             // --- Hi-Z Build Pipeline CreateInfo ---
-            MemorySegment hizPipelineInfo = arena.allocate(ValueLayout.JAVA_LONG, createInfoFieldCount);
-            hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 24L);                    // sType = COMPUTE_PIPELINE_CREATE_INFO
-            hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                     // pNext = null
-            hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                     // flags = 0
-            hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, hizStageInfo.address()); // stage = HiZ Build Stage Info
-            hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, pipelineLayout);          // layout
-            hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, 0L);                     // basePipelineHandle = NULL
-            hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, 0xFFFFFFFFL);            // basePipelineIndex = -1 (无基础管线)
+            MemorySegment hizPipelineInfo = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createComputePipelineCreateInfo(
+                arena, hizStageInfo, pipelineLayout);
 
             // --- Occlusion Query Pipeline CreateInfo ---
-            MemorySegment occPipelineInfo = arena.allocate(ValueLayout.JAVA_LONG, createInfoFieldCount);
-            occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 24L);                    // sType = COMPUTE_PIPELINE_CREATE_INFO
-            occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                     // pNext = null
-            occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                     // flags = 0
-            occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, occStageInfo.address()); // stage = Occ Query Stage Info
-            occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, pipelineLayout);          // layout
-            occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, 0L);                     // basePipelineHandle = NULL
-            occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, 0xFFFFFFFFL);            // basePipelineIndex = -1
+            MemorySegment occPipelineInfo = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createComputePipelineCreateInfo(
+                arena, occStageInfo, pipelineLayout);
 
             // ==================== 构建 CreateInfo 数组（连续内存）====================
             // 将两个 CreateInfo 放入连续内存区域（Vulkan API 需要数组形式传入）

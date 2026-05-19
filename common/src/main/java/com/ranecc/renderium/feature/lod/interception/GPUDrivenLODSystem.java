@@ -392,6 +392,13 @@ public final class GPUDrivenLODSystem {
 
 
         try {
+            // ======== 获取命令缓冲区 ========
+            long device = VulkanBufferHelper.getDevice();
+            long cmdBuf = com.ranecc.renderium.feature.lod.compute.HiZComputePipeline.allocateCommandBuffer(device);
+            if (cmdBuf == 0L) {
+                throw new RuntimeException("无法分配命令缓冲区");
+            }
+
             // ======== Step 1: 准备并上传 chunk 数据 ========
             uploadChunkData(chunkInputs);
 
@@ -408,7 +415,7 @@ public final class GPUDrivenLODSystem {
 
 
 
-            dispatchCompute(workgroupCount);
+            dispatchCompute(cmdBuf, workgroupCount);
             totalDispatchCount.incrementAndGet();
 
 
@@ -601,16 +608,12 @@ public final class GPUDrivenLODSystem {
     /**
      * Dispatch Compute Shader
      */
-    private void dispatchCompute(int workgroupCount) {
-        if (VulkanOperationGuard.isFailed()) return;
+    private void dispatchCompute(long cmdBuf, int workgroupCount) {
+        if (VulkanOperationGuard.isFailed() || cmdBuf == 0L) return;
         try {
             MethodHandle vkCmdDispatch = VulkanFFMBinding.getVkCmdDispatch();
-            MethodHandle vkEndCommandBuffer = VulkanFFMBinding.getVkEndCommandBuffer();
             if (vkCmdDispatch != null) {
-                vkCmdDispatch.invoke(0L, workgroupCount, 1, 1);
-            }
-            if (vkEndCommandBuffer != null) {
-                vkEndCommandBuffer.invoke(0L);
+                vkCmdDispatch.invoke(cmdBuf, workgroupCount, 1, 1);
             }
         } catch (Throwable t) {
             LOGGER.warning("dispatchCompute failed: " + t.getMessage());

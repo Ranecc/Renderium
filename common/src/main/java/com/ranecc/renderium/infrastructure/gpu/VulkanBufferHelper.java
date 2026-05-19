@@ -1,7 +1,6 @@
 package com.ranecc.renderium.infrastructure.gpu;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
@@ -41,15 +40,7 @@ public final class VulkanBufferHelper {
         long device = getDevice();
         if (device == 0L || size == 0L) return new long[]{0L, 0L};
         try (Arena arena = Arena.ofConfined()) {
-            var createInfo = arena.allocate(56);
-            createInfo.set(ValueLayout.JAVA_INT,  0, 1);   // sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO
-            createInfo.set(ValueLayout.ADDRESS,   8, MemorySegment.NULL); // pNext
-            createInfo.set(ValueLayout.JAVA_INT, 16, 0);    // flags
-            createInfo.set(ValueLayout.JAVA_LONG, 24, size); // size
-            createInfo.set(ValueLayout.JAVA_INT, 32, usageBits); // usage
-            createInfo.set(ValueLayout.JAVA_INT, 36, 0);    // sharingMode = VK_SHARING_MODE_EXCLUSIVE
-            createInfo.set(ValueLayout.JAVA_INT, 40, 0);    // queueFamilyIndexCount
-            createInfo.set(ValueLayout.ADDRESS,  48, MemorySegment.NULL); // pQueueFamilyIndices
+            var createInfo = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createBufferCreateInfo(arena, size, usageBits);
 
             long[] outBuf = new long[1];
             int result = (int) VulkanFFMBinding.getVkCreateBuffer()

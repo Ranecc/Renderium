@@ -71,22 +71,15 @@ public final class VulkanDescriptorManager {
 
         long device = VulkanDeviceHolder.getInstance().getDevice();
         try (var arena = Arena.ofConfined()) {
-            var sizes = arena.allocate(32);
-            sizes.set(ValueLayout.JAVA_INT, 0, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
-            sizes.set(ValueLayout.JAVA_INT, 4, 100000);
-            sizes.set(ValueLayout.JAVA_INT, 8, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-            sizes.set(ValueLayout.JAVA_INT, 12, 16384);
-            sizes.set(ValueLayout.JAVA_INT, 16, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-            sizes.set(ValueLayout.JAVA_INT, 20, 16384);
-            sizes.set(ValueLayout.JAVA_INT, 24, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER);
-            sizes.set(ValueLayout.JAVA_INT, 28, 100000);
+            var sizes = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createPoolSizes(arena, new int[][]{
+                {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 100000},
+                {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 16384},
+                {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 16384},
+                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100000},
+            });
 
-            var createInfo = arena.allocate(32);
-            createInfo.set(ValueLayout.JAVA_INT, 0, 0);
-            createInfo.set(ValueLayout.JAVA_INT, 4, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT);
-            createInfo.set(ValueLayout.JAVA_INT, 8, BINDLESS_TARGET_SLOTS);
-            createInfo.set(ValueLayout.JAVA_INT, 12, 4);
-            createInfo.set(ValueLayout.ADDRESS, 16, sizes);
+            var createInfo = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createDescriptorPoolCreateInfoCompact(
+                arena, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT, BINDLESS_TARGET_SLOTS, 4, sizes);
 
             long[] outPool = new long[1];
             int result = (int) VulkanFFMBinding.getVkCreateDescriptorPool()
@@ -162,11 +155,9 @@ public final class VulkanDescriptorManager {
             if (result != VK_SUCCESS) return false;
             bindlessSetLayout.set(outLayout[0]);
 
-            var allocInfo = arena.allocate(32);
+            var allocInfo = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createDescriptorSetAllocateInfoCompact(
+                arena, pool, 1, outLayout[0]);
             allocInfo.set(ValueLayout.JAVA_INT, 0, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
-            allocInfo.set(ValueLayout.JAVA_LONG, 8, pool);
-            allocInfo.set(ValueLayout.JAVA_INT, 16, 1);
-            allocInfo.set(ValueLayout.JAVA_LONG, 24, outLayout[0]);
 
             long[] outSet = new long[1];
             result = (int) VulkanFFMBinding.getVkAllocateDescriptorSets()

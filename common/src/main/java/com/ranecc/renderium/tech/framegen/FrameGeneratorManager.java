@@ -3,6 +3,7 @@
 
 package com.ranecc.renderium.tech.framegen;
 
+import com.ranecc.renderium.domain.enums.FrameGenMode;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.logging.Logger;

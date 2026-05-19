@@ -11,7 +11,7 @@ import com.ranecc.renderium.domain.constant.ConfigConstants;
 import com.ranecc.renderium.domain.enums.QualityLevel;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
 import com.ranecc.renderium.domain.enums.SRTechnology;
-import com.ranecc.renderium.tech.framegen.FrameGenMode;
+import com.ranecc.renderium.domain.enums.FrameGenMode;
 
 /**
  * Renderium 配置聚合根（Domain Layer）

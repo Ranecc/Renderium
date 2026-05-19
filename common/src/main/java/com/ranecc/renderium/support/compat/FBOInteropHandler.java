@@ -238,11 +238,7 @@ public final class FBOInteropHandler {
             return;
         }
         try (Arena arena = Arena.ofConfined()) {
-            // VkSemaphoreCreateInfo: [sType(4B), padding(4B), pNext(8B), flags(4B)] = 20B padded to 24B
-            MemorySegment ciAligned = arena.allocate(24);
-            ciAligned.set(ValueLayout.JAVA_INT, 0, 4);     // sType
-            ciAligned.set(ValueLayout.ADDRESS, 8, MemorySegment.NULL); // pNext
-            ciAligned.set(ValueLayout.JAVA_INT, 20, 0);    // flags = 0 (binary semaphore)
+            MemorySegment ciAligned = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createBinarySemaphoreCreateInfoAligned(arena);
 
             var outSem = arena.allocate(ValueLayout.JAVA_LONG);
 

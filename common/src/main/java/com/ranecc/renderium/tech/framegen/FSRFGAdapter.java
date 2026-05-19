@@ -3,6 +3,7 @@
 
 package com.ranecc.renderium.tech.framegen;
 
+import com.ranecc.renderium.domain.enums.FrameGenMode;
 import com.ranecc.renderium.tech.streamline.SLContext;
 import com.ranecc.renderium.tech.streamline.VulkanStreamlineBridge;
 import com.ranecc.renderium.tech.streamline.FrameEvaluator;

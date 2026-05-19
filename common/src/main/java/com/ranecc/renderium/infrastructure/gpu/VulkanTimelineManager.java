@@ -2,7 +2,6 @@ package com.ranecc.renderium.infrastructure.gpu;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
@@ -96,15 +95,7 @@ public final class VulkanTimelineManager {
         dualQueueAvailable = (gQueue != 0L && cQueue != 0L && gQueue != cQueue);
 
         try (Arena arena = Arena.ofConfined()) {
-            var typeCreateInfo = arena.allocate(24);
-            typeCreateInfo.set(ValueLayout.JAVA_INT, 0, VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO);
-            typeCreateInfo.set(ValueLayout.JAVA_LONG, 8, 0L);
-            typeCreateInfo.set(ValueLayout.JAVA_INT, 16, VK_SEMAPHORE_TYPE_TIMELINE);
-            typeCreateInfo.set(ValueLayout.JAVA_LONG, 16, 0L);
-
-            var createInfo = arena.allocate(16);
-            createInfo.set(ValueLayout.JAVA_INT, 0, 0);
-            createInfo.set(ValueLayout.ADDRESS, 8, typeCreateInfo);
+            MemorySegment createInfo = VulkanStructs.createSemaphoreWithTimeline(arena, 0L);
 
             long[] outSem = new long[1];
             int result = (int) VulkanFFMBinding.getVkCreateSemaphore()
@@ -131,12 +122,7 @@ public final class VulkanTimelineManager {
         long device = VulkanDeviceHolder.getInstance().getDevice();
         if (device == 0L || sem == 0L) return;
         try (Arena arena = Arena.ofConfined()) {
-            // VkSignalSemaphoreInfo: sType(int, offset0) + pNext(long, offset8) + semaphore(long, offset16) + value(long, offset24)
-            MemorySegment signalInfo = arena.allocate(32);
-            signalInfo.set(ValueLayout.JAVA_INT, 0, 1000203002); // VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO (from spec)
-            signalInfo.set(ValueLayout.ADDRESS, 8, MemorySegment.NULL); // pNext
-            signalInfo.set(ValueLayout.JAVA_LONG, 16, sem);
-            signalInfo.set(ValueLayout.JAVA_LONG, 24, value);
+            MemorySegment signalInfo = VulkanStructs.createSignalSemaphoreInfo(arena, sem, value);
             int result = (int) VulkanFFMBinding.getVkSignalSemaphore()
                 .invoke(device, signalInfo.address());
             if (result != VK_SUCCESS) {
@@ -160,12 +146,7 @@ public final class VulkanTimelineManager {
         long device = VulkanDeviceHolder.getInstance().getDevice();
         if (device == 0L || sem == 0L) return false;
         try (Arena arena = Arena.ofConfined()) {
-            // VkWaitSemaphoresInfo: sType(int, offset0) + pNext(long, offset8) + semaphore(long, offset16) + value(long, offset24)
-            MemorySegment waitInfo = arena.allocate(32);
-            waitInfo.set(ValueLayout.JAVA_INT, 0, 1000203003); // VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO
-            waitInfo.set(ValueLayout.ADDRESS, 8, MemorySegment.NULL); // pNext
-            waitInfo.set(ValueLayout.JAVA_LONG, 16, sem);
-            waitInfo.set(ValueLayout.JAVA_LONG, 24, value);
+            MemorySegment waitInfo = VulkanStructs.createSemaphoreWaitInfo(arena, sem, value);
             int result = (int) VulkanFFMBinding.getVkWaitSemaphores()
                 .invoke(device, waitInfo.address(), timeoutNs);
             return result == VK_SUCCESS;

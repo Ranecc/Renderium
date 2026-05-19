@@ -906,7 +906,6 @@ public final class VulkanFFMBinding {
                     FunctionDescriptor.ofVoid(
                             ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
                             ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
-                            ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
                             ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT)
             );
 
