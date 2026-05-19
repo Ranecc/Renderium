@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
-import com.ranecc.renderium.infrastructure.vulkan.adapter.VulkanConst;
+import com.ranecc.renderium.domain.constant.VulkanConst;
 /**
  * VMA 专用内存池管理器 🏊
  * <p>

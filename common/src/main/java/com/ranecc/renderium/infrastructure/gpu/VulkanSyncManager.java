@@ -11,8 +11,8 @@ import java.util.logging.Logger;
 /**
  * Vulkan 同步管理器 — 统一管理 Fence 池 + Timeline Semaphore + Queue Submit。
  *
- * <p>合并 {@link VulkanTimelineManager} 的时间线信号量管理与散落在
- * {@code LodCullingComputePass} / {@code GPUCullingPipeline} 中的 Fence 创建/提交逻辑。
+ * <p>统一管理 Fence 池 + Timeline Semaphore + Queue Submit，替代原先
+ * {@code VulkanTimelineManager} 散落在各文件中的独立实现。
  *
  * <h3>能力</h3>
  * <ul>
@@ -195,6 +195,25 @@ public final class VulkanSyncManager {
     }
 
     // ==================== Timeline Semaphore ====================
+
+    /**
+     * 获取当前 Timeline Semaphore 计数器值（不递增）。
+     *
+     * @param sem timeline semaphore 句柄
+     * @return 当前计数器值，失败返回 -1L
+     */
+    public static long getSemaphoreValue(long sem) {
+        if (sem == 0L || deviceHandle == 0L) return -1L;
+        try {
+            long[] outValue = new long[1];
+            int result = (int) VulkanAPIRegistry.invoke(
+                "vkGetSemaphoreCounterValue", deviceHandle, sem, outValue);
+            return (result == 0) ? outValue[0] : -1L;
+        } catch (Throwable t) {
+            LOGGER.warning("getSemaphoreValue 失败: " + t.getMessage());
+            return -1L;
+        }
+    }
 
     /**
      * 获取或创建 Timeline Semaphore。

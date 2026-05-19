@@ -1,12 +1,10 @@
 package com.ranecc.renderium.feature.shader;
 
-import com.ranecc.renderium.domain.model.config.RenderiumConfig;
-import com.ranecc.renderium.domain.model.config.RenderiumConfigSnapshot;
 /**
  * Shader 系统配置适配器
  *
  * <p>作为视频设置系统与 Shader 渲染管线之间的桥梁，
- * 将 {@link RenderiumConfig} 的高层设置转换为 Shader 系统需要的底层参数。
+ * 将渲染配置的高层设置转换为 Shader 系统需要的底层参数。
  *
  * <h2>设计目标</h2>
  * <ul>
@@ -20,33 +18,11 @@ import com.ranecc.renderium.domain.model.config.RenderiumConfigSnapshot;
  * 视频设置                          Shader 参数
  * ──────────────────────────────────────────────
  * 超分辨率启用    →    shaderDefines["SR_ENABLED"]
- * 超分辨率技术    →    shaderDefines["SR_TECH_DLSS/FSR/NIS"]
  * 帧生成启用      →    shaderDefines["FG_ENABLED"]
  * 遮挡剔除启用    →    shaderDefines["HIZ_CULLING"]
- * LOD 偏移        →    pushConstants.lodBias
- * 锐化强度       →    uniforms.sharpness
- * 分辨率缩放     →    viewport.scaleFactor
+ * LOD 启用        →    shaderDefines["GPU_LOD_ENABLED"]
+ * 后处理启用      →    shaderDefines["POST_PROCESSING_ENABLED"]
  * </pre>
- *
- * <h2>使用示例</h2>
- * <pre>{@code
- * // 初始化时获取适配结果
- * ShaderConfigAdapter adapter = ShaderConfigAdapter.getInstance();
- * ShaderParams params = adapter.adapt(RenderiumConfig.getSnapshot());
- *
- * // 应用到着色器管线
- * shaderProgram.setDefines(params.getShaderDefines());
- * shaderPushConstants.update(params.getPushConstants());
- * shaderUniforms.update(params.getUniformValues());
- *
- * // 配置变更后重新适配（冷路径）
- * config.setSuperResolutionEnabled(true);
- * config.commitSnapshot();
- * ShaderParams newParams = adapter.adapt(RenderiumConfig.getSnapshot());
- * }</pre>
- *
- * @author Renderium Team
- * @since 5.3.0
  */
 public final class ShaderConfigAdapter {
 
@@ -73,95 +49,86 @@ public final class ShaderConfigAdapter {
     }
 
     /**
-     * 将配置快照适配为 Shader 参数
+     * 将配置适配为 Shader 参数
      *
-     * <p>此方法从配置快照中提取所有影响 Shader 行为的设置，
+     * <p>此方法从配置中提取所有影响 Shader 行为的设置，
      * 转换为 Shader 系统可以使用的参数对象。
-     * <p>
-     * <b>调用时机：</b>配置变更后、渲染器重载前
-     * <b>性能特征：</b>~200ns（纯计算，无 I/O）
      *
-     * @param snapshot 当前配置快照（来自热路径）
+     * <b>调用时机：</b>配置变更后、渲染器重载前
+     *
+     * @param superResolutionEnabled 是否启用超分辨率
+     * @param frameGenerationEnabled 是否启用帧生成
+     * @param cullingEnabled 是否启用遮挡剔除
+     * @param lodEnabled 是否启用 LOD
+     * @param postProcessingEnabled 是否启用后处理
      * @return 适配后的 Shader 参数对象
      */
-    public ShaderParams adapt(RenderiumConfigSnapshot snapshot) {
+    public ShaderParams adapt(boolean superResolutionEnabled,
+                              boolean frameGenerationEnabled,
+                              boolean cullingEnabled,
+                              boolean lodEnabled,
+                              boolean postProcessingEnabled) {
         ShaderParams params = new ShaderParams();
 
         // ==================== 超分辨率相关 ====================
-        adaptSuperResolution(snapshot, params);
+        adaptSuperResolution(superResolutionEnabled, params);
 
         // ==================== 帧生成相关 ====================
-        adaptFrameGeneration(snapshot, params);
+        adaptFrameGeneration(frameGenerationEnabled, params);
 
         // ==================== 遮挡剔除相关 ====================
-        adaptCulling(snapshot, params);
+        adaptCulling(cullingEnabled, params);
 
         // ==================== LOD 相关 ====================
-        adaptLOD(snapshot, params);
+        adaptLOD(lodEnabled, params);
 
         // ==================== 后处理相关 ====================
-        adaptPostProcessing(snapshot, params);
+        adaptPostProcessing(postProcessingEnabled, params);
 
         // ==================== 通用渲染设置 ====================
-        adaptGeneralRendering(snapshot, params);
+        params.addDefine("BATCHING_ENABLED", "1");
+        params.addDefine("INSTANCING_ENABLED", "1");
 
         return params;
     }
 
-    /**
-     * 适配超分辨率设置
-     */
-    private void adaptSuperResolution(RenderiumConfigSnapshot snap, ShaderParams params) {
-        boolean srEnabled = snap.isSuperResolutionEnabled();
+    private void adaptSuperResolution(boolean srEnabled, ShaderParams params) {
         params.addDefine("SR_ENABLED", srEnabled ? "1" : "0");
-
         if (srEnabled) {
             params.addDefine("SR_TECH_NONE", "1");
             params.addDefine("SR_QUALITY", "1");
-            float scaleFactor = 0.67f;
-            params.setUniform("u_resolutionScale", scaleFactor);
+            params.setUniform("u_resolutionScale", 0.67f);
         }
     }
 
-    private void adaptFrameGeneration(RenderiumConfigSnapshot snap, ShaderParams params) {
-        boolean fgEnabled = snap.isFrameGenerationEnabled();
+    private void adaptFrameGeneration(boolean fgEnabled, ShaderParams params) {
         params.addDefine("FG_ENABLED", fgEnabled ? "1" : "0");
-
         if (fgEnabled) {
             params.setUniform("u_frameMultiplier", 2.0f);
             params.addDefine("FG_MULTIPLIER_2X", "1");
         }
     }
 
-    private void adaptCulling(RenderiumConfigSnapshot snap, ShaderParams params) {
-        boolean hizEnabled = snap.isCullingEnabled();
+    private void adaptCulling(boolean hizEnabled, ShaderParams params) {
         params.addDefine("HIZ_CULLING_ENABLED", hizEnabled ? "1" : "0");
-
         if (hizEnabled) {
             params.addDefine("BACKFACE_CULLING", "1");
             params.addDefine("NEIGHBOR_FACE_CULLING", "1");
         }
     }
 
-    private void adaptLOD(RenderiumConfigSnapshot snap, ShaderParams params) {
-        boolean gpuLodEnabled = snap.isLodEnabled();
+    private void adaptLOD(boolean gpuLodEnabled, ShaderParams params) {
         params.addComputeDefine("GPU_LOD_ENABLED", gpuLodEnabled ? "1" : "0");
         if (gpuLodEnabled) {
             params.setPushConstant("lodBias", 0.0f);
         }
     }
 
-    private void adaptPostProcessing(RenderiumConfigSnapshot snap, ShaderParams params) {
-        boolean ppEnabled = snap.isPostProcessingEnabled();
+    private void adaptPostProcessing(boolean ppEnabled, ShaderParams params) {
         params.addDefine("POST_PROCESSING_ENABLED", ppEnabled ? "1" : "0");
         if (ppEnabled) {
             params.setUniform("u_sharpness", 0.5f);
         }
-    }
-
-    private void adaptGeneralRendering(RenderiumConfigSnapshot snap, ShaderParams params) {
-        params.addDefine("BATCHING_ENABLED", "1");
-        params.addDefine("INSTANCING_ENABLED", "1");
     }
 
     /**

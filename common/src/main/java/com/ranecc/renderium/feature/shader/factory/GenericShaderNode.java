@@ -7,7 +7,7 @@
 package com.ranecc.renderium.feature.shader.factory;
 
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
-import com.ranecc.renderium.infrastructure.vulkan.adapter.VulkanConst;
+import com.ranecc.renderium.domain.constant.VulkanConst;
 
 import org.lwjgl.vulkan.VK10;
 

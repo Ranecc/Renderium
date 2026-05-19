@@ -22,7 +22,7 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
-import com.ranecc.renderium.infrastructure.vulkan.adapter.VulkanConst;
+import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.platform.bridge.mc.CommandBatcher;
 import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
 
