@@ -5,6 +5,7 @@ package com.ranecc.renderium.infrastructure.gpu.debug;
 
 import com.mojang.blaze3d.vulkan.VulkanDevice;
 import com.mojang.blaze3d.vulkan.checkpoints.CheckpointExtension;
+import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkDevice;
 
@@ -104,7 +105,8 @@ public final class VulkanCheckpointManager {
                     isNoop ? "noop" : ext.getClass().getSimpleName()
             ));
         } catch (Exception e) {
-            LOGGER.fine("VulkanCheckpointManager 初始化失败 (非致命): " + e.getMessage());
+            VulkanOperationGuard.markFailed(e);
+            LOGGER.fine("VulkanCheckpointManager 初始化失败: " + e.getMessage());
         }
     }
 
@@ -126,6 +128,7 @@ public final class VulkanCheckpointManager {
                     () -> label
             );
         } catch (Exception e) {
+            VulkanOperationGuard.markFailed(e);
             LOGGER.finest("recordCheckpoint 失败: " + e.getMessage());
         }
     }
@@ -144,6 +147,7 @@ public final class VulkanCheckpointManager {
         try {
             return extension.retrieveCheckpoints(isDeviceLost);
         } catch (Exception e) {
+            VulkanOperationGuard.markFailed(e);
             LOGGER.warning("retrieveCheckpoints 失败: " + e.getMessage());
             return List.of();
         }
@@ -159,6 +163,7 @@ public final class VulkanCheckpointManager {
         try {
             storage.rotate();
         } catch (Exception e) {
+            VulkanOperationGuard.markFailed(e);
             LOGGER.finest("rotate 失败: " + e.getMessage());
         }
     }

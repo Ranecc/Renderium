@@ -858,6 +858,32 @@ public class VmaMemoryPools implements AutoCloseable {
         return destructionQueue.processPendingDestructions(commandBuffer);
     }
 
+    // ==================== VMA 桥接 API（供 VulkanMemoryAllocator 调用） ====================
+
+    /**
+     * 通过 VMA 销毁 Buffer（供 {@link VulkanMemoryAllocator} 桥接使用）。
+     */
+    public static void deallocateBuffer(long vmaAllocator, long buffer, long allocation) {
+        if (vmaAllocator == 0L || buffer == 0L || allocation == 0L) return;
+        try {
+            Vma.vmaDestroyBuffer(vmaAllocator, buffer, allocation);
+        } catch (Exception e) {
+            LOGGER.fine("VMA deallocateBuffer 异常: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 通过 VMA 销毁 Image（供 {@link VulkanMemoryAllocator} 桥接使用）。
+     */
+    public static void deallocateImage(long vmaAllocator, long image, long allocation) {
+        if (vmaAllocator == 0L || image == 0L || allocation == 0L) return;
+        try {
+            Vma.vmaDestroyImage(vmaAllocator, image, allocation);
+        } catch (Exception e) {
+            LOGGER.fine("VMA deallocateImage 异常: " + e.getMessage());
+        }
+    }
+
     // ==================== 内部方法：池创建逻辑 ====================
 
     /**

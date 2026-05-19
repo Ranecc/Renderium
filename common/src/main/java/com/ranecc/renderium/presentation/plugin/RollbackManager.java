@@ -3,6 +3,7 @@
 
 package com.ranecc.renderium.presentation.plugin;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.logging.Logger;
@@ -278,8 +279,8 @@ public final class RollbackManager {
 
         long[] stateData = new long[4];
         stateData[0] = timestamp;
-        stateData[1] = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
-        stateData[2] = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getVma();
+        stateData[1] = VulkanDeviceHolder.getInstance().getDevice();
+        stateData[2] = VulkanDeviceHolder.getInstance().getVma();
         stateData[3] = checkpointStack.size();
 
         return new Checkpoint(
@@ -316,7 +317,7 @@ public final class RollbackManager {
         if (targetCheckpoint == null || targetCheckpoint.stateData() == null) return false;
         long[] expected = (long[]) targetCheckpoint.stateData();
         if (expected.length < 4) return false;
-        long currentDevice = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        long currentDevice = VulkanDeviceHolder.getInstance().getDevice();
         return expected[1] == currentDevice && expected[3] == checkpointStack.size();
     }
 

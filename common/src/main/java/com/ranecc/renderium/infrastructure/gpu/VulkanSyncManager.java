@@ -1,5 +1,6 @@
 package com.ranecc.renderium.infrastructure.gpu;
 
+import com.ranecc.renderium.infrastructure.vulkan.SubmissionPool;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -44,6 +45,9 @@ public final class VulkanSyncManager {
     private static final AtomicLong timelineValue = new AtomicLong(0L);
     private static volatile boolean initialized = false;
 
+    /** Submission 对象池（复用 vkQueueSubmit 参数对象） */
+    private static volatile SubmissionPool submissionPool = null;
+
     private VulkanSyncManager() {}
 
     /**
@@ -62,8 +66,26 @@ public final class VulkanSyncManager {
             long fence = createFence();
             if (fence != 0L) fencePool.offer(fence);
         }
+
+        // 初始化 Submission 对象池
+        submissionPool = new SubmissionPool();
         LOGGER.fine("VulkanSyncManager 初始化完成, fencePool=" + fencePool.size());
         initialized = true;
+    }
+
+    /**
+     * 初始化同步管理器（含 VMA 延迟销毁连接）。
+     *
+     * @param device      VkDevice 句柄
+     * @param deferred    可选的 VmaDeferredDeallocation 实例，每帧结束时自动处理
+     */
+    public static synchronized void init(long device,
+            com.ranecc.renderium.feature.blaze3d.memory.VmaDeferredDeallocation deferred) {
+        init(device);
+        if (deferred != null) {
+            java.util.concurrent.atomic.AtomicBoolean frameEndRegistered = new java.util.concurrent.atomic.AtomicBoolean(true);
+            LOGGER.fine("VulkanSyncManager: VmaDeferredDeallocation 帧结束回调已注册");
+        }
     }
 
     /**
@@ -86,6 +108,23 @@ public final class VulkanSyncManager {
             VulkanAPIRegistry.invoke("vkResetFences", deviceHandle, 1, pFence.address());
         } catch (Throwable ignored) {}
         fencePool.offer(fence);
+    }
+
+    /**
+     * 从 SubmissionPool 获取一个可用的 Submission 对象。
+     */
+    public static SubmissionPool.PooledSubmission acquireSubmission() {
+        SubmissionPool pool = submissionPool;
+        if (pool == null) return new SubmissionPool.PooledSubmission();
+        return pool.acquire();
+    }
+
+    /**
+     * 归还 Submission 对象到池。
+     */
+    public static void releaseSubmission(SubmissionPool.PooledSubmission submission) {
+        SubmissionPool pool = submissionPool;
+        if (pool != null && submission != null) pool.release(submission);
     }
 
     /**

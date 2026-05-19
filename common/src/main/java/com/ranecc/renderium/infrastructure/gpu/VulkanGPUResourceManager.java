@@ -260,6 +260,7 @@ public final class VulkanGPUResourceManager {
             return true;
 
         } catch (Exception e) {
+            VulkanOperationGuard.markFailed(e);
             LOGGER.severe("initialize 异常: " + e.getMessage());
             return false;
         }
@@ -401,6 +402,7 @@ public final class VulkanGPUResourceManager {
                     width, height, format, ResourceType.IMAGE);
 
         } catch (Exception e) {
+            VulkanOperationGuard.markFailed(e);
             LOGGER.severe(String.format("createImage 异常 [%dx%d]: %s", width, height, e.getMessage()));
             return GpuResource.INVALID;
         }
@@ -496,6 +498,7 @@ public final class VulkanGPUResourceManager {
                     (int) size, 1, 0, ResourceType.BUFFER);
 
         } catch (Exception e) {
+            VulkanOperationGuard.markFailed(e);
             LOGGER.severe(String.format("createBuffer 异常 [size=%d]: %s", size, e.getMessage()));
             return GpuResource.INVALID;
         }
@@ -564,6 +567,7 @@ public final class VulkanGPUResourceManager {
             return viewHandle;
 
         } catch (Exception e) {
+            VulkanOperationGuard.markFailed(e);
             LOGGER.severe(String.format("createView 异常: %s", e.getMessage()));
             return 0L;
         }
@@ -617,6 +621,7 @@ public final class VulkanGPUResourceManager {
                     resource.handle));
 
         } catch (Exception e) {
+            VulkanOperationGuard.markFailed(e);
             LOGGER.severe(String.format("releaseResource 异常: %s", e.getMessage()));
         }
     }
@@ -654,6 +659,7 @@ public final class VulkanGPUResourceManager {
             }
 
         } catch (Exception e) {
+            VulkanOperationGuard.markFailed(e);
             LOGGER.severe(String.format("onFrameEnd 异常: %s", e.getMessage()));
         }
     }

@@ -3,6 +3,7 @@
 // 使用 Java FFM (Panama) 直接调用 Vulkan API
 
 package com.ranecc.renderium.feature.culling.optimization;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.tech.stub.renderbackendproxy.RenderBackendProxy;
 
 
@@ -527,10 +528,10 @@ public class AsyncComputeCuller {
      */
     public boolean initializeFromBlaze3D(RenderBackendProxy backendProxy) {
         if (backendProxy == null) return false;
-        long vkDevice = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        long vkDevice = VulkanDeviceHolder.getInstance().getDevice();
         if (vkDevice == 0L) return false;
         this.deviceHandle = vkDevice;
-        this.computeQueue = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getComputeQueue();
+        this.computeQueue = VulkanDeviceHolder.getInstance().getComputeQueue();
         LOGGER.info("initializeFromBlaze3D: device=0x" + Long.toHexString(vkDevice));
         return true;
     }
@@ -545,7 +546,7 @@ public class AsyncComputeCuller {
      */
     public boolean recordComputePass(Object encoder) {
         if (encoder == null) return false;
-        if (!com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) return false;
+        if (!VulkanDeviceHolder.isAvailable()) return false;
         if (this.deviceHandle == 0L) return false;
         LOGGER.fine("recordComputePass: recording on handle=0x" + Long.toHexString(this.deviceHandle));
         return true;

@@ -2,6 +2,7 @@
 // 插件加载器 - 负责发现、加载、管理插件
 
 package com.ranecc.renderium.presentation.plugin;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.presentation.plugin.streamline.StreamlineFrameData;
 
 import java.nio.file.Files;
@@ -250,8 +251,8 @@ public final class Blaze3DOptimizerPluginLoader {
      */
     public boolean evaluateFrame(StreamlineFrameData frameData) {
         if (frameData == null) return false;
-        if (!com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) return false;
-        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (!VulkanDeviceHolder.isAvailable()) return false;
+        long device = VulkanDeviceHolder.getInstance().getDevice();
         if (device == 0L) return false;
         LOGGER.fine("evaluateFrame: device=0x" + Long.toHexString(device));
         return true;

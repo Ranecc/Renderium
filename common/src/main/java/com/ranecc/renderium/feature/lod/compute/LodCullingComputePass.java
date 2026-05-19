@@ -18,6 +18,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.GPULODDataManager;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 
 /**
  * LOD 视锥体/遮挡剔除 Compute Shader Pass（真实 GPU 实现）
@@ -2243,76 +2244,13 @@ public final class LodCullingComputePass {
      * @throws Exception 如果提交或等待失败
      */
     private static void submitAndWait(long cmdBuf, long queue, long device) throws Exception {
-        if (!ffmLoaded) {
-            throw new IllegalStateException("FFM 方法句柄未加载");
+        if (device == 0L || queue == 0L || cmdBuf == 0L) return;
+
+        boolean ok = VulkanSyncManager.submitAndWait(queue, cmdBuf);
+        if (!ok) {
+            throw new RuntimeException("vkQueueSubmit 失败");
         }
-
-        try (Arena arena = Arena.ofConfined()) {
-            // Step 1: 重置 Fence
-            if (VK_RESET_FENCES != null && fence != 0L) {
-                MemorySegment fencePtr = arena.allocate(ValueLayout.JAVA_LONG);
-                fencePtr.set(ValueLayout.JAVA_LONG, 0, fence);
-                try {
-                    VK_RESET_FENCES.invokeExact(device, 1, fencePtr.address());
-                } catch (Throwable t) {
-                    // shutdown 期间忽略 Vulkan 清理错误
-                }
-            }
-
-            // Step 2: 构建 VkSubmitInfo
-            // 简化结构：commandBufferCount=1, pCommandBuffers=&cmdBuf
-            MemorySegment submitInfo = arena.allocate(ValueLayout.JAVA_LONG, 6);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 0L);  // sType
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);  // pNext
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);  // waitSemaphoreCount
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L);  // pWaitSemaphores
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 1L);  // commandBufferCount
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, cmdBuf);  // pCommandBuffers
-
-            // Step 3: 提交到队列
-            if (VK_QUEUE_SUBMIT != null) {
-                int submitResult = VK_SUCCESS;
-                try {
-                    submitResult = (int) VK_QUEUE_SUBMIT.invokeExact(
-                            queue,                     // queue
-                            1,                         // submitCount
-                            submitInfo.address(),      // pSubmits
-                            fence                      // fence
-                    );
-                } catch (Throwable t) {
-                    // shutdown 期间忽略提交失败
-                }
-
-                if (submitResult != VK_SUCCESS) {
-                    throw new RuntimeException("vkQueueSubmit 失败: VkResult=" + submitResult);
-                }
-            }
-
-            // Step 4: 等待完成
-            if (VK_WAIT_FOR_FENCES != null && fence != 0L) {
-                MemorySegment fenceArr = arena.allocate(ValueLayout.JAVA_LONG);
-                fenceArr.set(ValueLayout.JAVA_LONG, 0, fence);
-
-                int waitResult = VK_SUCCESS;
-                try {
-                    waitResult = (int) VK_WAIT_FOR_FENCES.invokeExact(
-                            device,                    // device
-                            1,                         // fenceCount
-                            fenceArr.address(),        // pFences
-                            1,                         // waitAll (true)
-                            DEFAULT_FENCE_TIMEOUT_NS   // timeout (100ms)
-                    );
-                } catch (Throwable t) {
-                    // shutdown 期间忽略等待失败
-                }
-
-                if (waitResult != VK_SUCCESS) {
-                    LOGGER.warning("[LodCulling] vkWaitForFences 超时或失败: VkResult=" + waitResult);
-                }
-            }
-
-            LOGGER.fine("[LodCulling] 命令已提交并等待完成");
-        }
+        LOGGER.fine("[LodCulling] 命令已提交并等待完成");
     }
 
     // ==================== CPU 回退模式 ====================

@@ -11,7 +11,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
+import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 
 /**
  * Renderium Vulkan 光影工作台。
@@ -469,11 +471,11 @@ public final class ShaderWorkbench {
      */
     private void cleanupInjectionShaderModules() {
         if (injectionShaderModules.isEmpty()) return;
-        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        long device = VulkanDeviceHolder.getInstance().getDevice();
         if (device != 0L) {
             for (var entry : injectionShaderModules.entrySet()) {
                 try {
-                    com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkDestroyShaderModule()
+                    VulkanFFMBinding.getVkDestroyShaderModule()
                         .invoke(device, entry.getValue(), 0L);
                 } catch (Throwable ignored) {}
             }

@@ -1,5 +1,6 @@
 package com.ranecc.renderium.infrastructure.gpu;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -74,6 +75,7 @@ public final class LODCoordinator {
                 var context = builder.build();
                 method.invoke(interceptionLODSystem, context);
             } catch (Exception e) {
+                VulkanOperationGuard.markFailed(e);
                 LOGGER.fine("interceptionLOD 更新失败: " + e.getMessage());
             }
         }
@@ -85,6 +87,7 @@ public final class LODCoordinator {
                     .getMethod("update", Object.class, Object.class, float.class);
                 updateMethod.invoke(voxelLODSystem, camera, frustum, deltaTime);
             } catch (Exception e) {
+                VulkanOperationGuard.markFailed(e);
                 LOGGER.fine("voxelLOD 更新失败: " + e.getMessage());
             }
         }
@@ -111,6 +114,7 @@ public final class LODCoordinator {
                     .getMethod("render", Object.class, Object.class);
                 renderMethod.invoke(voxelLODSystem, renderPass, commandBuffer);
             } catch (Exception e) {
+                VulkanOperationGuard.markFailed(e);
                 LOGGER.fine("voxelLOD render 失败: " + e.getMessage());
             }
         }
@@ -126,7 +130,7 @@ public final class LODCoordinator {
                 .getMethod("syncToInterceptionLayer");
             method.invoke(voxelLODSystem);
         } catch (Exception e) {
-            // 静默失败
+            VulkanOperationGuard.markFailed(e);
         }
     }
 
@@ -145,6 +149,7 @@ public final class LODCoordinator {
                 .getMethod("triggerPyramidBuild", int.class, int.class, byte[].class);
             return (boolean) method.invoke(voxelLODSystem, chunkX, chunkZ, data);
         } catch (Exception e) {
+            VulkanOperationGuard.markFailed(e);
             LOGGER.fine("triggerPyramidBuild 失败: " + e.getMessage());
             return false;
         }

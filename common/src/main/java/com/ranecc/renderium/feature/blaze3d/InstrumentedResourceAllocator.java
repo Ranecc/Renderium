@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
+import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
 
@@ -653,21 +654,8 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
         if (device == 0L) return null;
 
         try {
-            String descStr = descriptor.toString().toLowerCase();
-            int usageBits = 0;
-            if (descStr.contains("uniform")) {
-                usageBits = 0x0040; // VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
-            } else if (descStr.contains("vertex")) {
-                usageBits = 0x0001; // VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-            } else if (descStr.contains("index")) {
-                usageBits = 0x0002; // VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-            } else if (descStr.contains("staging")) {
-                usageBits = 0x0100; // VK_BUFFER_USAGE_TRANSFER_SRC_BIT
-            } else if (descStr.contains("storage")) {
-                usageBits = 0x0080; // VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-            } else {
-                return null;
-            }
+            int usageBits = resolveUsageBits(descriptor);
+            if (usageBits == 0) return null;
 
             long[] result = VulkanMemoryAllocator.createHostVisibleBuffer(device, size, usageBits);
             if (result[0] == 0L || result[1] == 0L) return null;
@@ -678,6 +666,32 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
             LOGGER.fine("tryAcquireFromVulkanAllocator 失败: " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 将 usage 描述字符串解析为 Vulkan buffer usage bitmask。
+     * <p>优先从 {@link ResourceDescriptor#getUsage()} 获取语义化用途名，
+     * 回退到 {@code toString()} 字符串匹配以保证兼容性。</p>
+     */
+    private static int resolveUsageBits(ResourceDescriptor<?> descriptor) {
+        String usage = descriptor.getUsage();
+        if (usage != null) {
+            String lower = usage.toLowerCase();
+            int bits = matchUsageBits(lower);
+            if (bits != 0) return bits;
+        }
+
+        String descStr = descriptor.toString().toLowerCase();
+        return matchUsageBits(descStr);
+    }
+
+    private static int matchUsageBits(String lower) {
+        if (lower.contains("uniform")) return VulkanConst.BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        if (lower.contains("vertex"))  return VulkanConst.BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        if (lower.contains("index"))   return VulkanConst.BUFFER_USAGE_INDEX_BUFFER_BIT;
+        if (lower.contains("staging")) return VulkanConst.BUFFER_USAGE_TRANSFER_SRC_BIT;
+        if (lower.contains("storage")) return VulkanConst.BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        return 0;
     }
 
     /**
@@ -704,17 +718,31 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
     private long estimateResourceSize(ResourceDescriptor<?> descriptor) {
         if (descriptor == null) return -1;
         try {
+            long explicitSize = descriptor.getSize();
+            if (explicitSize > 0) return explicitSize;
+
+            String usage = descriptor.getUsage();
+            if (usage != null) {
+                String lower = usage.toLowerCase();
+                long size = matchEstimatedSize(lower);
+                if (size > 0) return size;
+            }
+
             String descStr = descriptor.toString().toLowerCase();
-            if (descStr.contains("uniform")) return 256L;
-            if (descStr.contains("vertex")) return 4096L;
-            if (descStr.contains("index")) return 2048L;
-            if (descStr.contains("staging")) return 65536L;
-            if (descStr.contains("storage")) return 262144L;
-            if (descStr.contains("texture") || descStr.contains("image")) return 4194304L;
-            return 4096L;
+            return matchEstimatedSize(descStr);
         } catch (Exception e) {
             return -1;
         }
+    }
+
+    private static long matchEstimatedSize(String lower) {
+        if (lower.contains("uniform")) return 256L;
+        if (lower.contains("vertex")) return 4096L;
+        if (lower.contains("index")) return 2048L;
+        if (lower.contains("staging")) return 65536L;
+        if (lower.contains("storage")) return 262144L;
+        if (lower.contains("texture") || lower.contains("image")) return 4194304L;
+        return 4096L;
     }
 
     /**
@@ -797,21 +825,18 @@ public class InstrumentedResourceAllocator implements GraphicsResourceAllocator 
      * @return 资源类型字符串（如 "Buffer", "Image", "Pipeline"）
      */
     private String extractResourceType(ResourceDescriptor<?> descriptor) {
-        // 尝试从 descriptor 中提取类型信息
         try {
-            // 优先使用 descriptor 的 toString() 或 type 信息
-            String descStr = descriptor.toString();
+            String type = descriptor.getType();
+            if (type != null && !type.isBlank()) return type;
 
-            // 简单启发式：从描述符字符串中提取类型
-            if (descStr.toLowerCase().contains("buffer")) return "Buffer";
-            if (descStr.toLowerCase().contains("image") || descStr.toLowerCase().contains("texture")) return "Image";
-            if (descStr.toLowerCase().contains("pipeline")) return "Pipeline";
-            if (descStr.toLowerCase().contains("descriptor")) return "DescriptorSet";
-            if (descStr.toLowerCase().contains("command")) return "CommandBuffer";
+            String descStr = descriptor.toString().toLowerCase();
+            if (descStr.contains("buffer")) return "Buffer";
+            if (descStr.contains("image") || descStr.contains("texture")) return "Image";
+            if (descStr.contains("pipeline")) return "Pipeline";
+            if (descStr.contains("descriptor")) return "DescriptorSet";
+            if (descStr.contains("command")) return "CommandBuffer";
 
-            // 回退：使用类名简化
             return descriptor.getClass().getSimpleName();
-
         } catch (Exception e) {
             return "Unknown";
         }

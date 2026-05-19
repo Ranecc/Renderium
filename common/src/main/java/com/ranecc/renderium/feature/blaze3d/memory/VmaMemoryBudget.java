@@ -17,6 +17,8 @@ import org.lwjgl.util.vma.VmaDefragmentationStats;
 import org.lwjgl.vulkan.VkBufferCreateInfo;
 import org.lwjgl.vulkan.VK10;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 import java.nio.LongBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -1098,20 +1100,20 @@ public class VmaMemoryBudget implements AutoCloseable {
 
     private void performWarningCleanup() {
         LOGGER.info("[警告清理] 开始清理非关键资源...");
-        if (com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) {
-            long vma = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getVma();
+        if (VulkanDeviceHolder.isAvailable()) {
+            long vma = VulkanDeviceHolder.getInstance().getVma();
             if (vma != 0L) {
-                com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.markFailed(new Throwable("VMA Budget warning threshold crossed"));
+                VulkanOperationGuard.markFailed(new Throwable("VMA Budget warning threshold crossed"));
             }
         }
     }
 
     private void performEmergencyCleanup() {
         LOGGER.severe("[紧急清理] 强制释放所有可回收资源！");
-        if (com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) {
-            long vma = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getVma();
+        if (VulkanDeviceHolder.isAvailable()) {
+            long vma = VulkanDeviceHolder.getInstance().getVma();
             if (vma != 0L) {
-                com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.markFailed(new Throwable("VMA Budget critical threshold crossed"));
+                VulkanOperationGuard.markFailed(new Throwable("VMA Budget critical threshold crossed"));
             }
         }
     }
