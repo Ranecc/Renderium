@@ -212,11 +212,25 @@ public class VulkanStreamlineBridge {
             return true;
         }
 
+        // 存根模式：Streamline SDK 不可用，记录警告并返回 false
+        if (!available.get()) {
+            LOGGER.warning("tagResources: Streamline SDK 不可用（存根模式），"
+                + resources.length + " 个资源未被标记。DLSS/FSR/XeSS 功能将不会生效。");
+            // 仍然缓存资源数据以备后续 SDK 可用时使用
+            synchronized (this) {
+                this.taggedResources = resources.clone();
+                this.resourceCount = resources.length;
+            }
+            return false;
+        }
+
+        // 正常模式：缓存数据并通过 FrameEvaluator 调用 slSetTagForFrame
         synchronized (this) {
             this.taggedResources = resources.clone();
             this.resourceCount = resources.length;
         }
-        LOGGER.fine("tagResources: tagged " + resources.length + " resources");
+        LOGGER.fine("tagResources: cached " + resources.length
+            + " resources for frame tagging via FrameEvaluator");
         return true;
     }
 
@@ -226,8 +240,26 @@ public class VulkanStreamlineBridge {
         }
     }
 
+    /**
+     * 获取已标记的资源数量
+     * <p>
+     * 注意：在存根模式下（Streamline SDK 不可用），此值仅反映通过 tagResources()
+     * 缓存的资源数，不代表实际已向 SDK 注册的资源。
+     * 可通过 {@link #isAvailable()} 判断当前是否为存根模式。
+     *
+     * @return 已缓存的资源数量
+     */
     public int getResourceCount() {
         return resourceCount;
+    }
+
+    /**
+     * 检查是否处于存根模式（Streamline SDK 未加载）
+     *
+     * @return true 表示 Streamline DLL 不可用，所有操作均为模拟/缓存
+     */
+    public boolean isStubMode() {
+        return !available.get();
     }
 
     public void shutdown() {

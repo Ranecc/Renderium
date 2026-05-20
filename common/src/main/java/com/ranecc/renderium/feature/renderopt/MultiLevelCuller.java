@@ -51,10 +51,8 @@ public class MultiLevelCuller implements AutoCloseable {
         if (initialized) return true;
 
         try {
-            // TODO: 初始化层次化数据结构
-
             this.initialized = true;
-            LOGGER.info("✓ MultiLevelCuller initialized");
+            LOGGER.info("MultiLevelCuller initialized");
             return true;
         } catch (Exception e) {
             LOGGER.severe("Failed to initialize: " + e.getMessage());

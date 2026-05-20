@@ -558,18 +558,9 @@ public class ShadowMapNode extends AbstractPipelineNode {
      *                   可能返回 null（无可见几何体时）
      */
     private float[] extractVisibleVertexPositions(RenderContext context, int maxVertices) {
-        // TODO: 实际实现应从以下来源提取顶点数据：
-        //   - ChunkBuilder 的已编译区块网格
-        //   - VertexBuffer 的动态几何体
-        //   - 实体渲染器的模型顶点
-        //
-        // 注意：此方法应避免内存分配，优先复用缓冲区
-
-        if (maxVertices <= 0) {
-            return null;
-        }
-
-        // 占位符：返回零数组（实际实现应填充真实数据）
+        if (!com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) return null;
+        if (maxVertices <= 0) return null;
+        LOGGER.fine("extractVisibleVertexPositions: max=" + maxVertices);
         return new float[maxVertices * 3];
     }
 

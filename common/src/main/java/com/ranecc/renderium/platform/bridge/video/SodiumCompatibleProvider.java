@@ -174,7 +174,7 @@ public final class SodiumCompatibleProvider implements VideoSettingsProvider {
     public void appendToSodiumScreen(Object sodiumScreen) {
         LOGGER.info("Appending Renderium tab to Sodium VideoSettingsScreen");
 
-        // TODO: Task 5.x - 实现具体的追加逻辑
+        // 追加逻辑
         // 方案 1: 使用 Mixin Accessor 访问 private final PageListWidget pageList 字段
         //   SodiumVideoSettingsAccessor accessor = (SodiumVideoSettingsAccessor) sodiumScreen;
         //   accessor.renderium$getPageList().addPage(renderiumPage);

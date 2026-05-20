@@ -2,6 +2,7 @@ package com.ranecc.renderium.application.controller;
 
 import com.ranecc.renderium.application.core.RenderiumCore;
 import com.ranecc.renderium.application.core.CoreState;
+import com.ranecc.renderium.domain.enums.RenderiumMode;
 
 import java.util.logging.Logger;
 
@@ -213,5 +214,16 @@ public final class RenderiumController {
      */
     public RenderiumCore.CoreState getState() {
         return core.getState();
+    }
+
+    /**
+     * 查询当前运行模式
+     *
+     * <p>返回配置中定义的运行模式（INDEPENDENT / COMPATIBILITY）。
+     *
+     * @return RenderiumMode 当前运行模式（INDEPENDENT / COMPATIBILITY）
+     */
+    public RenderiumMode getCurrentMode() {
+        return core.getConfig().getMode();
     }
 }

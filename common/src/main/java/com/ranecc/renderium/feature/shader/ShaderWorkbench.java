@@ -440,7 +440,7 @@ public final class ShaderWorkbench {
      * 且 LWJGL 3.4.1 的 Vulkan 绑定类型系统与直接调用不兼容，
      * 此方法暂时返回 0 并记录日志。
      *
-     * <p>TODO: 等待 Vulkan 基础设施稳定后，通过 VulkanFFM 或恢复 VulkanAPI 来实现。
+     * <p>待 Vulkan 基础设施稳定后，通过 VulkanFFM 或恢复 VulkanAPI 来实现。
      *
      * @param device    Vulkan Device handle (long)
      * @param spirvData SPIR-V 字节码

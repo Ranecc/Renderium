@@ -529,7 +529,7 @@ public final class MockGL11 {
     /**
      * 通过反射调用 VulkanBackend 的 submitDraw 方法
      * <p>
-     * TODO: getVulkanBackend() 现在返回 Object 类型（待模块重构后恢复强类型），
+     * getVulkanBackend() 当前返回 Object 类型（模块重构后恢复强类型），
      * 此处使用反射桥接，避免编译错误。
      *
      * @param vkBackend   Vulkan 后端对象（Object 类型）
@@ -540,6 +540,7 @@ public final class MockGL11 {
      */
     private static void submitDrawViaReflection(Object vkBackend, RenderPipeline pipeline,
                                                   int mode, int first, int count) {
+        if (vkBackend == null) return;
         try {
             Method method = cachedSubmitDrawMethod.computeIfAbsent(vkBackend.getClass(),
                 cls -> {
@@ -561,7 +562,7 @@ public final class MockGL11 {
     /**
      * 通过反射调用 VulkanBackend 的 submitDrawIndexed 方法
      * <p>
-     * TODO: getVulkanBackend() 现在返回 Object 类型（待模块重构后恢复强类型），
+     * getVulkanBackend() 当前返回 Object 类型（模块重构后恢复强类型），
      * 此处使用反射桥接，避免编译错误。
      *
      * @param vkBackend   Vulkan 后端对象（Object 类型）
@@ -573,6 +574,7 @@ public final class MockGL11 {
      */
     private static void submitDrawIndexedViaReflection(Object vkBackend, RenderPipeline pipeline,
                                                          int mode, int count, int indexType, long indexOffset) {
+        if (vkBackend == null) return;
         try {
             Method method = cachedSubmitDrawIndexedMethod.computeIfAbsent(vkBackend.getClass(),
                 cls -> {

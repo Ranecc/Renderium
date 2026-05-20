@@ -238,7 +238,7 @@ public final class VideoSettingsBridge {
             throw new IllegalStateException(
                     "VideoSettingsBridge not initialized. Call initialize() first.");
         }
-        // TODO: Task 1.2 + Task 5.x - 实现选项注册逻辑
+        // 实现选项注册逻辑
         // 此处将在 RendererConfigBuilder 实现后填充具体注册代码
         LOGGER.debug("registerOptions() called - pending implementation after Task 1.2");
     }
@@ -362,7 +362,7 @@ public final class VideoSettingsBridge {
      * @return RendererOptionPage 实例；当前阶段返回 null（Task 5.x 实现）
      */
     public static Object getSodiumCompatiblePage() {
-        // TODO: Task 5.x - 实现具体的 RendererOptionPage 内容
+        // 具体的 RendererOptionPage 内容待实现
         // 返回一个汇总了所有 Renderium 设置的单个页面
         // 或者返回 null 让 SodiumCompatibleProvider 自行处理
         return null;

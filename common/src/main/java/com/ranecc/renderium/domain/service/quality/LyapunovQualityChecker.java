@@ -71,8 +71,8 @@ public final class LyapunovQualityChecker {
     /**
      * 计算图像帧的梯度能量 V = ∫‖∇I‖² dz
      * <p>
-     * 【TODO】当前为存根实现，返回 0.0f。
-     * 实际集成时需接入像素数据源。
+     * 当前为存根实现，返回 0.0f。
+     * 实际集成时需接入像素数据源来计算真实梯度能量值。
      *
      * 【方法参数】
      * @param frameData Object - 帧数据对象（类型待集成确定）

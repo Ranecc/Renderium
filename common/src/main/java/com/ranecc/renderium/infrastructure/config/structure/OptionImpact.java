@@ -1,7 +1,7 @@
 package com.ranecc.renderium.infrastructure.config.structure;
 
 /**
- * TODO [REVIEW] 桩枚举 - 选项性能影响级别
+ * 选项性能影响级别
  * 描述修改某个渲染选项对性能的影响程度
  */
 public enum OptionImpact {

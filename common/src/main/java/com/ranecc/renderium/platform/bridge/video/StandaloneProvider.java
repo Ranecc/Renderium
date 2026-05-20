@@ -51,9 +51,13 @@ public final class StandaloneProvider implements VideoSettingsProvider {
      */
     @Override
     public Screen openSettings(Screen parent) {
-        // TODO: Task 3.1 - 返回 new AbstractRendererSettingsScreen(parent)
-        // 当前返回 null，后续实现 AbstractRendererSettingsScreen 后替换
-        return null;
+        try {
+            var screenClass = Class.forName("com.ranecc.renderium.presentation.ui.RenderiumSettingsScreen");
+            var constructor = screenClass.getConstructor(Screen.class);
+            return (Screen) constructor.newInstance(parent);
+        } catch (Exception e) {
+            return parent;
+        }
     }
 
     /**

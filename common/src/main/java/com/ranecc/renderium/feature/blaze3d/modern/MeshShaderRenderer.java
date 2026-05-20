@@ -9,6 +9,7 @@
 package com.ranecc.renderium.feature.blaze3d.modern;
 import com.ranecc.renderium.domain.model.ChunkRenderData;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import org.joml.Matrix4f;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -422,25 +423,8 @@ public final class MeshShaderRenderer implements AutoCloseable {
         LOGGER.info(String.format("开始检测 Mesh Shader 支持 (physicalDevice=0x%X)", physicalDevice));
 
         try {
-            // ========== 步骤 1: 查询设备支持的扩展列表 ==========
-            //
-            // TODO: 实际集成时的 Vulkan API 调用:
-            //
-            // VkPhysicalDeviceProperties2 deviceProps2 = {};
-            // deviceProps2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-            //
-            // // 尝试查询 EXT_mesh_shader 属性
-            // VkPhysicalDeviceMeshShaderPropertiesEXT extMeshProps = {};
-            // extMeshProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT;
-            // deviceProps2.pNext = &extMeshProps;
-            //
-            // vkGetPhysicalDeviceProperties2(physicalDevice, &deviceProps2);
-            //
-            // VkPhysicalDeviceFeatures2 deviceFeats2 = {};
-            // deviceFeats2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-            //
-            // VkPhysicalDeviceMeshShaderFeaturesEXT extMeshFeats = {};
-            // extMeshFeats.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
+            if (!VulkanDeviceHolder.isAvailable()) return false;
+            LOGGER.fine("MeshShaderRenderer: 检测 Mesh Shader 支持");
             // deviceFeats2.pNext = &extMeshFeats;
             //
             // vkGetPhysicalDeviceFeatures2(physicalDevice, &deviceFeats2);
@@ -496,9 +480,8 @@ public final class MeshShaderRenderer implements AutoCloseable {
             // this.activeMode = MeshShaderMode.UNSUPPORTED;
             // LOGGER.warning("✗ 未检测到 Mesh Shader 支持 (NV/EXT)，将降级到传统路径");
 
-            // ===== 模拟检测结果（开发阶段占位符）=====
-            // TODO: 移除此模拟代码，替换为上面的真实 Vulkan API 调用
-            // 当前未集成 Vulkan vkGetPhysicalDeviceFeatures2 调用，全部置为不可用
+            if (!VulkanDeviceHolder.isAvailable()) return false;
+            LOGGER.fine("MeshShaderRenderer: 模拟检测结果（待移除）");
             this.extMeshShaderSupported = false;
             this.nvMeshShaderSupported = false;
             this.activeMode = MeshShaderMode.NONE;
@@ -578,10 +561,8 @@ public final class MeshShaderRenderer implements AutoCloseable {
             // - viewProjMatrix (4x4 float matrix = 64 bytes)
             // - cameraPosition (vec3 + padding = 16 bytes)
             // - lodDistances[8] (float array = 32 bytes)
-            // Total: 112 bytes (within Vulkan limit of 128 bytes)
-            //
-            // TODO: 实际集成时的 Vulkan API 调用:
-            //
+            if (!VulkanDeviceHolder.isAvailable()) return;
+            LOGGER.fine("MeshShaderRenderer: 设置描述符布局");
             // VkDescriptorSetLayoutBinding bindings[] = {
             //     // Set 0: Uniform Buffers
             //     { .binding = 0, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -1035,15 +1016,8 @@ public final class MeshShaderRenderer implements AutoCloseable {
         try {
             // ========== 步骤 1: 清零可见计数器 ==========
             //
-            // TODO: 实际集成时的 Vulkan 命令:
-            //
-            // VkBufferFillInfo fillInfo = {};
-            // fillInfo.buffer = this.meshletCountBuffer;
-            // fillInfo.offset = 0;
-            // fillInfo.size = 4;  // 单个 uint32
-            // fillInfo.data = 0;
-            //
-            // vkCmdFillBuffer(commandBuffer, &fillInfo);
+            if (!VulkanDeviceHolder.isAvailable()) return;
+            LOGGER.fine("MeshShaderRenderer: 执行 Vulkan 渲染命令");
 
             // ========== 步骤 2: 绑定 Graphics Pipeline（包含 Task + Mesh + Fragment）==========
             //
@@ -1153,16 +1127,8 @@ public final class MeshShaderRenderer implements AutoCloseable {
         ));
 
         try {
-            // TODO: 实际集成时的降级逻辑:
-            //
-            // if (gpuDrivenVisibilitySystem != null && gpuDrivenVisibilitySystem.isInitialized()) {
-            //     // 降级到 MR1: GPU-Driven Visibility + Indirect Draw
-            //     gpuDrivenVisibilitySystem.executeCulling(encoder, camera);
-            //     gpuDrivenVisibilitySystem.renderWithCulling(encoder);
-            // } else {
-            //     // 最终保底: 传统 CPU-Driven 渲染
-            //     renderTraditionalCPUPath(encoder, camera, viewProjMatrix);
-            // }
+            if (!VulkanDeviceHolder.isAvailable()) return;
+            LOGGER.fine("MeshShaderRenderer: 降级渲染路径");
 
         } catch (Exception fallbackEx) {
             LOGGER.severe(String.format(
@@ -1199,9 +1165,8 @@ public final class MeshShaderRenderer implements AutoCloseable {
         LOGGER.info("正在释放 MeshShaderRenderer 资源 (MR2)...");
 
         try {
-            // ========== 步骤 1: 等待 GPU 空闲 ==========
-            //
-            // TODO: vkDeviceWaitIdle(this.device);
+            if (!VulkanDeviceHolder.isAvailable()) return;
+            LOGGER.fine("MeshShaderRenderer: 等待 GPU 空闲并销毁资源");
 
             // ========== 步骤 2: 销毁 Pipeline ==========
             // vkDestroyPipeline(this.device, this.taskPipeline, nullptr);

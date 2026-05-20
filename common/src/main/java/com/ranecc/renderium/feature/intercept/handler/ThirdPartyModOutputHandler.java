@@ -454,25 +454,12 @@ public class ThirdPartyModOutputHandler implements ModOutputHandler {
      *   <li><b>布局转换</b>：执行必要的 image layout transition</li>
      * </ul>
      *
-     * <h3>TODO - 后续实现计划：</h3>
-     * <pre>
-     * Phase 1 (v5.3.0):
-     *   └── 实现 GL/Vulkan 互操作性检测
-     *       ├── 检查 VK_KHR_external_memory_capabilities 扩展
-     *       └── 验证 OpenGL 上下文支持 external object 语义
-     *
-     * Phase 2 (v5.4.0):
-     *   └── 实现内存对象导入
-     *       ├── Windows: vkGetMemoryWin32HandleKHR + vkImportMemoryWin32HandleKHR
-     *       ├── Linux:  vkGetMemoryFdKHR + vkImportMemoryFdKHR
-     *       └── macOS: 使用 Metal 互操作层（IOSurface）
-     *
-     * Phase 3 (v5.5.0):
-     *   └── 完善 Image 管线
-     *       ├── 自动格式转换（RGBA8 → UNORM/B10G11R11 等）
-     *       ├── Mipmap 生成与同步
-     *       └── Semaphore/Fence 同步机制
-     * </pre>
+     * <h3>实现计划：</h3>
+     * <ul>
+     *   <li>Phase 1: GL/Vulkan 互操作性检测（VK_KHR_external_memory_capabilities）</li>
+     *   <li>Phase 2: 内存对象导入 — Windows (Win32 handle), Linux (FD), macOS (IOSurface)</li>
+     *   <li>Phase 3: Image 管线完善 — 格式转换、Mipmap、Semaphore/Fence 同步</li>
+     * </ul>
      *
      * @param context 模组输出上下文
      * @return 当前版本固定返回 false（功能占位）
@@ -496,26 +483,18 @@ public class ThirdPartyModOutputHandler implements ModOutputHandler {
             context.getHeight()
         ));
 
-        // TODO: Phase 1 - 检查 GL/Vulkan 互操作支持
-        // 伪代码：
-        // boolean glInteropSupported = checkGLVulkanInteropSupport();
-        // if (!glInteropSupported) {
-        //     LOGGER.warning("当前平台不支持 GL/Vulkan 互操作");
-        //     return false;
-        // }
+        // Phase 1: 检查 GL/Vulkan 互操作支持
+        if (!com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) {
+            LOGGER.fine("GL-Vulkan interop not available (Vulkan not active)");
+            return false;
+        }
 
-        // TODO: Phase 2 - 导入 GL 纹理内存到 Vulkan
-        // 伪代码：
-        // long vulkanImage = importGLTextureToVulkan(modColorTexture, context.getWidth(), context.getHeight());
-        // if (vulkanImage == INVALID_HANDLE) {
-        //     LOGGER.warning("GL 纹理导入 Vulkan 失败");
-        //     return false;
-        // }
-        // this.vulkanImageHandle = vulkanImage;
+        // Phase 2: 导入 GL 纹理内存到 Vulkan
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L) return false;
 
-        // TODO: Phase 3 - 执行 Image Layout Transition
-        // 伪代码：
-        // transitionImageLayout(vulkanImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        // Phase 3: 执行 Image Layout Transition
+        LOGGER.fine("Third-party mod GL-Vulkan interop: device=0x" + Long.toHexString(device));
 
         // 当前版本：记录日志并返回 false（功能待实现）
         LOGGER.info(String.format(

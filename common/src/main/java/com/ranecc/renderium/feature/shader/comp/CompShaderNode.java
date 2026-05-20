@@ -215,7 +215,9 @@ public class CompShaderNode extends AbstractPipelineNode {
                 }
                 return ok;
             }
-        } catch (IOException ignored) {}
+        } catch (IOException e) {
+            LOGGER.fine("无法读取 .comp 文件时间戳（热重载跳过）: " + compSourcePath + " - " + e.getMessage());
+        }
 
         return false;
     }

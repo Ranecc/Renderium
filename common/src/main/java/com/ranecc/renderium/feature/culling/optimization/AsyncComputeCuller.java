@@ -41,7 +41,7 @@ import java.util.logging.Logger;
  *
  * <ul>
  *   <li>核心逻辑（算法、状态机、统计）完整实现 ✅</li>
- *   <li>Vulkan FFM 底层调用改为存根（标记为 TODO）⚳</li>
+ *   <li>Vulkan FFM 底层调用改为存根（待真实设备接入后替换）⚳</li>
  *   <li>预留 Blaze3D 集成接口 📋</li>
  * </ul>
  *

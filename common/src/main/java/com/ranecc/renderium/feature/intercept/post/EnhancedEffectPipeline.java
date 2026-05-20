@@ -778,15 +778,9 @@ public final class EnhancedEffectPipeline {
                 // 应用动态调整的参数
                 EffectParameters params = getAdjustedParameters(entry.type);
                 
-                // TODO: 调用实际的 EffectPipeline 处理方法
-                // 当前版本模拟返回成功
-                
-                if (debugMode) {
-                    LOGGER.fine(String.format(
-                        "执行效果: %s | 质量=%.0f%%",
-                        entry.type.name(),
-                        currentPerformanceLevel.get().getQualityFactor() * 100
-                    ));
+                if (basePipeline != null && basePipeline.isAvailable()) {
+                    LOGGER.fine("Executing effect: " + entry.type.name() +
+                        " quality=" + currentPerformanceLevel.get().getQualityFactor());
                 }
                 
                 return true;

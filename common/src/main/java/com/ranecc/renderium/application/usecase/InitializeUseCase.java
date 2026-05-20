@@ -5,6 +5,7 @@ import com.ranecc.renderium.feature.blaze3d.Blaze3DOptimizerModule;
 import com.ranecc.renderium.feature.module.ModuleContext;
 import com.ranecc.renderium.feature.module.ModuleRegistry;
 import com.ranecc.renderium.infrastructure.config.ConfigManager;
+import com.ranecc.renderium.infrastructure.diagnostics.StubModeHealthCheck;
 import com.ranecc.renderium.infrastructure.nativeLib.RenderiumAccelerator;
 import com.ranecc.renderium.platform.hook.HookManager;
 import com.ranecc.renderium.platform.hook.OptimizerRegistry;
@@ -99,6 +100,13 @@ public class InitializeUseCase {
         // Step 5: 桥接 Blaze3D 优化器模块初始化
         initializeBlazeOptimizer(config, deviceHandle);
         LOGGER.info("Step 5/5: Blaze3D optimizer module initialized");
+
+        // Step 6: 存根模式健康检查（诊断哪些功能在降级/存根模式下运行）
+        int stubCount = StubModeHealthCheck.getInstance().reportAllStubs();
+        if (stubCount > 0) {
+            LOGGER.warning("Renderium 初始化完成，但 " + stubCount
+                + " 个功能处于存根/降级模式（详见上方健康检查报告）");
+        }
 
         LOGGER.info("=== Renderium Initialization Complete ===");
     }

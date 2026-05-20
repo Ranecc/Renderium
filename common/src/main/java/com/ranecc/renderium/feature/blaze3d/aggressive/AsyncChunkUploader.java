@@ -13,6 +13,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+
 /**
  * 异步区块数据上传器 ⚡
  * <p>
@@ -211,6 +213,12 @@ public class AsyncChunkUploader implements AutoCloseable {
 
     /** 专用 Copy/Transfer Command Queue */
     private Object transferQueue;
+
+    /** Chunk 顶点 buffer 缓存 (chunkKey → VkBuffer) */
+    private final java.util.concurrent.ConcurrentHashMap<Long, Long> vertexBufferCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Chunk 索引 buffer 缓存 (chunkKey → VkBuffer) */
+    private final java.util.concurrent.ConcurrentHashMap<Long, Long> indexBufferCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Copy Command Encoder（每帧重新创建） */
     private Object copyEncoder;
@@ -637,16 +645,25 @@ public class AsyncChunkUploader implements AutoCloseable {
         long startTime = System.nanoTime();
         currentFrameProcessedCount.set(0);
 
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+
         // ========== 步骤 1: 检查上一帧上传是否完成 ==========
-        // TODO: 实际集成时检查 Fence 状态
-        // if (uploadFence != null && !isFenceSignaled(uploadFence)) {
-        //     // 上一帧还在上传，跳过这帧以避免覆盖正在读取的 buffer
-        //     LOGGER.fine("上一帧上传尚未完成，跳过本帧上传");
-        //     return;
-        // }
+        long fenceHandle = uploadFence instanceof Long l ? l : 0L;
+        if (fenceHandle != 0L && device != 0L) {
+            try {
+                long status = (long) com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkWaitForFences()
+                    .invoke(device, 1, fenceHandle, 0, 0L);
+                    if (status != 0) {
+                        LOGGER.fine("上一帧上传尚未完成，跳过本帧上传");
+                        return;
+                    }
+                } catch (Throwable t) {
+                    return;
+                }
+        }
 
         // ========== 步骤 2: 开始新的上传编码 ==========
-        // TODO: copyEncoder = transferQueue.beginCommandEncoder();
+        if (device == 0L) return;
 
         int processedCount = 0;
         long stagingOffset = 0;  // 当前 Staging Buffer 的写入偏移
@@ -721,23 +738,31 @@ public class AsyncChunkUploader implements AutoCloseable {
      * @return GPU Buffer 对象
      */
     private Object getChunkVertexBuffer(int chunkX, int chunkY, int chunkZ) {
-        // TODO: 实际集成时从 Chunk 管理器获取
-        // return chunkManager.getVertexBuffer(chunkX, chunkY, chunkZ);
+        if (!com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) return null;
+        long key = ((long) chunkX << 42) ^ ((long) chunkY << 21) ^ (chunkZ & 0x1FFFFFL);
+        Long existing = vertexBufferCache.get(key);
+        if (existing != null) return existing;
+        long[] result = com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.createBuffer(1048576L, 1 | 8 | 0x20000);
+        if (result[0] != 0L) {
+            vertexBufferCache.put(key, result[0]);
+            return result[0];
+        }
         return null;
     }
 
     /**
      * 获取指定 Chunk 的索引缓冲区
-     *
-     * @param chunkX Chunk X 坐标
-     * @param chunkY Chunk Y 坐标
-     * @param chunkZ Chunk Z 坐标
-     *
-     * @return GPU Buffer 对象
      */
     private Object getChunkIndexBuffer(int chunkX, int chunkY, int chunkZ) {
-        // TODO: 实际集成时从 Chunk 管理器获取
-        // return chunkManager.getIndexBuffer(chunkX, chunkY, chunkZ);
+        if (!com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.isAvailable()) return null;
+        long key = ((long) chunkX << 42) ^ ((long) chunkY << 21) ^ (chunkZ & 0x1FFFFFL);
+        Long existing = indexBufferCache.get(key);
+        if (existing != null) return existing;
+        long[] result = com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper.createBuffer(262144L, 2 | 8 | 0x20000);
+        if (result[0] != 0L) {
+            indexBufferCache.put(key, result[0]);
+            return result[0];
+        }
         return null;
     }
 

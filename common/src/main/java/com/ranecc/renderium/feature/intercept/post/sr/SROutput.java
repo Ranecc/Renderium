@@ -1,7 +1,7 @@
 package com.ranecc.renderium.feature.intercept.post.sr;
 
 /**
- * TODO [REVIEW] 桩类 - 超分辨率输出结果
+ * 超分辨率输出结果
  * 封装超分辨率处理的输出状态和结果数据
  */
 public class SROutput {

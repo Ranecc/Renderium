@@ -589,7 +589,13 @@ public class MemoryOptimizer implements AutoCloseable, MemOptimizer {
         }
 
         int beginFrame() {
-            // TODO: vkWaitForFences(offsets[currentFrame])
+            long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+            if (device != 0L && fences[currentFrame] != 0L) {
+                try {
+                    com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkWaitForFences()
+                        .invoke(device, 1, fences[currentFrame], 1, 16_666_667L);
+                } catch (Throwable ignored) {}
+            }
             offsets[currentFrame] = 0;
             return currentFrame;
         }
@@ -647,9 +653,16 @@ public class MemoryOptimizer implements AutoCloseable, MemOptimizer {
         void initialize() { initialized = true; }
 
         synchronized void beginFrame() {
+            long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
             while (!pendingFrames.isEmpty()) {
                 PendingFrame p = pendingFrames.peek();
-                // TODO: vkGetFenceStatus(p.fence)
+                if (device != 0L && p.fence != 0L) {
+                    try {
+                        long result = (long) com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkWaitForFences()
+                            .invoke(device, 1, p.fence, 0, 0L);
+                        if (result != 0) break;
+                    } catch (Throwable t) { break; }
+                }
                 readOffset = p.end;
                 pendingFrames.poll();
             }

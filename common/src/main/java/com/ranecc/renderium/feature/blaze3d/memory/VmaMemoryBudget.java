@@ -1134,7 +1134,7 @@ public class VmaMemoryBudget implements AutoCloseable {
     }
 
     /**
-     * 模拟使用率查询（TODO: 替换为真实 VMA 查询）
+     * 模拟使用率查询（待集成 VMA 后替换为真实 vmaGetBudget 查询）
      */
     private float simulateUsageQuery() {
         long totalUsage = totalBytesAllocated.get() - totalBytesFreed.get();

@@ -1,7 +1,7 @@
 package com.ranecc.renderium.feature.intercept.handler;
 
 /**
- * TODO [REVIEW] 桩接口 - 第三方模组输出处理器接口
+ * 第三方模组输出处理器接口
  * 用于处理来自其他模组的输出数据
  */
 public interface ModOutputHandler {

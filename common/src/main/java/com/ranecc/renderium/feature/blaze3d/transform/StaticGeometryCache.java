@@ -477,8 +477,6 @@ public class StaticGeometryCache implements AutoCloseable {
 
         try {
             // 1. 计算当前数据哈希
-        // TODO: 实际集成时应计算真实的哈希值
-            //
             // 方案 A（快速）：使用 Chunk Mesh 的 generation version
             // String currentHash = String.valueOf(chunk.meshGenerationVersion);
             //

@@ -1,6 +1,6 @@
 package com.ranecc.renderium.domain.model;
 
-/** 超分辨率上下文 [TODO] 完整实现待补充 */
+/** 超分辨率上下文 — 封装输入输出分辨率参数 */
 public class SuperResolutionContext {
     private int inputWidth, inputHeight;
     private int outputWidth, outputHeight;

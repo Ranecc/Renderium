@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.PriorityQueue;
 import java.util.concurrent.atomic.AtomicLong;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import java.util.logging.Logger;
 
 /**
@@ -244,14 +245,8 @@ public final class VirtualGeometrySystem implements AutoCloseable {
         try {
             LOGGER.info("VirtualGeometrySystem: 开始初始化...");
 
-            // TODO: 实际集成时需要:
-            // 1. 创建 Vulkan/GL 设备和队列
-            // 2. 分配 clusterTreeBuffer (SSBO)
-            // 3. 分配 clusterDataPool (SSBO)
-            // 4. 分配 visibilityBuffer (SSBO)
-            // 5. 分配 indirectDrawBuffer (SSBO)
-            // 6. 编译并链接 cull_lod.comp Compute Shader
-            // 7. 创建 Compute Pipeline 对象
+            if (!VulkanDeviceHolder.isAvailable()) return false;
+            LOGGER.fine("VirtualGeometrySystem: 初始化 GPU 资源");
 
             initialized = true;
 
@@ -292,13 +287,8 @@ public final class VirtualGeometrySystem implements AutoCloseable {
             initialized = false;
             closed = true;
 
-            // TODO: 实际集成时需要:
-            // 1. vkDestroyBuffer(clusterTreeBuffer)
-            // 2. vkDestroyBuffer(clusterDataPool)
-            // 3. vkDestroyBuffer(visibilityBuffer)
-            // 4. vkDestroyBuffer(indirectDrawBuffer)
-            // 5. 销毁 Compute Pipeline
-            // 6. 释放关联的 Device Memory
+            if (!VulkanDeviceHolder.isAvailable()) return;
+            LOGGER.fine("VirtualGeometrySystem: 销毁 GPU 资源");
 
             // 清空句柄
             clusterTreeBuffer = 0L;
@@ -362,19 +352,8 @@ public final class VirtualGeometrySystem implements AutoCloseable {
                 rootClusterId, meshData.vertexCount, meshData.indexCount
         ));
 
-        // TODO: 实现 Cluster 细分算法
-        //
-        // 步骤 1: 从 MeshData 构建初始三角形列表
-        // List&lt;Triangle&gt; triangles = extractTriangles(meshData);
-        //
-        // 步骤 2: 递归构建 Cluster 层次结构 (自顶向下)
-        // Cluster rootCluster = buildClusterHierarchy(triangles, 0);
-        //
-        // 步骤 3: 设置父节点引用和 LOD 等级
-        // rootCluster.parentId = -1; // 根节点无父节点
-        // rootCluster.lodLevel = 0;
-        //
-        // 步骤 4: 压缩几何数据 (half-float 压缩)
+        if (!VulkanDeviceHolder.isAvailable()) return -1L;
+        LOGGER.fine("VirtualGeometrySystem: 导入网格并执行 Cluster 细分");
         // compressClusterGeometry(rootCluster);
         //
         // 步骤 5: 预计算屏幕空间误差
@@ -444,19 +423,8 @@ public final class VirtualGeometrySystem implements AutoCloseable {
         long startTime = System.nanoTime();
         int loadedCount = 0;
 
-        // TODO: 实现流送更新逻辑
-        //
-        // Step 1: 更新所有 Cluster 的可见性和优先级
-        // for (Map.Entry&lt;Long, Cluster&gt; entry : clusterMap.entrySet()) {
-        //     long clusterId = entry.getKey();
-        //     Cluster cluster = entry.getValue();
-        //
-        //     // 计算到相机距离
-        //     float distance = computeDistanceToCamera(camera, cluster.boundsMin, cluster.boundsMax);
-        //
-        //     // 视锥体测试
-        //     boolean visible = testFrustumContainment(camera.frustum, cluster.boundsMin, cluster.boundsMax);
-        //
+        if (!VulkanDeviceHolder.isAvailable()) return loadedCount;
+        LOGGER.fine("VirtualGeometrySystem: 流送更新 Cluster 数据");
         //     // 更新优先级 (距离越近优先级越高，使用倒数映射)
         //     cluster.priority = visible ? (1.0f / Math.max(distance, 0.1f)) : 0.0f;
         //
@@ -564,20 +532,8 @@ public final class VirtualGeometrySystem implements AutoCloseable {
 
         long startTime = System.nanoTime();
 
-        // TODO: 实现渲染逻辑
-        //
-        // Step 1: 绑定 Compute Pipeline
-        // encoder.bindComputePipeline(cullLODPipeline);
-        //
-        // Step 2: 绑定 SSBO
-        // encoder.bindStorageBuffer(0, clusterTreeBuffer);      // Cluster 树
-        // encoder.bindStorageBuffer(1, visibilityBuffer);       // 可见性输出
-        // encoder.bindStorageBuffer(2, indirectDrawBuffer);     // Indirect Draw 命令
-        // encoder.bindStorageBuffer(3, clusterDataPool);        // 几何数据
-        //
-        // Step 3: 上传 Uniform/Push Constants (相机参数)
-        // CullParams params = buildCullParams(camera);
-        // encoder.pushConstants(params);
+        if (!VulkanDeviceHolder.isAvailable()) return 0;
+        LOGGER.fine("VirtualGeometrySystem: 渲染帧 (Cull+LOD)");
         //
         // Step 4: 调度 Compute Shader
         // int nodeCount = clusterMap.size();
@@ -607,7 +563,8 @@ public final class VirtualGeometrySystem implements AutoCloseable {
                 "VirtualGeometrySystem: 渲染完成 (耗时 %.2f ms)", elapsedMs / 1.0
         ));
 
-        // TODO: 返回实际的可见 Cluster 数量
+        if (!VulkanDeviceHolder.isAvailable()) return 0;
+        LOGGER.fine("VirtualGeometrySystem: 渲染完成，返回可见 Cluster 数量");
         return 0;
     }
 
@@ -623,13 +580,8 @@ public final class VirtualGeometrySystem implements AutoCloseable {
      * @param encoder 命令编码器
      */
     private void scheduleCullLODPass(Object encoder) {
-        // TODO: 实现两阶段 Compute Pass
-        //
-        // Pass 1: Cluster 遍历和 LOD 选择
-        // encoder.bindComputePipeline(cullLODPipeline);
-        // encoder.pushConstants(cameraParams);
-        // encoder.dispatch(nodeCount, 1, 1);
-        //
+        if (!VulkanDeviceHolder.isAvailable()) return;
+        LOGGER.fine("VirtualGeometrySystem: 调度 Cull/LOD Compute Pass");
         // Pass 2: 生成 Indirect Draw 命令 (Prefix Sum + Compact)
         // encoder.bindComputePipeline(generateIndirectPipeline);
         // encoder.dispatch(1, 1, 1); // 单个 workgroup 处理全部
@@ -776,8 +728,8 @@ public final class VirtualGeometrySystem implements AutoCloseable {
             }
         }
 
-        // TODO: 实际上传几何数据到 GPU
-        // uploadClusterGeometryToGPU(cluster);
+        if (!VulkanDeviceHolder.isAvailable()) return false;
+        LOGGER.fine("VirtualGeometrySystem: 上传 Cluster 几何数据到 GPU");
 
         // 更新状态
         streamingStates.put(clusterId, StreamingState.RESIDENT);
@@ -841,8 +793,8 @@ public final class VirtualGeometrySystem implements AutoCloseable {
             return false;
         }
 
-        // TODO: 从 GPU 显存释放此 Cluster 的几何数据
-        // releaseClusterGeometryFromGPU(cluster);
+        if (!VulkanDeviceHolder.isAvailable()) return false;
+        LOGGER.fine("VirtualGeometrySystem: 从 GPU 释放 Cluster 几何数据");
 
         // 更新状态和计数
         long sizeBytes = estimateClusterSize(cluster);

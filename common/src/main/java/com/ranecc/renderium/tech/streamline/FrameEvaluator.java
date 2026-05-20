@@ -183,30 +183,37 @@ public final class FrameEvaluator {
         }
 
         int count = resources.size();
-        MemorySegment resourceTags = PerFrameArena.allocate(count * 64L);
+        MemorySegment resourceTags;
 
-        int idx = 0;
-        for (var entry : resources.entrySet()) {
-            long offset = idx * 64L;
-            resourceTags.set(ValueLayout.JAVA_LONG, offset + 24, entry.getValue());
-            resourceTags.set(ValueLayout.JAVA_INT, offset + 32, 0xFFFFFFFF);
-            resourceTags.set(ValueLayout.JAVA_INT, offset + 40, entry.getKey());
-            resourceTags.set(ValueLayout.JAVA_INT, offset + 44, 0);
-            idx++;
-        }
+        try {
+            resourceTags = PerFrameArena.allocate(count * 64L);
 
-        int result = SLFFMBindings.slSetTagForFrame(
-            currentFrameToken.get(ValueLayout.ADDRESS, 0),
-            viewportHandle, resourceTags, count,
-            MemorySegment.NULL);
+            int idx = 0;
+            for (var entry : resources.entrySet()) {
+                long offset = idx * 64L;
+                resourceTags.set(ValueLayout.JAVA_LONG, offset + 24, entry.getValue());
+                resourceTags.set(ValueLayout.JAVA_INT, offset + 32, 0xFFFFFFFF);
+                resourceTags.set(ValueLayout.JAVA_INT, offset + 40, entry.getKey());
+                resourceTags.set(ValueLayout.JAVA_INT, offset + 44, 0);
+                idx++;
+            }
 
-        if (!SLFFMBindings.isOk(result)) {
-            LOGGER.warning("slSetTagForFrame(Map) failed: " + SLFFMBindings.getResultDescription(result));
+            int result = SLFFMBindings.slSetTagForFrame(
+                currentFrameToken.get(ValueLayout.ADDRESS, 0),
+                viewportHandle, resourceTags, count,
+                MemorySegment.NULL);
+
+            if (!SLFFMBindings.isOk(result)) {
+                LOGGER.warning("slSetTagForFrame(Map) failed: " + SLFFMBindings.getResultDescription(result));
+                return false;
+            }
+
+            LOGGER.fine("tagResources (Map): " + count + " resources tagged via SDK");
+            return true;
+        } catch (SLFFMBindings.SLException e) {
+            LOGGER.severe("tagResources(Map) error: " + e.getMessage());
             return false;
         }
-
-        LOGGER.fine("tagResources (Map): " + count + " resources tagged via SDK");
-        return true;
     }
 
     /**
@@ -229,32 +236,39 @@ public final class FrameEvaluator {
         }
 
         int count = resources.length;
-        MemorySegment resourceTags = PerFrameArena.allocate(count * 64L);
+        MemorySegment resourceTags;
 
-        for (int i = 0; i < count; i++) {
-            ResourceTagData tag = (ResourceTagData) resources[i];
-            long offset = i * 64L;
-            resourceTags.set(ValueLayout.JAVA_LONG, offset + 24, tag.imageView);
-            resourceTags.set(ValueLayout.JAVA_INT, offset + 32, 0xFFFFFFFF);
-            resourceTags.set(ValueLayout.JAVA_INT, offset + 40, tag.bufferType);
-            resourceTags.set(ValueLayout.JAVA_INT, offset + 44, 0);
+        try {
+            resourceTags = PerFrameArena.allocate(count * 64L);
 
-            LOGGER.fine("  Tag[" + i + "]: type=" + tag.bufferType
-                + " view=0x" + Long.toHexString(tag.imageView));
-        }
+            for (int i = 0; i < count; i++) {
+                ResourceTagData tag = (ResourceTagData) resources[i];
+                long offset = i * 64L;
+                resourceTags.set(ValueLayout.JAVA_LONG, offset + 24, tag.imageView);
+                resourceTags.set(ValueLayout.JAVA_INT, offset + 32, 0xFFFFFFFF);
+                resourceTags.set(ValueLayout.JAVA_INT, offset + 40, tag.bufferType);
+                resourceTags.set(ValueLayout.JAVA_INT, offset + 44, 0);
 
-        int result = SLFFMBindings.slSetTagForFrame(
-            currentFrameToken.get(ValueLayout.ADDRESS, 0),
-            viewportHandle, resourceTags, count,
-            MemorySegment.NULL);
+                LOGGER.fine("  Tag[" + i + "]: type=" + tag.bufferType
+                    + " view=0x" + Long.toHexString(tag.imageView));
+            }
 
-        if (!SLFFMBindings.isOk(result)) {
-            LOGGER.warning("slSetTagForFrame(Object[]) failed: " + SLFFMBindings.getResultDescription(result));
+            int result = SLFFMBindings.slSetTagForFrame(
+                currentFrameToken.get(ValueLayout.ADDRESS, 0),
+                viewportHandle, resourceTags, count,
+                MemorySegment.NULL);
+
+            if (!SLFFMBindings.isOk(result)) {
+                LOGGER.warning("slSetTagForFrame(Object[]) failed: " + SLFFMBindings.getResultDescription(result));
+                return false;
+            }
+
+            LOGGER.fine("tagResources (Object[]): " + count + " resources tagged via SDK");
+            return true;
+        } catch (SLFFMBindings.SLException e) {
+            LOGGER.severe("tagResources(Object[]) error: " + e.getMessage());
             return false;
         }
-
-        LOGGER.fine("tagResources (Object[]): " + count + " resources tagged via SDK");
-        return true;
     }
 
     /**

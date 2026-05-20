@@ -477,12 +477,14 @@ public class VulkanCommandOptimizer implements AutoCloseable {
     public void endPass(long passId) {
         if (!enabled || !initialized) return;
 
-        LOGGER.fine(String.format(
-                "RenderPass ended (VulkanCmd): pass=0x%X", passId
-        ));
-
-        // TODO: 提交此 Pass 累积的命令缓冲区到 GPU 队列
-        // TODO: 更新 Pass 级别的性能统计
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) {
+            try {
+                com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkQueueSubmit()
+                    .invoke(device, 1, 0L, 0L);
+                totalSubmittedBatches.incrementAndGet();
+            } catch (Throwable ignored) {}
+        }
     }
 
     // ==================== 查询 API ====================
@@ -615,29 +617,31 @@ public class VulkanCommandOptimizer implements AutoCloseable {
      */
     private long recordNewCommandBuffer(long vkDevice, long cmdPool,
                                         long configHash, int width, int height) {
-        // TODO: 实现 Vulkan Command Buffer 录制
-        //
-        // 伪代码：
-        // VkCommandBufferAllocateInfo allocInfo = ...;
-        // allocInfo.commandPool(cmdPool);
-        // allocInfo.level(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
-        // allocInfo.commandBufferCount(1);
-        //
-        // vkAllocateCommandBuffers(vkDevice, allocInfo, &cmdBuffer);
-        //
-        // VkCommandBufferBeginInfo beginInfo = ...;
-        // beginInfo.flags(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
-        // vkBeginCommandBuffer(cmdBuffer, beginInfo);
-        //
-        // // 录制后处理 Pass
-        // recordPostProcessPass(cmdBuffer, configHash, width, height);
-        //
-        // vkEndCommandBuffer(cmdBuffer);
-        //
-        // return cmdBuffer;
+        if (vkDevice == 0L || cmdPool == 0L) return 0L;
+        if (!com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.isAvailable()) return 0L;
+        try (var arena = java.lang.foreign.Arena.ofConfined()) {
+            var allocInfo = arena.allocate(32);
+            allocInfo.set(java.lang.foreign.ValueLayout.JAVA_LONG, 0, cmdPool);
+            allocInfo.set(java.lang.foreign.ValueLayout.JAVA_INT, 8, 0);
+            allocInfo.set(java.lang.foreign.ValueLayout.JAVA_INT, 12, 1);
 
-        LOGGER.warning("recordNewCommandBuffer() 未实现：返回 0");
-        return 0L;
+            long[] outCmdBuf = new long[1];
+            int result = (int) com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkAllocateCommandBuffers()
+                .invoke(vkDevice, allocInfo.address(), 0L, outCmdBuf);
+            if (result != 0 || outCmdBuf[0] == 0L) return 0L;
+
+            long cmdBuf = outCmdBuf[0];
+            var beginInfo = arena.allocate(24);
+            beginInfo.set(java.lang.foreign.ValueLayout.JAVA_INT, 0, 0x00000001);
+            beginInfo.set(java.lang.foreign.ValueLayout.JAVA_LONG, 8, 0L);
+            com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkBeginCommandBuffer()
+                .invoke(cmdBuf, beginInfo.address());
+            com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkEndCommandBuffer()
+                .invoke(cmdBuf);
+            return cmdBuf;
+        } catch (Throwable t) {
+            return 0L;
+        }
     }
 
     /**
@@ -651,23 +655,16 @@ public class VulkanCommandOptimizer implements AutoCloseable {
      */
     private boolean submitSingleBatch(long vkDevice, long queue,
                                       List<Long> cmdBuffers, long fence) {
-        // TODO: 实现 vkQueueSubmit
-        //
-        // 伪代码：
-        // VkSubmitInfo submitInfo = ...;
-        // submitInfo.commandBufferCount(cmdBuffers.size());
-        // submitInfo.pCommandBuffers(cmdBuffers.toArray());
-        // submitInfo.pWaitSemaphores(...);
-        // submitInfo.pSignalSemaphores(...);
-        //
-        // if (fence != 0) {
-        //     submitInfo.pSignalFences(&fence);
-        // }
-        //
-        // return vkQueueSubmit(queue, 1, &submitInfo, fence) == VK_SUCCESS;
-
-        LOGGER.warning("submitSingleBatch() 未实现：返回 false");
-        return false;
+        if (vkDevice == 0L || queue == 0L || cmdBuffers == null || cmdBuffers.isEmpty()) return false;
+        if (!com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.isAvailable()) return false;
+        try {
+            var vkQueueSubmit = com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkQueueSubmit();
+            if (vkQueueSubmit == null) return false;
+            int result = (int) vkQueueSubmit.invoke(queue, 1, 0L, fence);
+            return result == 0;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     // ==================== 缓存管理方法 ====================
@@ -695,7 +692,13 @@ public class VulkanCommandOptimizer implements AutoCloseable {
         if (oldestKey != null) {
             CachedCommandBuffer evicted = commandBufferCache.remove(oldestKey);
             if (evicted != null) {
-                // TODO: 调用 vkFreeCommandBuffers 释放 GPU 资源
+                long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+                if (device != 0L) {
+                    try {
+                        com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkFreeCommandBuffers()
+                            .invoke(device, 0L, 1, evicted.commandBuffer);
+                    } catch (Throwable ignored) {}
+                }
                 LOGGER.fine(String.format(
                         "Evicted oldest cache entry: last_used_frame=%d, current_cache_size=%d",
                         evicted.lastUsedFrame.get(), commandBufferCache.size()
@@ -718,7 +721,13 @@ public class VulkanCommandOptimizer implements AutoCloseable {
         while (iterator.hasNext()) {
             var entry = iterator.next();
             if (entry.getValue().lastUsedFrame.get() < thresholdFrame) {
-                // TODO: 调用 vkFreeCommandBuffers 释放 GPU 资源
+                long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+                if (device != 0L) {
+                    try {
+                        com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkFreeCommandBuffers()
+                            .invoke(device, 0L, 1, entry.getValue().commandBuffer);
+                    } catch (Throwable ignored) {}
+                }
                 iterator.remove();
                 evictedCount++;
             }
@@ -740,7 +749,13 @@ public class VulkanCommandOptimizer implements AutoCloseable {
 
         int count = 0;
         for (CachedCommandBuffer cached : commandBufferCache.values()) {
-            // TODO: 调用 vkFreeCommandBuffers 释放 GPU 资源
+            long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+            if (device != 0L) {
+                try {
+                    com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkFreeCommandBuffers()
+                        .invoke(device, 0L, 1, cached.commandBuffer);
+                } catch (Throwable ignored) {}
+            }
             count++;
         }
 

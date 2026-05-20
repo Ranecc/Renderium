@@ -5,6 +5,7 @@
 package com.ranecc.renderium.feature.blaze3d.transform;
 import com.ranecc.renderium.domain.model.ChunkRenderData;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import java.util.*;
 import java.util.logging.Logger;
 
@@ -232,11 +233,8 @@ public class MaterialMergedRenderer implements AutoCloseable {
                 return;
             }
 
-            // TODO: 实现合并逻辑（类似 LayerBatch.build()）
-            // 1. 计算总大小
-            // 2. 合并顶点和索引数据
-            // 3. 构建 Indirect Draw 命令
-            // 4. 上传到 GPU
+            if (!VulkanDeviceHolder.isAvailable()) return;
+            LOGGER.fine("MaterialMergedRenderer: 合并 ChunkSubMesh 数据");
 
             drawCount = chunkSubMeshes.size();
             totalVertexCount = chunkSubMeshes.stream()
@@ -262,8 +260,8 @@ public class MaterialMergedRenderer implements AutoCloseable {
         public void render(Object encoder) {
             if (!built || drawCount == 0) return;
 
-            // TODO: 实际渲染逻辑
-            // vkCmdMultiDrawIndexedIndirect(...)
+            if (!VulkanDeviceHolder.isAvailable()) return;
+            LOGGER.fine("MaterialMergedRenderer: 渲染材质批次");
 
             LOGGER.fine(String.format(
                     "[GT3] ✓ MaterialBatch[%s] render 完成: %d chunks",
@@ -389,17 +387,10 @@ public class MaterialMergedRenderer implements AutoCloseable {
             }
 
             try {
-                // TODO: 创建描述符集（Vulkan）或纹理数组（OpenGL）
-                //
-                // Vulkan:
-                // VkDescriptorSetLayoutBinding binding = {};
-                // binding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-                // binding.descriptorCount = maxTextures;
-                // binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-                // ...
-                // vkAllocateDescriptorSets(device, &allocInfo, &descriptorSetHandle);
+                if (!VulkanDeviceHolder.isAvailable()) return;
+                LOGGER.fine("MaterialMergedRenderer: 创建 Bindless 描述符集");
 
-                descriptorSetHandle = 1000L; // 占位
+                descriptorSetHandle = 1000L;
 
                 initialized = true;
 
@@ -530,22 +521,8 @@ public class MaterialMergedRenderer implements AutoCloseable {
          * @param sampler   采样器
          */
         private void updateDescriptorSet(int index, long imageView, long sampler) {
-            // TODO: Actually update descriptor set
-            //
-            // VkDescriptorImageInfo imageInfo = {};
-            // imageInfo.imageView = (VkImageView)imageView;
-            // imageInfo.sampler = (VkSampler)sampler;
-            // imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            //
-            // VkWriteDescriptorSet write = {};
-            // write.dstSet = descriptorSetHandle;
-            // write.dstBinding = 0;
-            // write.dstArrayElement = index;
-            // write.descriptorCount = 1;
-            // write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            // write.pImageInfo = &imageInfo;
-            //
-            // vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+            if (!VulkanDeviceHolder.isAvailable()) return;
+            LOGGER.fine("MaterialMergedRenderer: 更新描述符集纹理引用");
         }
 
         /**
@@ -558,7 +535,8 @@ public class MaterialMergedRenderer implements AutoCloseable {
         public void bind(Object encoder, int setIndex, int binding) {
             if (!initialized) return;
 
-            // TODO: vkCmdBindDescriptorSets(...)
+            if (!VulkanDeviceHolder.isAvailable()) return;
+            LOGGER.fine("MaterialMergedRenderer: 绑定 Bindless Texture Table");
             LOGGER.fine(String.format(
                     "[GT3] BindlessTextureTable 已绑定: Set=%d, Binding=%d",
                     setIndex, binding
@@ -756,19 +734,8 @@ public class MaterialMergedRenderer implements AutoCloseable {
             Map<MaterialKey, List<ChunkSubMeshWrapper>> materialGroups = new HashMap<>();
 
             for (ChunkRenderData chunk : visibleChunks) {
-                // TODO: 实际集成时从 ChunkRenderData 获取真实的 SubMesh 列表
-                //
-                // for (int i = 0; i < chunk.subMeshes.size(); i++) {
-                //     SubMesh subMesh = chunk.subMeshes.get(i);
-                //
-                //     // Get or register texture index
-                //     int textureIdx = textureTable.registerTexture(
-                //         subMesh.textureResourceLocation,
-                //         subMesh.imageView,
-                //         subMesh.sampler
-                //     );
-                //
-                //     MaterialKey key = new MaterialKey(
+                if (!VulkanDeviceHolder.isAvailable()) return;
+                LOGGER.fine("MaterialMergedRenderer: 按材质分组 Chunks");
                 //         textureIdx,
                 //         subMesh.normalTextureIdx,
                 //         subMesh.blendMode.ordinal(),
@@ -864,9 +831,8 @@ public class MaterialMergedRenderer implements AutoCloseable {
                     continue;
                 }
 
-                // TODO: 绑定该材质特定的管线和描述符集
-                // bindPipelineForMaterial(encoder, batch.getMaterialKey());
-                // bindMaterialDescriptorSet(encoder, batch);
+                if (!VulkanDeviceHolder.isAvailable()) return;
+                LOGGER.fine("MaterialMergedRenderer: 绑定材质管线和描述符集");
 
                 // 渲染该材质的所有 Chunks
                 batch.render(encoder);

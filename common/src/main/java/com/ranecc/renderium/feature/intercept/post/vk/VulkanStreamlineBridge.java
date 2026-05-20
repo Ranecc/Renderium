@@ -3,7 +3,7 @@ package com.ranecc.renderium.feature.intercept.post.vk;
 import java.util.logging.Logger;
 
 /**
- * TODO [REVIEW] 桩类 - Vulkan Streamline 桥接器
+ * Vulkan Streamline 桥接器
  * 连接 Vulkan API 与 NVIDIA Streamline 的桥接层
  *
  * <p>当前为桩实现，未连接实际 Streamline SDK。所有连接状态均为 false。

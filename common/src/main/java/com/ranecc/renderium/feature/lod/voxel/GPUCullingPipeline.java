@@ -254,8 +254,9 @@ public class GPUCullingPipeline {
      *     测试每个区块的包围盒是否与视锥体相交
      *     如果完全在外部 → 剔除 (bit=false)
      *
-     *   Stage 3 - Hi-Z Occlusion (CPU Fallback):
-     *     TODO: Phase 2.x 实现真正的 Hi-Z 查询
+     *   Stage 3 - Hi-Z Occlusion (CPU Fallback — 待 GPU 实现):
+     *     Depth Pre-Pass → Depth Pyramid Compute Shader → Hi-Z Buffer → 遮挡测试
+     *     Visibility SSBO 输出，衔接 GPUVertexTransformPipeline 的间接绘制
      *     当前: 所有通过前两阶段的区块都标记为可见
      *
      * 性能预算：

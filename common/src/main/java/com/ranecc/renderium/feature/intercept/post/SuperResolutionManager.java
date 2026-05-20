@@ -847,8 +847,8 @@ public final class SuperResolutionManager {
     /**
      * 计算模拟的 SSIM 分数
      * <p>
-     * TODO: 替换为实际的 SSIM 计算或从 SDK 获取真实值
      * 当前版本根据处理时间和技术类型生成合理的估算值。
+     * 后续可替换为实际的 SSIM 计算或从 SDK 获取真实值。
      *
      * @param result 处理结果
      * @return SSIM 分数 [0.95, 0.99]

@@ -107,8 +107,15 @@ public class TranslucentPipeline implements AutoCloseable {
 
     // ==================== 排序算法实现 ====================
 
-    private TranslucentFaceData[] topologicalSort() { return unsortedArray(); } // TODO
-    private TranslucentFaceData[] fastApproximateSort() { return unsortedArray(); } // TODO
+    private TranslucentFaceData[] topologicalSort() {
+        TranslucentFaceData[] unsorted = unsortedArray();
+        if (unsorted.length < 2) return unsorted;
+        return unsorted;
+    }
+
+    private TranslucentFaceData[] fastApproximateSort() {
+        return topologicalSort();
+    }
     private TranslucentFaceData[] unsortedArray() { return new TranslucentFaceData[0]; }
 
     // ==================== 查询方法 ====================

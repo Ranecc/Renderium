@@ -733,41 +733,13 @@ public class GPUVertexTransformSystem implements AutoCloseable {
         }
 
         try {
-            // TODO: 实际集成时替换为真实的渲染 API 调用
-            //
-            // Vulkan 后端伪代码：
-            // vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, gpuTransformPipeline);
-            //
-            // // 绑定顶点缓冲
-            // VkDeviceSize offsets[] = { 0 };
-            // vkCmdBindVertexBuffers(commandBuffer, 0, 1, &globalVertexBufferHandle, offsets);
-            //
-            // // 绑定索引缓冲
-            // vkCmdBindIndexBuffer(commandBuffer, globalIndexBufferHandle, 0, VK_INDEX_TYPE_UINT32);
-            //
-            // // 绑定描述符集（包含变换矩阵缓冲）
-            // vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            //                          pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-            //
-            // // 设置 Push Constants（View-Projection 矩阵）
-            // vkCmdPushConstants(commandBuffer, pipelineLayout,
-            //                    VK_SHADER_STAGE_VERTEX_BIT, 0, 64, viewProjMatrix.data());
-            //
-            // Core: Single call to render all Chunks!
-            // vkCmdDrawIndexedIndirectCount(
-            //     commandBuffer,
-            //     indirectDrawBufferHandle,        // Indirect command buffer
-            //     0,                               // Offset
-            //     visibleChunkCountBufferHandle,   // Count buffer
-            //     0,                               // Offset
-            //     maxChunks,                       // Max count
-            //     sizeof(VkDrawIndexedIndirectCommand)  // Stride (20 bytes)
-            // );
-            //
-            // OpenGL backend (requires ARBO_multi_draw_indirect extension):
-            // glBindVertexArray(vao);
-            // glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectDrawBufferHandle);
-            // glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, drawCount, stride);
+            // Vulkan 后端集成管线（待启用）：
+            // vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, gpuTransformPipeline);
+            // vkCmdBindVertexBuffers(cmd, 0, 1, &globalVertexBufferHandle, offsets);
+            // vkCmdBindIndexBuffer(cmd, globalIndexBufferHandle, 0, VK_INDEX_TYPE_UINT32);
+            // vkCmdBindDescriptorSets(cmd, ..., 1, &descriptorSet, 0, null);
+            // vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, vpMatrix);
+            // vkCmdDrawIndexedIndirectCount(cmd, indirectBuffer, 0, countBuffer, 0, max, 20);
 
             LOGGER.fine(String.format(
                     "[GT1] ✓ render 完成: %d chunks 通过单次 drawIndirectCount 渲染",

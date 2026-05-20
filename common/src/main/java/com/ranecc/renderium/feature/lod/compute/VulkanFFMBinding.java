@@ -283,6 +283,15 @@ public final class VulkanFFMBinding {
     /** FFM 方法是否已加载 */
     private static volatile boolean ffmLoaded = false;
 
+    /** Linker 实例（供扩展函数重绑定使用） */
+    private static Linker cachedLinker = null;
+
+    /** SymbolLookup 实例（供扩展函数重绑定使用） */
+    private static SymbolLookup cachedVulkanLookup = null;
+
+    /** vkGetInstanceProcAddr 的 MethodHandle（核心必导函数） */
+    private static volatile MethodHandle VK_GET_INSTANCE_PROC_ADDR;
+
     // ==================== 构造函数（私有）====================
 
     private VulkanFFMBinding() {}
@@ -398,9 +407,19 @@ public final class VulkanFFMBinding {
     private static void loadFFMMethodHandles() {
         try {
             Linker linker = Linker.nativeLinker();
+            cachedLinker = linker;
             String osName = System.getProperty("os.name").toLowerCase();
             String vulkanLibName = osName.contains("win") ? "vulkan-1" : "vulkan";
             var vulkanLookup = SymbolLookup.libraryLookup(vulkanLibName, Arena.ofAuto());
+            cachedVulkanLookup = vulkanLookup;
+
+            // 加载 vkGetInstanceProcAddr（核心函数，在导出表中）
+            VK_GET_INSTANCE_PROC_ADDR = linker.downcallHandle(
+                    vulkanLookup.find("vkGetInstanceProcAddr").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_LONG,
+                            ValueLayout.JAVA_LONG,               // VkInstance
+                            ValueLayout.ADDRESS)             // const char* pName
+            );
 
             // ===== 核心 Vulkan 1.0 函数（必须存在，失败则阻止加载） =====
 
@@ -985,6 +1004,82 @@ public final class VulkanFFMBinding {
      * 将所有已加载的 Vulkan 方法句柄注册到 {@link VulkanAPIRegistry}。
      * <p>由 {@link #loadFFMMethodHandles()} 在加载完成后调用。
      */
+    /**
+     * 当 Blaze3D 初始化完成、VkInstance 劫持就绪后调用，
+     * 通过 vkGetInstanceProcAddr 重绑定所有 RT 扩展函数。
+     *
+     * <p>扩展函数不在 vulkan-1.dll 的导出表中，必须在 VkInstance 创建后
+     * 通过 vkGetInstanceProcAddr 动态获取函数指针。
+     *
+     * @param vkInstance 从 Blaze3D 劫持的 VkInstance 句柄
+     */
+    public static void reloadExtensionFunctions(long vkInstance) {
+        if (vkInstance == 0L || VK_GET_INSTANCE_PROC_ADDR == null) return;
+        if (cachedLinker == null) return;
+        try (var arena = Arena.ofConfined()) {
+            var linker = cachedLinker;
+            int count = 0;
+
+            count += reloadOne(linker, arena, vkInstance, "vkCreateAccelerationStructureKHR",
+                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG,
+                    ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG),
+                h -> VK_CREATE_ACCELERATION_STRUCTURE_KHR = h);
+
+            count += reloadOne(linker, arena, vkInstance, "vkDestroyAccelerationStructureKHR",
+                FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG),
+                h -> VK_DESTROY_ACCELERATION_STRUCTURE_KHR = h);
+
+            count += reloadOne(linker, arena, vkInstance, "vkCmdBuildAccelerationStructuresKHR",
+                FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                    ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG),
+                h -> VK_CMD_BUILD_ACCELERATION_STRUCTURES_KHR = h);
+
+            count += reloadOne(linker, arena, vkInstance, "vkCmdTraceRaysKHR",
+                FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                    ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                    ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.JAVA_INT),
+                h -> VK_CMD_TRACE_RAYS_KHR = h);
+
+            count += reloadOne(linker, arena, vkInstance, "vkCreateRayTracingPipelinesKHR",
+                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
+                    ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG,
+                    ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG),
+                h -> VK_CREATE_RAY_TRACING_PIPELINES_KHR = h);
+
+            count += reloadOne(linker, arena, vkInstance, "vkCmdCopyAccelerationStructureKHR",
+                FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG),
+                h -> VK_CMD_COPY_ACCELERATION_STRUCTURE_KHR = h);
+
+            count += reloadOne(linker, arena, vkInstance, "vkCmdDrawMeshTasksEXT",
+                FunctionDescriptor.ofVoid(ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT,
+                    ValueLayout.JAVA_INT, ValueLayout.JAVA_INT),
+                h -> VK_CMD_DRAW_MESH_TASKS_EXT = h);
+
+            LOGGER.info("[VulkanFFM] reloaded " + count + " extension functions via vkGetInstanceProcAddr");
+        } catch (Throwable t) {
+            LOGGER.warning("[VulkanFFM] extension function reload failed: " + t.getMessage());
+        }
+    }
+
+    @java.lang.SuppressWarnings("preview")
+    private static int reloadOne(Linker linker, Arena arena, long vkInstance,
+                                  String funcName, FunctionDescriptor desc,
+                                  java.util.function.Consumer<java.lang.invoke.MethodHandle> assigner) {
+        try {
+            var seg = arena.allocateFrom(funcName);
+            long ptr = (long) VK_GET_INSTANCE_PROC_ADDR.invoke(vkInstance, seg);
+            if (ptr != 0L) {
+                var mh = linker.downcallHandle(
+                    java.lang.foreign.MemorySegment.ofAddress(ptr), desc);
+                assigner.accept(mh);
+                return 1;
+            }
+            return 0;
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
     private static void registerAllToRegistry() {
         var all = java.util.Map.<String, java.lang.invoke.MethodHandle>ofEntries(
             java.util.Map.entry("vkCreateShaderModule", VK_CREATE_SHADER_MODULE),

@@ -451,14 +451,13 @@ public final class ChunkMeshBuilder {
     /**
      * 获取方块的纹理 ID
      *
-     * <p>TODO: 从方块注册表获取
+     * <p>当前使用 stateId 的低 8 位作为简化纹理 ID，后续可从方块注册表获取真实纹理索引。
      *
      * @param stateId 方块状态 ID
      * @param face 面方向
      * @return 纹理 ID
      */
     private int getTextureId(int stateId, int face) {
-        // 占位：实际实现需要从方块注册表查询
         return stateId & 0xFF;
     }
 

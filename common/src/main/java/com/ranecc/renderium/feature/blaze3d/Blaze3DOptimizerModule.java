@@ -170,83 +170,17 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
     // ==================== 已知问题 & 待优化项 ====================
 
     /**
-     * TODO #UBO-001: Chunk Sections UBO 预分配优化 (P1 - 高优先级)
+     * Chunk Section UBO 预分配优化 (P1)
      *
-     * <h3>问题描述：</h3>
-     * <p>日志中的 <b>"Resizing Chunk Sections UBO, capacity limit of 1024 reached"</b> 是 Minecraft 自身的行为，
-     * 不是 Renderium 导致的。</p>
+     * <p>问题：Minecraft 原版 ChunkSectionUniform 初始容量=2，每次新增区块翻倍扩容，
+     * resize 触发 vkDestroyBuffer + vkCreateBuffer + 数据拷贝，导致 2-10ms GPU 管线停顿。
+     * 累积影响：加载密集区域时数百毫秒总停顿。
      *
-     * <h3>现象分析：</h3>
-     * <ul>
-     *   <li><b>触发时机</b>: 区块加载阶段（新世界加载/快速移动到新区块）</li>
-     *   <li><b>扩容模式</b>: UBO 容量从 2 → 4 → 8 → ... → 2048 连续翻倍扩容</li>
-     *   <li><b>性能影响</b>: 每次扩容导致 GPU 管线停顿 <b>2-10ms</b></li>
-     *   <li><b>累积影响</b>: 加载密集区域时可能产生数百毫秒的总停顿</li>
-     * </ul>
+     * <p>解决方案：Mixin 注入 ChunkSectionUniform.create()，根据视距预分配最终容量
+     * （视距16→1024，视距32→4096），消除运行期扩容。
      *
-     * <h3>根因定位：</h3>
-     * <pre>
-     * Minecraft 原版行为:
-     * 1. ChunkSectionUniform.create() 初始容量 = 2
-     * 2. 每次新增区块时检查: if (size >= capacity) { resize(capacity * 2) }
-     * 3. resize 触发 vkDestroyBuffer + vkCreateBuffer + 数据拷贝
-     * 4. GPU 必须等待当前帧完成才能重建 UBO → 造成管线停顿
-     * </pre>
-     *
-     * <h3>解决方案：</h3>
-     * <ol>
-     *   <li><b>预分配策略</b>: 根据视距和可见区块数量预估初始容量
-     *       <ul>
-     *         <li>视距 16 → 预估 ~1000 个区块 → 初始容量 1024</li>
-     *         <li>视距 32 → 预估 ~4000 个区块 → 初始容量 4096</li>
-     *       </ul>
-     *   </li>
-     *   <li><b>Mixin 注入点</b>:
-     *       <ul>
-     *         <li>目标类: {@code net.minecraft.client.renderer.chunk.ChunkSectionUniform}</li>
-     *         <li>注入方法: {@code create()} 或构造函数</li>
-     *         <li>修改内容: 替换初始容量计算逻辑</li>
-     *       </ul>
-     *   </li>
-     *   <li><b>安全措施</b>:
-     *       <ul>
-     *         <li>版本签名验证（确保 Mixin 目标未变更）</li>
-     *         <li>优雅降级（如果注入失败则回退到原版行为）</li>
-     *         <li>配置项控制（允许用户禁用此优化）</li>
-     *       </ul>
-     *   </li>
-     * </ol>
-     *
-     * <h3>实现参考：</h3>
-     * <pre>
-     * @Mixin(ChunkSectionUniform.class)
-     * public class ChunkSectionUniformMixin {
-     *     @Inject(method = "<init>", at = @At("RETURN"))
-     *     private void onInit(CallbackInfo ci) {
-     *         // 使用 RenderiumConfig.getChunkSectionUboInitialCapacity()
-         *         // 替换硬编码的初始值 2
-     *     }
-     * }
-     * </pre>
-     *
-     * <h3>相关文件：</h3>
-     * <ul>
-     *   <li>{@link com.renderium.module.impl.blaze3d.shader.UniformRedirector} - Uniform 重定向器</li>
-     *   <li>{@link com.renderium.module.impl.blaze3d.memory.VmaMemoryPools} - VMA 内存池</li>
-     *   <li>{@link com.renderium.config.MemoryConfig} - 内存配置</li>
-     * </ul>
-     *
-     * <h3>预期收益：</h3>
-     * <ul>
-     *   <li>消除区块加载阶段的 UBO 扩卡停顿</li>
-     *   <li>快速移动时减少 50-200ms 的卡顿</li>
-     *   <li>提升整体渲染流畅度</li>
-     * </ul>
-     *
-     * @see com.renderium.mixin.abstracts.hooks.RenderChunkSectionHook
      * @since 2.1.0 (待实现)
      */
-    // TODO-UBO-001-END
 
     /** ResourceStats 资源统计初始化完成标记 */
     private volatile boolean resourceStatsReady = false;

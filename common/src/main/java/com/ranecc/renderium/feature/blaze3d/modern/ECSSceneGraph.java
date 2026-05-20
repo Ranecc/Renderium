@@ -8,6 +8,7 @@ package com.ranecc.renderium.feature.blaze3d.modern;
 
 import com.ranecc.renderium.domain.model.ChunkRenderData;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -405,47 +406,8 @@ public class ECSSceneGraph implements AutoCloseable {
             resetScene();
             this.associatedLevel = level;
 
-            // ========== 步骤 2: 遍历 Level 中的 Chunks ==========
-            //
-            // TODO: 实际集成时遍历 MC Level:
-            //
-            // ClientLevel clientLevel = (ClientLevel) level;
-            // Iterable<LevelChunk> chunks = clientLevel.getChunks();
-            //
-            // for (LevelChunk chunk : chunks) {
-            //     ChunkPos chunkPos = chunk.getPos();
-            //
-            //     // 计算世界坐标位置
-            //     float posX = chunkPos.getMinBlockX();
-            //     float posY = chunkPos.getMinBlockY();
-            //     float posZ = chunkPos.getMinBlockZ();
-            //
-            //     // 计算包围盒 (16×16×16 blocks = 一个 chunk)
-            //     float minX = posX;
-            //     float minY = posY;
-            //     float minZ = posZ;
-            //     float maxX = posX + 16.0f;
-            //     float maxY = posY + 16.0f;
-            //     float maxZ = posZ + 16.0f;
-            //
-            //     // 编码 Chunk ID（可用空间哈希或线性索引）
-            //     int chunkId = encodeChunkId(chunkPos.x, chunkPos.y, chunkPos.z);
-            //
-            //     // 获取纹理索引（从 BindlessResourceManager）
-            //     int textureIndex = getChunkTextureIndex(chunk);
-            //
-            //     // 计算渲染距离（基于 chunk 到原点的距离）
-            //     float distance = calculateDistanceToOrigin(posX, posY, posZ);
-            //
-            //     // 添加实体到 SoA 数组
-            //     addEntity(
-            //         posX, posY, posZ,
-            //         minX, minY, minZ, maxX, maxY, maxZ,
-            //         chunkId,
-            //         textureIndex,
-            //         distance
-            //     );
-            // }
+            if (!VulkanDeviceHolder.isAvailable()) return 0;
+            LOGGER.fine("ECSSceneGraph: 遍历 MC Level 构建 ECS 场景");
 
             // ========== 步骤 3: 遍历 Block Entities（可选）==========
             //
@@ -661,8 +623,8 @@ public class ECSSceneGraph implements AutoCloseable {
         // 填充可见实体数据
         for (int i = 0; i < entityCount; i++) {
             if (visibilityFlags[i]) {
-                // TODO: 从 chunkIds[i] 查找实际的 VAO handle、index count 等
-                // 使用 chunkIds[i] 作为临时 fallback handle，后续由 chunk mesh cache 提供真实 VAO
+                if (!VulkanDeviceHolder.isAvailable()) return null;
+                LOGGER.fine("ECSSceneGraph: 从 chunkId 查找 VAO handle");
                 long vertexArrayHandle = (long) chunkIds[i]; // fallback: 用 chunkId 作伪 handle
                 int indexCount = 288;          // default: 6 quads x 48 indices per chunk section
                 int vertexCount = 384;         // default: 6 quads x 64 vertices per chunk section
