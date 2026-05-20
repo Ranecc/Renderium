@@ -1,5 +1,6 @@
 package com.ranecc.renderium.platform.mixin;
 
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.platform.hook.FrameContext;
 import com.ranecc.renderium.platform.hook.HookDispatcher;
 import com.ranecc.renderium.platform.lifecycle.LifecycleManager;
@@ -28,7 +29,7 @@ public abstract class MixinGameRenderer {
     /**
      * 帧开始 - HEAD 注入
      * <p>
-     * 仅做: 捕获 deltaTime -> 更新 FrameContext -> 委托 LifecycleManager
+     * 仅做: 捕获 deltaTime -> 更新 FrameContext -> 委托 LifecycleManager -> 重置 PerFrameArena
      * 热路径性能预算: < 200ns
      *
      * @param deltaTracker   MC 帧时间追踪器
@@ -37,9 +38,9 @@ public abstract class MixinGameRenderer {
      */
     @Inject(method = "render", at = @At("HEAD"))
     private void onFrameBegin(DeltaTracker deltaTracker, boolean advanceGameTime, CallbackInfo ci) {
+        PerFrameArena.beginFrame();
         FrameContext ctx = FrameContext.get();
         ctx.beginFrame(deltaTracker.getGameTimeDeltaPartialTick(true));
-        // 同步热路径缓存，确保获取到最新的生命周期管理器实例
         HookDispatcher.syncCache();
         LifecycleManager lifecycle = HookDispatcher.getLifecycleManager();
         if (lifecycle != null) lifecycle.beginFrame();
@@ -48,7 +49,7 @@ public abstract class MixinGameRenderer {
     /**
      * 帧结束 - RETURN 注入
      * <p>
-     * 仅做: 委托 LifecycleManager.endFrame()
+     * 仅做: 委托 LifecycleManager.endFrame() + 关闭 PerFrameArena
      *
      * @param ci Mixin 回调信息
      */
@@ -56,5 +57,6 @@ public abstract class MixinGameRenderer {
     private void onFrameEnd(CallbackInfo ci) {
         LifecycleManager lifecycle = HookDispatcher.getLifecycleManager();
         if (lifecycle != null) lifecycle.endFrame();
+        PerFrameArena.endFrame();
     }
 }

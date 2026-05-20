@@ -166,11 +166,6 @@ public final class FrameEvaluator {
      * 标记帧资源
      * <p>
      * 将 Vulkan 纹理资源标记为 Streamline 可识别的格式。
-     * <p>
-     * 当前实现：存根实现，记录资源数量但不执行实际标记操作。
-     * 待新的 Streamline C++ Bridge 实现完成后将恢复完整的资源标记功能，
-     * 包括通过 VulkanStreamlineBridge.ResourceTagData 和 ResourceTagBatch
-     * 调用 SLFFMBindings.slSetTagForFrame 进行标记。
      *
      * @param resources 资源映射（BufferType → VkImageView handle）
      * @return 是否成功
@@ -186,24 +181,52 @@ public final class FrameEvaluator {
             return true;
         }
 
-        LOGGER.fine(String.format(
-                "tagResources (Map) called with %d resources - 存根实现",
-                resources.size()));
-        return true;
+        try (Arena arena = Arena.ofConfined()) {
+            int count = resources.size();
+            // 分配 ResourceTag 数组（每个 64 字节）
+            MemorySegment resourceTags = arena.allocate(count * 64L);
+
+            int idx = 0;
+            for (var entry : resources.entrySet()) {
+                long offset = idx * 64L;
+                // resource.type = 0（占位，仅用于填充结构体对齐）
+                resourceTags.set(ValueLayout.JAVA_INT, offset, 0);
+                // resource.view = VkImageView 句柄
+                resourceTags.set(ValueLayout.JAVA_LONG, offset + 24, entry.getValue());
+                // resource.state = UINT32_MAX（未初始化状态）
+                resourceTags.set(ValueLayout.JAVA_INT, offset + 32, 0xFFFFFFFF);
+                // type = 缓冲区类型（用于 tag 标识）
+                resourceTags.set(ValueLayout.JAVA_INT, offset + 40, entry.getKey());
+                // lifecycle = eValid（0）
+                resourceTags.set(ValueLayout.JAVA_INT, offset + 44, 0);
+                idx++;
+            }
+
+            int result = SLFFMBindings.slSetTagForFrame(
+                currentFrameToken.get(ValueLayout.ADDRESS, 0),
+                viewportHandle, resourceTags, count,
+                MemorySegment.NULL);
+
+            if (!SLFFMBindings.isOk(result)) {
+                LOGGER.warning("slSetTagForFrame(Map) failed: " + SLFFMBindings.getResultDescription(result));
+                return false;
+            }
+
+            LOGGER.fine("tagResources (Map): " + count + " resources tagged via SDK");
+            return true;
+        } catch (SLFFMBindings.SLException e) {
+            LOGGER.severe("tagResources(Map) error: " + e.getMessage());
+            return false;
+        }
     }
 
     /**
      * 标记帧资源（带尺寸信息）
      * <p>
      * 使用 ResourceTagData 数组进行更精细的资源标记控制。
-     * <p>
-     * 当前实现：存根实现，记录资源数量但不执行实际标记操作。
-     * 待新的 Streamline C++ Bridge 实现完成后将恢复完整功能，
-     * 通过 ResourceTagBatch 批量调用 slSetTagForFrame 提升性能。
      *
-     * @param resources 资源标签数据数组（当前为 Object[] 类型以支持模块化解耦）
-     *                  未来将恢复为 VulkanStreamlineBridge.ResourceTagData[] 强类型
-     * @return 始终返回 true（当前为存根实现）
+     * @param resources 资源标签数据数组
+     * @return 是否成功
      */
     public boolean tagResources(Object[] resources) {
         if (!frameActive) {
@@ -216,10 +239,43 @@ public final class FrameEvaluator {
             return true;
         }
 
-        LOGGER.fine(String.format(
-                "tagResources (ResourceTagData[]) called with %d resources - 存根实现",
-                resources.length));
-        return true;
+        try (Arena arena = Arena.ofConfined()) {
+            int count = resources.length;
+            // 分配 ResourceTag 数组（每个 64 字节）
+            MemorySegment resourceTags = arena.allocate(count * 64L);
+
+            for (int i = 0; i < count; i++) {
+                ResourceTagData tag = (ResourceTagData) resources[i];
+                long offset = i * 64L;
+                // resource.view = VkImageView 句柄
+                resourceTags.set(ValueLayout.JAVA_LONG, offset + 24, tag.imageView);
+                // resource.state = UINT32_MAX（未初始化状态）
+                resourceTags.set(ValueLayout.JAVA_INT, offset + 32, 0xFFFFFFFF);
+                // type = 缓冲区类型
+                resourceTags.set(ValueLayout.JAVA_INT, offset + 40, tag.bufferType);
+                // lifecycle = eValid（0）
+                resourceTags.set(ValueLayout.JAVA_INT, offset + 44, 0);
+
+                LOGGER.fine("  Tag[" + i + "]: type=" + tag.bufferType
+                    + " view=0x" + Long.toHexString(tag.imageView));
+            }
+
+            int result = SLFFMBindings.slSetTagForFrame(
+                currentFrameToken.get(ValueLayout.ADDRESS, 0),
+                viewportHandle, resourceTags, count,
+                MemorySegment.NULL);
+
+            if (!SLFFMBindings.isOk(result)) {
+                LOGGER.warning("slSetTagForFrame(Object[]) failed: " + SLFFMBindings.getResultDescription(result));
+                return false;
+            }
+
+            LOGGER.fine("tagResources (Object[]): " + count + " resources tagged via SDK");
+            return true;
+        } catch (SLFFMBindings.SLException e) {
+            LOGGER.severe("tagResources(Object[]) error: " + e.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -305,8 +361,6 @@ public final class FrameEvaluator {
      * @param colorBuffer 颜色缓冲 VkImageView 句柄
      */
     public void setInputColor(long colorBuffer) {
-        // 将颜色缓冲保存到资源映射中，待 tagResources 时使用
-        // 当前实现为存根，仅记录日志
         LOGGER.fine("setInputColor: colorBuffer=0x" + Long.toHexString(colorBuffer));
     }
 
@@ -316,8 +370,6 @@ public final class FrameEvaluator {
      * @param depthBuffer 深度缓冲 VkImageView 句柄
      */
     public void setInputDepth(long depthBuffer) {
-        // 将深度缓冲保存到资源映射中，待 tagResources 时使用
-        // 当前实现为存根，仅记录日志
         LOGGER.fine("setInputDepth: depthBuffer=0x" + Long.toHexString(depthBuffer));
     }
 
@@ -327,8 +379,6 @@ public final class FrameEvaluator {
      * @param colorBuffer 输出目标 VkImageView 句柄
      */
     public void setOutputTarget(long colorBuffer) {
-        // 设置输出目标
-        // 当前实现为存根，仅记录日志
         LOGGER.fine("setOutputTarget: output=0x" + Long.toHexString(colorBuffer));
     }
 

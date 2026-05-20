@@ -45,35 +45,38 @@ public final class SLContext {
     private static final Logger LOGGER = Logger.getLogger(SLContext.class.getName());
 
     /**
-     * sl::Preferences 结构布局
+     * sl::Preferences 结构布局 (Streamline SDK 2.10.3)
      * <p>
-     * 基于 sl_struct.h:
+     * 基于 sl_core_types.h 中的定义:
      * <pre>
      * struct Preferences {
-     *     StructureType sType;                // 4 bytes
-     *     const BaseStructure* next;          // 8 bytes
-     *     uint64_t flags;                     // 8 bytes
-     *     bool disableConsoleLogging;         // 1 byte
-     *     bool logDeprecated;                 // 1 byte
-     *     bool enableVerboseLogging;          // 1 byte
-     *     char applicationId[256];            // 256 bytes
-     *     char engineId[256];                 // 256 bytes
-     *     uint32_t engineVersion;             // 4 bytes
-     *     uint32_t applicationVersion;        // 4 bytes
-     *     Path logPath;                       // 260 bytes (MAX_PATH)
-     *     Path cachePath;                     // 260 bytes
-     *     Path pluginPath;                    // 260 bytes
-     *     Path rendererHookLibraryPath;       // 260 bytes
-     *     uint32_t numDevicesToMask;          // 4 bytes
-     *     uint32_t* devicesToMask;            // 8 bytes
-     *     uint32_t numPluginsToLoad;          // 4 bytes
-     *     Feature* pluginsToLoad;             // 8 bytes
-     *     uint32_t numPluginsToSkip;          // 4 bytes
-     *     Feature* pluginsToSkip;             // 8 bytes
+     *     StructureType sType;                    // 16 bytes (GUID)
+     *     uint32_t structVersion;                 // 4 bytes
+     *     bool showConsole;                       // 1 byte
+     *     LogLevel logLevel;                      // 4 bytes (enum)
+     *     const wchar_t** pathsToPlugins;         // 8 bytes
+     *     uint32_t numPathsToPlugins;             // 4 bytes
+     *     const wchar_t* pathToLogsAndData;       // 8 bytes
+     *     PFun_ResourceAllocateCallback* ...      // 8 bytes
+     *     PFun_ResourceReleaseCallback* ...       // 8 bytes
+     *     PFun_LogMessageCallback* ...            // 8 bytes
+     *     PreferenceFlags flags;                  // 8 bytes (64-bit flag)
+     *     const Feature* featuresToLoad;          // 8 bytes
+     *     uint32_t numFeaturesToLoad;             // 4 bytes
+     *     uint32_t applicationId;                 // 4 bytes
+     *     EngineType engine;                      // 4 bytes
+     *     const char* engineVersion;              // 8 bytes
+     *     const char* projectId;                  // 8 bytes
+     *     RenderAPI renderAPI;                    // 4 bytes
      * };
      * </pre>
      */
-    private static final long PREFERENCES_SIZE = 1348L;
+    private static final long PREFERENCES_SIZE = 132L;
+
+    /** EngineType::eCustom */
+    private static final int ENGINE_TYPE_CUSTOM = 2;
+    /** RenderAPI::eVulkan */
+    private static final int RENDER_API_VULKAN = 2;
 
     private boolean loaded = false;
     private boolean initialized = false;
@@ -148,56 +151,42 @@ public final class SLContext {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment pref = arena.allocate(PREFERENCES_SIZE);
 
-            // sType = SL_STRUCT_TYPE_PREFERENCES
-            pref.set(ValueLayout.JAVA_INT, 0, 0x01);
+            // sType (BaseStructure GUID) = 16 bytes, 留空（SDK 通过 structVersion 识别）
+            // structVersion = 1 @ offset 16
+            pref.set(ValueLayout.JAVA_INT, 16, 1);
 
-            // next = nullptr
-            pref.set(ValueLayout.ADDRESS, 8, MemorySegment.NULL);
-
-            // flags - 使用帧资源标记
-            long flags = SLFFMBindings.PREFERENCE_FLAG_USE_FRAME_BASED_RESOURCE_TAGGING;
-            pref.set(ValueLayout.JAVA_LONG, 16, flags);
-
-            // disableConsoleLogging = false
-            pref.set(ValueLayout.JAVA_BOOLEAN, 24, false);
-
-            // logDeprecated = false
-            pref.set(ValueLayout.JAVA_BOOLEAN, 25, false);
-
-            // enableVerboseLogging = false
-            pref.set(ValueLayout.JAVA_BOOLEAN, 26, false);
-
-            // applicationId (offset 27, 256 bytes)
-            MemorySegment appIdSeg = pref.asSlice(27, 256);
-            appIdSeg.copyFrom(arena.allocateFrom(applicationId));
-
-            // engineId (offset 283, 256 bytes)
-            MemorySegment engineIdSeg = pref.asSlice(283, 256);
-            engineIdSeg.copyFrom(arena.allocateFrom(engineId));
-
-            // applicationVersion (offset 539)
-            pref.set(ValueLayout.JAVA_INT, 539, 1);
-
-            // engineVersion (offset 543)
-            pref.set(ValueLayout.JAVA_INT, 543, 262);
-
-            // logPath (offset 547, 260 bytes)
-            if (logPath != null) {
-                MemorySegment logPathSeg = pref.asSlice(547, 260);
-                logPathSeg.copyFrom(arena.allocateFrom(logPath));
-            }
-
-            // cachePath (offset 807, 260 bytes)
-            if (cachePath != null) {
-                MemorySegment cachePathSeg = pref.asSlice(807, 260);
-                cachePathSeg.copyFrom(arena.allocateFrom(cachePath));
-            }
-
-            // pluginPath (offset 1067, 260 bytes)
+            // 设置路径: pathsToPlugins = null, pathToLogsAndData = 插件路径
             if (pluginPath != null) {
-                MemorySegment pluginPathSeg = pref.asSlice(1067, 260);
-                pluginPathSeg.copyFrom(arena.allocateFrom(pluginPath));
+                MemorySegment pathSeg = arena.allocateFrom(pluginPath);
+                // pathToLogsAndData @ offset 48
+                pref.set(ValueLayout.ADDRESS, 48, pathSeg);
             }
+
+            // flags: 启用基于帧的资源标记
+            long flags = SLFFMBindings.PREFERENCE_FLAG_USE_FRAME_BASED_RESOURCE_TAGGING;
+            pref.set(ValueLayout.JAVA_LONG, 80, flags);
+
+            // featuresToLoad = null, numFeaturesToLoad = 0（按需加载）
+            pref.set(ValueLayout.ADDRESS, 88, MemorySegment.NULL);
+            pref.set(ValueLayout.JAVA_INT, 96, 0);
+
+            // applicationId = 0 (使用 engine + engineVersion 替代)
+            pref.set(ValueLayout.JAVA_INT, 100, 0);
+
+            // engine = eCustom
+            pref.set(ValueLayout.JAVA_INT, 104, ENGINE_TYPE_CUSTOM);
+
+            // engineVersion = engineId 字符串指针
+            if (engineId != null) {
+                MemorySegment engVerSeg = arena.allocateFrom(engineId);
+                pref.set(ValueLayout.ADDRESS, 108, engVerSeg);
+            }
+
+            // projectId = null
+            pref.set(ValueLayout.ADDRESS, 116, MemorySegment.NULL);
+
+            // renderAPI = eVulkan
+            pref.set(ValueLayout.JAVA_INT, 124, RENDER_API_VULKAN);
 
             int result = SLFFMBindings.slInit(pref);
             if (!SLFFMBindings.isOk(result)) {
@@ -228,32 +217,13 @@ public final class SLContext {
 
         this.bridge = bridge;
 
-        /**
-         * 通过反射调用 bridge.registerVulkanInfo() 方法
-         * <p>
-         * 由于 bridge 类型为 Object（模块化解耦设计），需要使用反射调用。
-         * 这种方式允许在运行时动态绑定不同的 VulkanStreamlineBridge 实现，
-         * 避免编译时依赖特定实现类。
-         * <p>
-         * 性能说明：反射调用仅在初始化阶段执行一次，不影响运行时性能。
-         *
-         * @param bridge 桥接对象实例
-         * @return 是否成功注册 Vulkan 信息
-         */
-        try {
-            java.lang.reflect.Method method = bridge.getClass().getMethod("registerVulkanInfo");
-            this.vulkanInfoSet = (Boolean) method.invoke(bridge);
-        } catch (NoSuchMethodException e) {
-            LOGGER.severe("Bridge 对象缺少 registerVulkanInfo() 方法: " + e.getMessage());
+        if (bridge == null) {
+            LOGGER.severe("Bridge 对象为 null");
             this.vulkanInfoSet = false;
-        } catch (IllegalAccessException e) {
-            LOGGER.severe("无法访问 Bridge 的 registerVulkanInfo() 方法: " + e.getMessage());
-            this.vulkanInfoSet = false;
-        } catch (java.lang.reflect.InvocationTargetException e) {
-            LOGGER.severe("调用 Bridge.registerVulkanInfo() 时发生异常: " +
-                    (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
-            this.vulkanInfoSet = false;
+            return false;
         }
+
+        this.vulkanInfoSet = bridge.registerVulkanInfo();
         return vulkanInfoSet;
     }
 

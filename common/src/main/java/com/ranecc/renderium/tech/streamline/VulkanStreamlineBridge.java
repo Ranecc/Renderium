@@ -1,8 +1,13 @@
 package com.ranecc.renderium.tech.streamline;
 
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
+
+import com.ranecc.renderium.tech.streamline.ffm.SLFFMBindings;
 
 /**
  * Vulkan-Streamline 桥接器 — 连接 Vulkan API 与 Streamline SDK
@@ -11,6 +16,12 @@ public class VulkanStreamlineBridge {
     private static final Logger LOGGER = Logger.getLogger(VulkanStreamlineBridge.class.getName());
 
     private static volatile VulkanStreamlineBridge instance;
+
+    // sl::VulkanInfo 结构体总大小（88 字节，包含 BaseStructure 和对齐填充）
+    private static final long VULKAN_INFO_SIZE = 88L;
+
+    // Streamline SDK 2.10.3 VulkanInfo 结构版本号（kStructVersion3）
+    private static final int K_STRUCT_VERSION_VULKAN_INFO = 3;
 
     private final AtomicLong deviceHandle = new AtomicLong(0L);
     private final AtomicLong instanceHandle = new AtomicLong(0L);
@@ -110,6 +121,89 @@ public class VulkanStreamlineBridge {
         LOGGER.info("VulkanStreamlineBridge: Vulkan info registered (device=0x"
             + Long.toHexString(device) + ")");
         return true;
+    }
+
+    /**
+     * 构建真实的 sl::VulkanInfo 结构体并调用 SLFFMBindings.slSetVulkanInfo()
+     * <p>
+     * sl::VulkanInfo 结构体布局（Streamline SDK 2.10.3, kStructVersion3, 88 字节）：
+     * <pre>
+     * Offset  Size  Field
+     *  0       16   BaseStructure.sType (GUID)
+     *  16       4   BaseStructure.structVersion (uint32)
+     *  20       4   padding
+     *  24       8   device (VkDevice)
+     *  32       8   instance (VkInstance)
+     *  40       8   physicalDevice (VkPhysicalDevice)
+     *  48       4   computeQueueIndex (uint32)
+     *  52       4   computeQueueFamily (uint32)
+     *  56       4   graphicsQueueIndex (uint32)
+     *  60       4   graphicsQueueFamily (uint32)
+     *  64       4   opticalFlowQueueIndex (uint32)
+     *  68       4   opticalFlowQueueFamily (uint32)
+     *  72       1   useNativeOpticalFlowMode (bool)
+     *  73       3   padding
+     *  76       4   computeQueueCreateFlags (uint32)
+     *  80       4   graphicsQueueCreateFlags (uint32)
+     *  84       4   opticalFlowQueueCreateFlags (uint32)
+     * </pre>
+     * <p>
+     * 此方法在 Streamline 初始化后、特性评估前调用。
+     * 必须确保 {@link #setVulkanInfo} 已先被调用以设置 Vulkan 句柄。
+     *
+     * @return true 如果 slSetVulkanInfo 调用成功
+     */
+    public boolean registerVulkanInfo() {
+        // 确保桥接器已初始化
+        if (!initialized.get()) {
+            LOGGER.severe("VulkanStreamlineBridge not initialized - call initialize() first");
+            return false;
+        }
+
+        long devHandle = deviceHandle.get();
+        long instHandle = instanceHandle.get();
+        long physDevHandle = physicalDeviceHandle.get();
+
+        // 验证 Vulkan 句柄已通过 setVulkanInfo 设置
+        if (devHandle == 0L || instHandle == 0L || physDevHandle == 0L) {
+            LOGGER.warning("Vulkan handles not set - call setVulkanInfo() first");
+            return false;
+        }
+
+        try (Arena arena = Arena.ofConfined()) {
+            // sl::VulkanInfo 结构体总大小 88 字节（含 BaseStructure 和对齐填充）
+            MemorySegment vkInfo = arena.allocate(VULKAN_INFO_SIZE);
+
+            // 设置 structVersion = 3（kStructVersion3），位于 BaseStructure 之后
+            vkInfo.set(ValueLayout.JAVA_INT, 16, K_STRUCT_VERSION_VULKAN_INFO);
+
+            // 设置 Vulkan 设备句柄（VkDevice, 8 字节）
+            vkInfo.set(ValueLayout.JAVA_LONG, 24, devHandle);
+            // 设置 Vulkan 实例句柄（VkInstance, 8 字节）
+            vkInfo.set(ValueLayout.JAVA_LONG, 32, instHandle);
+            // 设置 Vulkan 物理设备句柄（VkPhysicalDevice, 8 字节）
+            vkInfo.set(ValueLayout.JAVA_LONG, 40, physDevHandle);
+
+            // 队列索引默认 0 —— 若需要特定队列可扩展 setVulkanInfo 存储后设置
+            // computeQueueIndex @48: 默认 0
+            // computeQueueFamily @52: 默认 0
+            // graphicsQueueIndex @56: 默认 0
+            // graphicsQueueFamily @60: 默认 0
+
+            int result = SLFFMBindings.slSetVulkanInfo(vkInfo);
+            boolean ok = SLFFMBindings.isOk(result);
+            if (ok) {
+                LOGGER.info("VulkanStreamlineBridge: slSetVulkanInfo 成功 (device=0x"
+                    + Long.toHexString(devHandle) + ")");
+            } else {
+                LOGGER.warning("VulkanStreamlineBridge: slSetVulkanInfo 失败: "
+                    + SLFFMBindings.getResultDescription(result));
+            }
+            return ok;
+        } catch (SLFFMBindings.SLException e) {
+            LOGGER.severe("VulkanStreamlineBridge: slSetVulkanInfo 异常: " + e.getMessage());
+            return false;
+        }
     }
 
     public boolean tagResources(ResourceTagData[] resources) {
