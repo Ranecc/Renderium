@@ -66,7 +66,16 @@ public final class VulkanBufferHelper {
             var seg = java.lang.foreign.MemorySegment.ofAddress(ptr)
                 .reinterpret(data.length);
             for (int i = 0; i < data.length; i++) seg.set(ValueLayout.JAVA_BYTE, i, data[i]);
-            VulkanAPIRegistry.invoke("vkFlushMappedMemoryRanges", device, 1, ppData.address());
+
+            // VkMappedMemoryRange: [sType(8), pNext(8), memory(8), offset(8), size(8)] = 40 bytes
+            var range = arena.allocate(ValueLayout.JAVA_LONG, 5);
+            range.setAtIndex(ValueLayout.JAVA_LONG, 0, 37L);  // VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE
+            range.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);   // pNext
+            range.setAtIndex(ValueLayout.JAVA_LONG, 2, vkMemory);
+            range.setAtIndex(ValueLayout.JAVA_LONG, 3, offset);
+            range.setAtIndex(ValueLayout.JAVA_LONG, 4, (long) data.length);
+            VulkanAPIRegistry.invoke("vkFlushMappedMemoryRanges", device, 1, range.address());
+
             VulkanAPIRegistry.invoke("vkUnmapMemory", device, vkMemory);
             return true;
         } catch (Throwable t) {

@@ -277,9 +277,9 @@ public final class ShaderPipelineFactory {
         } catch (Exception e) {
             // 如果 VulkanFFM 暂时没有此方法，返回占位值并记录日志
             LOGGER.warning("VulkanFFM.vkCreateShaderModule() 暂不可用，" +
-                    "请确保 VulkanFFM 实现了此方法。当前返回占位句柄。" +
+                    "请确保 VulkanFFM 实现了此方法。当前返回 0L。" +
                     "错误: " + e.getMessage());
-            return 0xDEADBEEFL; // 占位值，实际使用时需替换为真实实现
+            return 0L; // 返回 0L 而非 0xDEADBEEFL，避免伪装成有效指针
         }
     }
 

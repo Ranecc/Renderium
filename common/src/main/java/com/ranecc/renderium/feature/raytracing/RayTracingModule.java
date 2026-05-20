@@ -1025,13 +1025,17 @@ public final class RayTracingModule implements RenderiumModule, AutoCloseable {
 
     /**
      * 生成占位符句柄 (用于开发阶段)
+     * <p>
+     * 始终返回 0L（空句柄），由上游调用方进行 null 检查。
+     * 0xDEAD_BEEF 风格的值外观类似于有效指针，
+     * 可能在 GPU 驱动层引发难以诊断的错误。
      *
-     * @param id 标识符
-     * @return 模拟的句柄值
+     * @param id 标识符（已忽略，统一返回 0L）
+     * @return 始终返回 0L
      */
     private long generatePlaceholderHandle(int id) {
-        // 实际集成时删除此方法，使用真实的 VkAccelerationStructureKHR 句柄
-        return 0xDEAD_BEEFL + id; // 仅用于占位
+        // 返回 0L 而非 0xDEAD_BEEFL + id，避免伪装成有效指针引发 GPU 驱动错误
+        return 0L;
     }
 
     /**

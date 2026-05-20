@@ -175,7 +175,7 @@ public class ShadowMapNodeV3Example extends AbstractPipelineNode {
         }
 
         // 返回虚拟资源 ID（实际实现中应为 GPU Buffer 句柄）
-        return 0xDEAD_BEEFL;  // Placeholder
+        return 0L;  // 返回 0L 而非 0xDEAD_BEEFL，避免伪装成有效指针
     }
 
     // ==================== 辅助方法 ====================

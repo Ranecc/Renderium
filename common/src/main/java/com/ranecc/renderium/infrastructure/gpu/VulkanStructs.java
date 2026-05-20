@@ -116,17 +116,20 @@ public final class VulkanStructs {
     }
 
     /**
-     * VkDescriptorPoolCreateInfo — 对齐布局 (6×JAVA_LONG, 48B)
+     * VkDescriptorPoolCreateInfo — 对齐布局 (40B)
+     *   sType(I4)+padding(4)+pNext(L8)+flags(I4)+maxSets(I4)+poolSizeCount(I4)+padding(4)+pPoolSizes(L8)
      */
     public static MemorySegment createDescriptorPoolCreateInfoAligned(
             Arena arena, int maxSets, int poolSizeCount, MemorySegment pPoolSizes) {
-        MemorySegment s = arena.allocate(ValueLayout.JAVA_LONG, 6);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L); // pNext
-        s.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L); // flags
-        s.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) maxSets);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 4, (long) poolSizeCount);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 5, pPoolSizes.address());
+        var I = ValueLayout.JAVA_INT;
+        var L = ValueLayout.JAVA_LONG;
+        MemorySegment s = arena.allocate(40);
+        s.set(I, 0, 20);  // VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
+        s.set(L, 8, 0L);  // pNext
+        s.set(I, 16, 0);  // flags
+        s.set(I, 20, maxSets);
+        s.set(I, 24, poolSizeCount);
+        s.set(L, 32, pPoolSizes.address());
         return s;
     }
 
@@ -294,20 +297,20 @@ public final class VulkanStructs {
         return s;
     }
 
-    // ============================
-    //  12. VkPipelineLayoutCreateInfo — 对齐布局 (7×JAVA_LONG, 56B)
-    // ============================
+    /** VkPipelineLayoutCreateInfo — 对齐布局 (48B) */
     public static MemorySegment createPipelineLayoutCreateInfo(
             Arena arena, int setLayoutCount, MemorySegment pSetLayouts,
             int pushConstantRangeCount, MemorySegment pPushConstantRanges) {
-        MemorySegment s = arena.allocate(ValueLayout.JAVA_LONG, 7);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L); // pNext
-        s.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L); // flags
-        s.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) setLayoutCount);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 4, pSetLayouts.address());
-        s.setAtIndex(ValueLayout.JAVA_LONG, 5, (long) pushConstantRangeCount);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 6, pPushConstantRanges.address());
+        var I = ValueLayout.JAVA_INT;
+        var L = ValueLayout.JAVA_LONG;
+        MemorySegment s = arena.allocate(48);
+        s.set(I, 0, 13);  // VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO
+        s.set(L, 8, 0L);  // pNext
+        s.set(I, 16, 0);  // flags
+        s.set(I, 20, setLayoutCount);
+        s.set(L, 24, pSetLayouts.address());
+        s.set(I, 32, pushConstantRangeCount);
+        s.set(L, 40, pPushConstantRanges.address());
         return s;
     }
 
@@ -329,17 +332,17 @@ public final class VulkanStructs {
         return s;
     }
 
-    // ============================
-    //  14. VkDescriptorSetLayoutCreateInfo — 对齐布局 (5×JAVA_LONG, 40B)
-    // ============================
+    /** VkDescriptorSetLayoutCreateInfo — 对齐布局 (32B) */
     public static MemorySegment createDescriptorSetLayoutCreateInfo(
             Arena arena, int bindingCount, MemorySegment pBindings, int flags) {
-        MemorySegment s = arena.allocate(ValueLayout.JAVA_LONG, 5);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO); // sType = 43
-        s.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L); // pNext
-        s.setAtIndex(ValueLayout.JAVA_LONG, 2, (long) flags);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) bindingCount);
-        s.setAtIndex(ValueLayout.JAVA_LONG, 4, pBindings.address());
+        var I = ValueLayout.JAVA_INT;
+        var L = ValueLayout.JAVA_LONG;
+        MemorySegment s = arena.allocate(32);
+        s.set(I, 0, 43);  // VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO
+        s.set(L, 8, 0L);  // pNext
+        s.set(I, 16, flags);
+        s.set(I, 20, bindingCount);
+        s.set(L, 24, pBindings.address());
         return s;
     }
 

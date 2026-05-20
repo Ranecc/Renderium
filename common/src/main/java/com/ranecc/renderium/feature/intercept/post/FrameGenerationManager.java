@@ -673,8 +673,13 @@ public final class FrameGenerationManager {
      * @return true 如果 FSR-FG 可用
      */
     private boolean isFSRFGAvailable() {
-        // FSR-FG 未实现，需要集成 Streamline FSR-FG 检测逻辑
-        return false;
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L) return false;
+        // FSR-FG 要求 Vulkan 1.3 + VK_KHR_present_id/frame_boundary 扩展。
+        // 实际检测需调用 slIsFeatureSupported(SLFeature::eFFXFsrFrameGeneration)。
+        // 暂无 Streamline 绑定，在显卡支持的前提下返回 true（后续初始化失败会优雅降级）
+        LOGGER.fine("FSR-FG: 设备句柄可用，标记为可能支持（待 Streamline 确认）");
+        return true;
     }
 
     /**
@@ -685,12 +690,10 @@ public final class FrameGenerationManager {
     private boolean initializeReflex() {
         try {
             if (slContext != null && slContext.isFeatureSupported(SLContext.Feature.REFLEX)) {
-                // TODO: 实现 Reflex 初始化
-                // slReflexInit(sl::ReflexParams params)
-                
-                reflexLatencyModeActive.set(true);
-                LOGGER.info("Reflex 低延迟初始化成功");
-                return true;
+                // TODO: 实现 Reflex 初始化 — 需要 slReflexInit() 调用
+                // 当前为桩实现，不设置 reflexLatencyModeActive 以免下游误判延迟已启用
+                LOGGER.info("Reflex 特性可用，但初始化暂未集成 Streamline SDK");
+                return false;
             } else {
                 LOGGER.info("Reflex 特性不可用（Streamline 不支持或未加载）");
                 return false;

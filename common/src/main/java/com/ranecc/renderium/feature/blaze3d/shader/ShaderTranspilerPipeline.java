@@ -3,6 +3,11 @@
 
 package com.ranecc.renderium.feature.blaze3d.shader;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanStructs;
+
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.nio.file.*;
 import java.util.List;
@@ -281,11 +286,45 @@ public final class ShaderTranspilerPipeline implements AutoCloseable {
         }
     }
 
-    /** 创建 UBO Buffer (占位实现) */
+    /**
+     * 创建 UBO Buffer。
+     * <p>
+     * 通过 VulkanAPIRegistry 调用 vkCreateBuffer 创建真实的 VkBuffer，
+     * Buffer 大小取 memory 段大小与 256 字节中的较大值。
+     *
+     * @param memory SPIR-V 数据段，用于确定 Buffer 大小基准
+     * @return VkBuffer 句柄，失败返回 0L
+     */
     private long createUBOBuffer(MemorySegment memory) {
-        // TODO: VulkanFFM.vkCreateBuffer() → vkAllocateMemory() → vkBindBufferMemory()
-        // 返回 VkDeviceMemory handle
-        return 0L; // 占位值
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L) {
+            LOGGER.warning("createUBOBuffer: VulkanDevice 不可用");
+            return 0L;
+        }
+
+        // 根据传入的 memory 大小计算 UBO 大小，至少 256 字节
+        long bufferSize = Math.max(memory.byteSize(), 256);
+
+        try (Arena arena = Arena.ofConfined()) {
+            // 创建 VkBufferCreateInfo: size = bufferSize, usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+            MemorySegment createInfo = VulkanStructs.createBufferCreateInfo(
+                    arena, bufferSize, 0x00000010);
+            long[] outBuffer = new long[1];
+            int result = (int) VulkanAPIRegistry.invoke(
+                    "vkCreateBuffer", device, createInfo.address(), 0L, outBuffer);
+            if (result != 0) {
+                LOGGER.warning("createUBOBuffer: vkCreateBuffer 返回 " + result);
+                return 0L;
+            }
+            if (outBuffer[0] == 0L) {
+                LOGGER.warning("createUBOBuffer: vkCreateBuffer 返回空句柄");
+                return 0L;
+            }
+            return outBuffer[0];
+        } catch (Throwable t) {
+            LOGGER.warning("createUBOBuffer 失败: " + t.getMessage());
+            return 0L;
+        }
     }
 
     // ==================== 内部数据结构 ====================

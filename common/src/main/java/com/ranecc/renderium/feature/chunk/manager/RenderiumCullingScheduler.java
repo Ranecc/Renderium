@@ -294,7 +294,8 @@ public class RenderiumCullingScheduler {
         // GPU 结果通过同步 fence + staging buffer 回读到 CPU
         // 当前：GPU 端 Buffer 已创建（Batch 2），DescriptorPool + 回读链路待后续补充
         // TODO: 实现 vkCmdCopyBuffer + fence wait + CPU readback 链路
-        return null; // 待 GPU readback 就绪后返回 bufferB 数据
+        LOGGER.fine("L2 遮挡剔除: GPU readback 未实现，回退到空结果");
+        return new HashSet<>(); // 待 GPU readback 就绪后返回 bufferB 数据
     }
 
     /**

@@ -357,6 +357,8 @@ public final class MeshShaderRenderer implements AutoCloseable {
      * Mesh Shader 工作模式枚举
      */
     public enum MeshShaderMode {
+        /** 未检测（Vulkan 调用未集成前的占位状态）*/
+        NONE,
         /** 不支持 Mesh Shader（需降级）*/
         UNSUPPORTED,
         /** 使用 NV_mesh_shader 扩展（Vulkan 1.2+）*/
@@ -496,16 +498,12 @@ public final class MeshShaderRenderer implements AutoCloseable {
 
             // ===== 模拟检测结果（开发阶段占位符）=====
             // TODO: 移除此模拟代码，替换为上面的真实 Vulkan API 调用
-            this.extMeshShaderSupported = false;  // 假设暂不支持 EXT
-            this.nvMeshShaderSupported = true;    // 假设支持 NV（用于开发测试）
-            this.activeMode = MeshShaderMode.NV_MESH_SHADER;
+            // 当前未集成 Vulkan vkGetPhysicalDeviceFeatures2 调用，全部置为不可用
+            this.extMeshShaderSupported = false;
+            this.nvMeshShaderSupported = false;
+            this.activeMode = MeshShaderMode.NONE;
 
-            LOGGER.info(String.format(
-                    "✓ Mesh Shader 支持检测完成: mode=%s, NV=%b, EXT=%b",
-                    this.activeMode.name(),
-                    this.nvMeshShaderSupported,
-                    this.extMeshShaderSupported
-            ));
+            LOGGER.warning("Mesh Shader 检测暂未集成 Vulkan vkGetPhysicalDeviceFeatures2 调用");
 
             return this.activeMode != MeshShaderMode.UNSUPPORTED;
 

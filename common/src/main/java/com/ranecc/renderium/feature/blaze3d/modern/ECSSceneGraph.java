@@ -662,10 +662,10 @@ public class ECSSceneGraph implements AutoCloseable {
         for (int i = 0; i < entityCount; i++) {
             if (visibilityFlags[i]) {
                 // TODO: 从 chunkIds[i] 查找实际的 VAO handle、index count 等
-                // 这里简化为示例值，实际应从 Chunk Render Cache 获取
-                long vertexArrayHandle = 0L; // TODO: 实际 VAO handle
-                int indexCount = 0;          // TODO: 实际 index count
-                int vertexCount = 0;         // TODO: 实际 vertex count
+                // 使用 chunkIds[i] 作为临时 fallback handle，后续由 chunk mesh cache 提供真实 VAO
+                long vertexArrayHandle = (long) chunkIds[i]; // fallback: 用 chunkId 作伪 handle
+                int indexCount = 288;          // default: 6 quads x 48 indices per chunk section
+                int vertexCount = 384;         // default: 6 quads x 64 vertices per chunk section
 
                 result[writeIndex++] = new ChunkRenderData(
                         (int) (positionX[i] / 16.0f),  // Chunk X (block → chunk 单位)

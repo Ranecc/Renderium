@@ -41,6 +41,11 @@ public final class VulkanDeviceHolder {
     /** 设备就绪后的回调（由 Feature 层注册，Platform 层触发） */
     private static volatile Runnable onDeviceReady;
 
+    /** 命令池句柄（由 MixinRenderSystem 写入） */
+    private final AtomicLong vkCommandPool = new AtomicLong(0L);
+    /** 队列族索引（由 MixinRenderSystem 写入） */
+    private volatile int queueFamily = 0;
+
     private VulkanDeviceHolder() {}
 
     public static VulkanDeviceHolder getInstance() { return INSTANCE; }
@@ -75,8 +80,13 @@ public final class VulkanDeviceHolder {
      */
     public void setVulkanDeviceObj(Object obj) { this.vulkanDeviceObj = obj; }
 
-    public int getQueueFamily() { return 0; }
-    public long getVkCommandPool() { return 0L; }
+    /** 设置命令池句柄（由 MixinRenderSystem 写入） */
+    public void setVkCommandPool(long pool) { this.vkCommandPool.set(pool); }
+    /** 设置队列族索引（由 MixinRenderSystem 写入） */
+    public void setQueueFamily(int family) { this.queueFamily = family; }
+
+    public int getQueueFamily() { return queueFamily; }
+    public long getVkCommandPool() { return vkCommandPool.get(); }
 
     public boolean isInitialized() { return initialized.get(); }
     public boolean isDegraded() { return degraded.get(); }
