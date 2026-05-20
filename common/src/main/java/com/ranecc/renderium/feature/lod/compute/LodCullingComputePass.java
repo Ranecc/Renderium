@@ -3,6 +3,7 @@ package com.ranecc.renderium.feature.lod.compute;
 
 import java.io.IOException;
 import java.io.InputStream;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
@@ -1006,19 +1007,19 @@ public final class LodCullingComputePass {
      * @throws Exception 如果创建失败
      */
     private static long createShaderModuleInternal(byte[] spirvCode, String name) throws Exception {
-        try (Arena arena = Arena.ofConfined()) {
+        {
             // 构建 VkShaderModuleCreateInfo 结构体
             // sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO (9)
             // codeSize = spirvCode.length
             // pCode = spirvCode 地址
 
-            MemorySegment createInfo = arena.allocate(ValueLayout.JAVA_LONG, 4);  // 简化的结构体
+            MemorySegment createInfo = PerFrameArena.allocateLongs(4);  // 简化的结构体
             createInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);  // sType
             createInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);  // pNext
             createInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, spirvCode.length);  // codeSize
             // pCode 需要指向 SPIR-V 数据...
 
-            MemorySegment shaderModuleOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment shaderModuleOut = PerFrameArena.allocateLongs(1);
 
             // 调用 vkCreateShaderModule
             int result = VK_SUCCESS;
@@ -1065,7 +1066,7 @@ public final class LodCullingComputePass {
             throw new IllegalStateException("FFM 方法句柄未加载");
         }
 
-        try (Arena arena = Arena.ofConfined()) {
+        {
             // ==================== Hi-Z Build Descriptor Set Layout ====================
             // 布局定义：
             //   binding 0: depthBuffer      -> COMBINED_IMAGE_SAMPLER (采样深度缓冲)
@@ -1078,7 +1079,7 @@ public final class LodCullingComputePass {
             int bindingFieldCount = 5;
 
             // --- 构建 Hi-Z Build 的 3 个 Binding ---
-            MemorySegment hizBindings = arena.allocate(ValueLayout.JAVA_LONG, MAX_HIZ_MIP_LEVELS * bindingFieldCount);
+            MemorySegment hizBindings = PerFrameArena.allocateLongs(MAX_HIZ_MIP_LEVELS * bindingFieldCount);
 
             // Binding 0: depthBuffer (COMBINED_IMAGE_SAMPLER, 1个)
             hizBindings.setAtIndex(ValueLayout.JAVA_LONG, 0, 0L);                                                   // binding = 0
@@ -1107,7 +1108,7 @@ public final class LodCullingComputePass {
             // [2] flags = 0
             // [3] bindingCount = 3
             // [4] pBindings = hizBindings 地址
-            MemorySegment hizCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
+            MemorySegment hizCreateInfo = PerFrameArena.allocateLongs(5);
             hizCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);          // sType = DESCRIPTOR_SET_LAYOUT_CREATE_INFO
             hizCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);           // pNext = null
             hizCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);           // flags = 0
@@ -1115,7 +1116,7 @@ public final class LodCullingComputePass {
             hizCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, hizBindings.address());  // pBindings
 
             // 输出参数：Hi-Z Build Descriptor Set Layout 句柄
-            MemorySegment hizLayoutOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment hizLayoutOut = PerFrameArena.allocateLongs(1);
 
             // 调用 vkCreateDescriptorSetLayout(device, pCreateInfo, pAllocator, pSetLayout)
             int hizResult = VK_SUCCESS;
@@ -1145,7 +1146,7 @@ public final class LodCullingComputePass {
             //   binding 3: visibilityMask  -> STORAGE_BUFFER          (输出可见性掩码)
 
             // 构建 Occlusion Query 的 4 个 Binding
-            MemorySegment occBindings = arena.allocate(ValueLayout.JAVA_LONG, 4 * bindingFieldCount);
+            MemorySegment occBindings = PerFrameArena.allocateLongs(4 * bindingFieldCount);
 
             // Binding 0: objects (STORAGE_BUFFER, 1个)
             occBindings.setAtIndex(ValueLayout.JAVA_LONG, 0, 0L);                                                   // binding = 0
@@ -1176,7 +1177,7 @@ public final class LodCullingComputePass {
             occBindings.setAtIndex(ValueLayout.JAVA_LONG, 19, 0L);                                                 // pImmutableSamplers = null
 
             // VkDescriptorSetLayoutCreateInfo (Occlusion Query):
-            MemorySegment occCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
+            MemorySegment occCreateInfo = PerFrameArena.allocateLongs(5);
             occCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);          // sType = DESCRIPTOR_SET_LAYOUT_CREATE_INFO
             occCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);           // pNext = null
             occCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);           // flags = 0
@@ -1184,7 +1185,7 @@ public final class LodCullingComputePass {
             occCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, occBindings.address());  // pBindings
 
             // 输出参数：Occlusion Query Descriptor Set Layout 句柄
-            MemorySegment occLayoutOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment occLayoutOut = PerFrameArena.allocateLongs(1);
 
             // 调用 vkCreateDescriptorSetLayout
             int occResult = VK_SUCCESS;
@@ -1236,14 +1237,14 @@ public final class LodCullingComputePass {
             throw new IllegalStateException("FFM 方法句柄未加载");
         }
 
-        try (Arena arena = Arena.ofConfined()) {
+        {
             // ==================== VkPushConstantRange ====================
             // 定义 Push Constant 的可访问范围：
             // - stageFlags: 仅计算着色器可访问
             // - offset: 起始偏移量为 0
             // - size: 最大 128 字节（Vulkan 规范要求的最低保证值）
             // 结构体字段: [0] stageFlags, [1] offset, [2] size
-            MemorySegment pushConstantRange = arena.allocate(ValueLayout.JAVA_LONG, 3);
+            MemorySegment pushConstantRange = PerFrameArena.allocateLongs(3);
             pushConstantRange.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VK_SHADER_STAGE_COMPUTE_BIT);  // stageFlags = COMPUTE
             pushConstantRange.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);   // offset = 0
             pushConstantRange.setAtIndex(ValueLayout.JAVA_LONG, 2, 128L); // size = 128 bytes
@@ -1251,7 +1252,7 @@ public final class LodCullingComputePass {
             // ==================== Descriptor Set Layouts 数组 ====================
             // 将两个 Descriptor Set Layout 句柄存入数组
             // Hi-Z Build Pipeline 使用 setLayouts[0], Occlusion Query 使用 setLayouts[1]
-            MemorySegment setLayoutsArr = arena.allocate(ValueLayout.JAVA_LONG, 2);
+            MemorySegment setLayoutsArr = PerFrameArena.allocateLongs(2);
             setLayoutsArr.setAtIndex(ValueLayout.JAVA_LONG, 0, hizBuildDescSetLayout);       // setLayouts[0]: HiZ Build DSL
             setLayoutsArr.setAtIndex(ValueLayout.JAVA_LONG, 1, hizOcclusionDescSetLayout);  // setLayouts[1]: Occlusion DSL
 
@@ -1264,7 +1265,7 @@ public final class LodCullingComputePass {
             // [4] pSetLayouts    = setLayoutsArr 地址
             // [5] pushConstantRangeCount = 1 (一个 Push Constant 范围)
             // [6] pPushConstantRanges = pushConstantRange 地址
-            MemorySegment layoutCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
+            MemorySegment layoutCreateInfo = PerFrameArena.allocateLongs(7);
             layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);                       // sType = PIPELINE_LAYOUT_CREATE_INFO
             layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                        // pNext = null
             layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                        // flags = 0
@@ -1274,7 +1275,7 @@ public final class LodCullingComputePass {
             layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, pushConstantRange.address()); // pPushConstantRanges
 
             // 输出参数：Pipeline Layout 句柄
-            MemorySegment layoutOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment layoutOut = PerFrameArena.allocateLongs(1);
 
             // 调用 vkCreatePipelineLayout(device, pCreateInfo, pAllocator, pPipelineLayout)
             int result = VK_SUCCESS;
@@ -1323,14 +1324,14 @@ public final class LodCullingComputePass {
             throw new IllegalStateException("vkCreateDescriptorPool FFM 句柄未加载");
         }
         long dev = vkDevice;
-        try (Arena arena = Arena.ofConfined()) {
+        try {
             int[][] typeCounts = {
                 {11, 11},  {10, 10},  {12, 2},  {6, 2}
             };
-            MemorySegment poolSizes = VulkanStructs.createPoolSizes(arena, typeCounts);
+            MemorySegment poolSizes = VulkanStructs.createPoolSizes(PerFrameArena.arena(), typeCounts);
             MemorySegment poolInfo = VulkanStructs.createDescriptorPoolCreateInfoAligned(
-                arena, 2, typeCounts.length, poolSizes);
-            MemorySegment poolOut = arena.allocate(ValueLayout.JAVA_LONG);
+                PerFrameArena.arena(), 2, typeCounts.length, poolSizes);
+            MemorySegment poolOut = PerFrameArena.allocateLongs(1);
             int result = (int) vkCreateDescriptorPool.invokeExact(
                 dev, poolInfo.address(), 0L, poolOut.address());
             if (result != 0) throw new RuntimeException("vkCreateDescriptorPool 失败");
@@ -1347,17 +1348,17 @@ public final class LodCullingComputePass {
             throw new IllegalStateException("vkAllocateDescriptorSets 方法句柄未加载");
         }
 
-        try (Arena arena = Arena.ofConfined()) {
+        {
             // ==================== 分配 HiZ Build DescriptorSet ====================
             // VkDescriptorSetAllocateInfo: [0]sType, [1]pNext, [2]descriptorPool, [3]descriptorSetCount, [4]pSetLayouts
-            MemorySegment buildAllocInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
+            MemorySegment buildAllocInfo = PerFrameArena.allocateLongs(5);
             buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);              // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO
             buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);              // pNext
             buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, hizDescriptorPool);
             buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 1L);              // descriptorSetCount = 1
             buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, hizBuildDescSetLayout);
 
-            MemorySegment dsOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment dsOut = PerFrameArena.allocateLongs(1);
             int result;
             try {
                 result = (int) vkAllocateDescriptorSets.invokeExact(vkDevice, buildAllocInfo.address(), dsOut.address());
@@ -1370,14 +1371,14 @@ public final class LodCullingComputePass {
             hizBuildDescSet = dsOut.get(ValueLayout.JAVA_LONG, 0);
 
             // ==================== 分配 Occlusion Query DescriptorSet ====================
-            MemorySegment occAllocInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
+            MemorySegment occAllocInfo = PerFrameArena.allocateLongs(5);
             occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
             occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
             occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, hizDescriptorPool);
             occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 1L);
             occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, hizOcclusionDescSetLayout);
 
-            MemorySegment occDsOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment occDsOut = PerFrameArena.allocateLongs(1);
             try {
                 result = (int) vkAllocateDescriptorSets.invokeExact(vkDevice, occAllocInfo.address(), occDsOut.address());
             } catch (Throwable t) {
@@ -1410,12 +1411,12 @@ public final class LodCullingComputePass {
             throw new IllegalStateException("FFM 方法句柄未加载");
         }
 
-        try (Arena arena = Arena.ofConfined()) {
+        {
             // ==================== 准备着色器入口点名称 "main" ====================
             // Vulkan 要求 pName 指向以 null 结尾的 UTF-8 字符串
             // 使用 asByteBuffer().put() 写入字节数组（兼容所有 Java 版本）
             byte[] mainBytes = "main\0".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            MemorySegment mainName = arena.allocate(mainBytes.length, 1);
+            MemorySegment mainName = PerFrameArena.allocate(mainBytes.length);
             mainName.asByteBuffer().put(mainBytes);
 
             // ==================== 构建 VkPipelineShaderStageCreateInfo 辅助方法 ====================
@@ -1423,7 +1424,7 @@ public final class LodCullingComputePass {
             // [0] sType(10), [1] pNext, [2] flags, [3] stage, [4] module, [5] pName(ptr), [6] pSpecializationInfo
 
             // --- Hi-Z Build Shader Stage ---
-            MemorySegment hizStageInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
+            MemorySegment hizStageInfo = PerFrameArena.allocateLongs(7);
             hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO);                                // sType = PIPELINE_SHADER_STAGE_CREATE_INFO
             hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                                 // pNext = null
             hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                                 // flags = 0
@@ -1432,7 +1433,7 @@ public final class LodCullingComputePass {
             hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, 0L);                                 // pSpecializationInfo = null
 
             // --- Occlusion Query Shader Stage ---
-            MemorySegment occStageInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
+            MemorySegment occStageInfo = PerFrameArena.allocateLongs(7);
             occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO);                                // sType = PIPELINE_SHADER_STAGE_CREATE_INFO
             occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                                 // pNext = null
             occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                                 // flags = 0
@@ -1448,7 +1449,7 @@ public final class LodCullingComputePass {
             int createInfoFieldCount = 7;
 
             // --- Hi-Z Build Pipeline CreateInfo ---
-            MemorySegment hizPipelineInfo = arena.allocate(ValueLayout.JAVA_LONG, createInfoFieldCount);
+            MemorySegment hizPipelineInfo = PerFrameArena.allocateLongs(createInfoFieldCount);
             hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);                    // sType = COMPUTE_PIPELINE_CREATE_INFO
             hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                     // pNext = null
             hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                     // flags = 0
@@ -1458,7 +1459,7 @@ public final class LodCullingComputePass {
             hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, 0xFFFFFFFFL);            // basePipelineIndex = -1 (无基础管线)
 
             // --- Occlusion Query Pipeline CreateInfo ---
-            MemorySegment occPipelineInfo = arena.allocate(ValueLayout.JAVA_LONG, createInfoFieldCount);
+            MemorySegment occPipelineInfo = PerFrameArena.allocateLongs(createInfoFieldCount);
             occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);                    // sType = COMPUTE_PIPELINE_CREATE_INFO
             occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                     // pNext = null
             occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                     // flags = 0
@@ -1469,7 +1470,7 @@ public final class LodCullingComputePass {
 
             // ==================== 构建 CreateInfo 数组（连续内存）====================
             // 将两个 CreateInfo 放入连续内存区域（Vulkan API 需要数组形式传入）
-            MemorySegment createInfos = arena.allocate(ValueLayout.JAVA_LONG, 2 * createInfoFieldCount);
+            MemorySegment createInfos = PerFrameArena.allocateLongs(2 * createInfoFieldCount);
             // 复制 HiZ Build Pipeline CreateInfo
             MemorySegment.copy(hizPipelineInfo, 0, createInfos, 0, createInfoFieldCount * ValueLayout.JAVA_LONG.byteSize());
             // 复制 Occlusion Query Pipeline CreateInfo
@@ -1477,7 +1478,7 @@ public final class LodCullingComputePass {
                     createInfoFieldCount * ValueLayout.JAVA_LONG.byteSize());
 
             // ==================== 输出参数：Pipeline 句柄数组 ====================
-            MemorySegment pipelinesOut = arena.allocate(ValueLayout.JAVA_LONG, 2);  // 两个 Pipeline 句柄
+            MemorySegment pipelinesOut = PerFrameArena.allocateLongs(2);  // 两个 Pipeline 句柄
 
             // ==================== 调用 vkCreateComputePipelines ====================
             // 签名: vkCreateComputePipelines(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines)
@@ -1539,7 +1540,7 @@ public final class LodCullingComputePass {
             throw new IllegalStateException("FFM 方法句柄未加载，无法创建 LOD Pipeline");
         }
 
-        try (Arena arena = Arena.ofConfined()) {
+        {
             // ==================== Step 1: 加载 LOD Compute Shader SPIR-V ====================
             ClassLoader loader = LodCullingComputePass.class.getClassLoader();
             LOD_COMPUTE_SPIRV = loadShaderResource(loader,
@@ -1559,7 +1560,7 @@ public final class LodCullingComputePass {
             // [0] binding, [1] descriptorType, [2] descriptorCount, [3] stageFlags, [4] pImmutableSamplers
             int bindingFieldCount = 5;
 
-            MemorySegment lodBindings = arena.allocate(ValueLayout.JAVA_LONG, 3 * bindingFieldCount);
+            MemorySegment lodBindings = PerFrameArena.allocateLongs(3 * bindingFieldCount);
 
             // Binding 0: chunkBounds (STORAGE_BUFFER, 1个, Shader 只读)
             lodBindings.setAtIndex(ValueLayout.JAVA_LONG, 0, 0L);                                              // binding = 0
@@ -1583,14 +1584,14 @@ public final class LodCullingComputePass {
             lodBindings.setAtIndex(ValueLayout.JAVA_LONG, 14, 0L);                                            // pImmutableSamplers = null
 
             // VkDescriptorSetLayoutCreateInfo (LOD):
-            MemorySegment lodDSLCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
+            MemorySegment lodDSLCreateInfo = PerFrameArena.allocateLongs(5);
             lodDSLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);          // sType = DESCRIPTOR_SET_LAYOUT_CREATE_INFO
             lodDSLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);           // pNext = null
             lodDSLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);           // flags = 0
             lodDSLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 3L);           // bindingCount = 3
             lodDSLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, lodBindings.address());  // pBindings
 
-            MemorySegment lodDSLOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment lodDSLOut = PerFrameArena.allocateLongs(1);
             int dslResult = VK_SUCCESS;
             try {
                 dslResult = (int) VK_CREATE_DESCRIPTOR_SET_LAYOUT.invokeExact(
@@ -1605,16 +1606,16 @@ public final class LodCullingComputePass {
 
             // ==================== Step 4: 创建 LOD Pipeline Layout ====================
             // LOD Pipeline 使用独立的 Layout（不与 Hi-Z 共享，因为 Descriptor Set 不同）
-            MemorySegment lodSetLayoutsArr = arena.allocate(ValueLayout.JAVA_LONG, 1);
+            MemorySegment lodSetLayoutsArr = PerFrameArena.allocateLongs(1);
             lodSetLayoutsArr.setAtIndex(ValueLayout.JAVA_LONG, 0, lodDescriptorSetLayout);
 
             // Push Constant Range (128 bytes, COMPUTE only)
-            MemorySegment lodPushConstRange = arena.allocate(ValueLayout.JAVA_LONG, 3);
+            MemorySegment lodPushConstRange = PerFrameArena.allocateLongs(3);
             lodPushConstRange.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VK_SHADER_STAGE_COMPUTE_BIT);
             lodPushConstRange.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);    // offset = 0
             lodPushConstRange.setAtIndex(ValueLayout.JAVA_LONG, 2, 128L); // size = 128 bytes
 
-            MemorySegment lodPLCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
+            MemorySegment lodPLCreateInfo = PerFrameArena.allocateLongs(7);
             lodPLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);                        // sType = PIPELINE_LAYOUT_CREATE_INFO
             lodPLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                         // pNext = null
             lodPLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                         // flags = 0
@@ -1623,7 +1624,7 @@ public final class LodCullingComputePass {
             lodPLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, 1L);                         // pushConstantRangeCount = 1
             lodPLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, lodPushConstRange.address());// pPushConstantRanges
 
-            MemorySegment lodPOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment lodPOut = PerFrameArena.allocateLongs(1);
             int plResult = VK_SUCCESS;
             try {
                 plResult = (int) VK_CREATE_PIPELINE_LAYOUT.invokeExact(
@@ -1638,11 +1639,11 @@ public final class LodCullingComputePass {
 
             // ==================== Step 5: 创建 LOD Compute Pipeline ====================
             byte[] mainBytes = "main\0".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            MemorySegment mainName = arena.allocate(mainBytes.length, 1);
+            MemorySegment mainName = PerFrameArena.allocate(mainBytes.length);
             mainName.asByteBuffer().put(mainBytes);
 
             // VkPipelineShaderStageCreateInfo (LOD)
-            MemorySegment lodStageInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
+            MemorySegment lodStageInfo = PerFrameArena.allocateLongs(7);
             lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO);                                // sType = PIPELINE_SHADER_STAGE_CREATE_INFO
             lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                                 // pNext = null
             lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                                 // flags = 0
@@ -1652,7 +1653,7 @@ public final class LodCullingComputePass {
 
             // VkComputePipelineCreateInfo (LOD)
             int ciFieldCount = 7;
-            MemorySegment lodPipelineCI = arena.allocate(ValueLayout.JAVA_LONG, ciFieldCount);
+            MemorySegment lodPipelineCI = PerFrameArena.allocateLongs(ciFieldCount);
             lodPipelineCI.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);                      // sType = COMPUTE_PIPELINE_CREATE_INFO
             lodPipelineCI.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                       // pNext = null
             lodPipelineCI.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                       // flags = 0
@@ -1661,7 +1662,7 @@ public final class LodCullingComputePass {
             lodPipelineCI.setAtIndex(ValueLayout.JAVA_LONG, 5, 0L);                       // basePipelineHandle = NULL
             lodPipelineCI.setAtIndex(ValueLayout.JAVA_LONG, 6, 0xFFFFFFFFL);              // basePipelineIndex = -1
 
-            MemorySegment lodPipeOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment lodPipeOut = PerFrameArena.allocateLongs(1);
             int pipeResult = VK_SUCCESS;
             try {
                 pipeResult = (int) VK_CREATE_COMPUTE_PIPELINES.invokeExact(
@@ -1709,7 +1710,7 @@ public final class LodCullingComputePass {
             throw new IllegalStateException("FFM 方法句柄未加载");
         }
 
-        try (Arena arena = Arena.ofConfined()) {
+        {
             // ==================== 获取计算队列家族索引 ====================
             // 从 VulkanDeviceHolder 获取计算队列所属的队列家族索引
             int computeQueueFamilyIndex = 0;  // 默认值
@@ -1730,13 +1731,13 @@ public final class LodCullingComputePass {
             // [3] queueFamilyIndex = 计算队列家族索引
 
             if (VK_CREATE_COMMAND_POOL != null) {
-                MemorySegment poolCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 4);
+                MemorySegment poolCreateInfo = PerFrameArena.allocateLongs(4);
                 poolCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO);                       // sType = COMMAND_POOL_CREATE_INFO
                 poolCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                        // pNext = null
                 poolCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 6L);                        // flags = TRANSIENT | RESET_COMMAND_BUFFER
                 poolCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) computeQueueFamilyIndex); // queueFamilyIndex
 
-                MemorySegment commandPoolOut = arena.allocate(ValueLayout.JAVA_LONG);
+                MemorySegment commandPoolOut = PerFrameArena.allocateLongs(1);
 
                 // 调用 vkCreateCommandPool(device, pCreateInfo, pAllocator, pCommandPool)
                 int poolResult = VK_SUCCESS;
@@ -1769,12 +1770,12 @@ public final class LodCullingComputePass {
             // 初始为 SIGNALED 状态，避免第一次 vkWaitForFences 死锁
 
             if (VK_CREATE_FENCE != null) {
-                MemorySegment fenceCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 3);
+                MemorySegment fenceCreateInfo = PerFrameArena.allocateLongs(3);
                 fenceCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);   // sType = FENCE_CREATE_INFO
                 fenceCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);    // pNext = null
                 fenceCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 1L);    // flags = SIGNALED
 
-                MemorySegment fenceOut = arena.allocate(ValueLayout.JAVA_LONG);
+                MemorySegment fenceOut = PerFrameArena.allocateLongs(1);
 
                 // 调用 vkCreateFence(device, pCreateInfo, pAllocator, pFence)
                 int fenceResult = VK_SUCCESS;
@@ -1830,7 +1831,7 @@ public final class LodCullingComputePass {
             return 0L;
         }
 
-        try (Arena arena = Arena.ofConfined()) {
+        try {
             // ==================== 构建 VkCommandBufferAllocateInfo ====================
             // 结构体字段布局:
             // [0] sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO (44)
@@ -1839,7 +1840,7 @@ public final class LodCullingComputePass {
             // [3] level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY (0) - 主命令缓冲区
             // [4] commandBufferCount = 1 (仅分配一个)
 
-            MemorySegment allocInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
+            MemorySegment allocInfo = PerFrameArena.allocateLongs(5);
             allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO);          // sType = COMMAND_BUFFER_ALLOCATE_INFO
             allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);           // pNext = null
             allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, commandPool);   // commandPool
@@ -1847,7 +1848,7 @@ public final class LodCullingComputePass {
             allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 1L);           // commandBufferCount = 1
 
             // 输出参数：VkCommandBuffer 句柄
-            MemorySegment cmdBufOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment cmdBufOut = PerFrameArena.allocateLongs(1);
 
             // 调用 vkAllocateCommandBuffers(device, pAllocateInfo, pCommandBuffers)
             int result = VK_SUCCESS;
@@ -1896,13 +1897,13 @@ public final class LodCullingComputePass {
             throw new IllegalStateException("FFM 方法句柄未加载");
         }
 
-        try (Arena arena = Arena.ofConfined()) {
+        {
             // VkCommandBufferBeginInfo:
             //   - sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
             //   - flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
             //   - pInheritanceInfo = nullptr (primary buffer)
 
-            MemorySegment beginInfo = arena.allocate(ValueLayout.JAVA_LONG, 4);
+            MemorySegment beginInfo = PerFrameArena.allocateLongs(4);
             beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);  // sType
             beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);  // flags
             beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);  // pInheritanceInfo
@@ -1973,8 +1974,8 @@ public final class LodCullingComputePass {
         // Step 2: 绑定 Descriptor Sets（depthBuffer, hizMipmaps, config）
         // 使用预先分配好的 hizBuildDescSet，通过 vkCmdBindDescriptorSets 绑定到 set=0
         if (hizBuildDescSet != 0L && VK_CMD_BIND_DESCRIPTOR_SETS != null) {
-            try (Arena arena = Arena.ofConfined()) {
-                MemorySegment descSetPtr = arena.allocate(ValueLayout.JAVA_LONG, hizBuildDescSet);
+            try {
+                MemorySegment descSetPtr = PerFrameArena.allocate(hizBuildDescSet * ValueLayout.JAVA_LONG.byteSize());
                 VK_CMD_BIND_DESCRIPTOR_SETS.invokeExact(cmdBuf,
                         VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout,
                         0, 1, descSetPtr.address(),
@@ -2022,8 +2023,8 @@ public final class LodCullingComputePass {
         // Step 2: 绑定 Descriptor Sets（objects, hizMipmaps, config, visibilityMask）
         // 使用预先分配好的 hizOcclusionDescSet，通过 vkCmdBindDescriptorSets 绑定到 set=0
         if (hizOcclusionDescSet != 0L && VK_CMD_BIND_DESCRIPTOR_SETS != null) {
-            try (Arena arena = Arena.ofConfined()) {
-                MemorySegment descSetPtr = arena.allocate(ValueLayout.JAVA_LONG, hizOcclusionDescSet);
+            try {
+                MemorySegment descSetPtr = PerFrameArena.allocate(hizOcclusionDescSet * ValueLayout.JAVA_LONG.byteSize());
                 VK_CMD_BIND_DESCRIPTOR_SETS.invokeExact(cmdBuf,
                         VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout,
                         0, 1, descSetPtr.address(),
@@ -2231,7 +2232,7 @@ public final class LodCullingComputePass {
             return;
         }
 
-        try (Arena arena = Arena.ofConfined()) {
+        {
             // VkImageMemoryBarrier（用于 Hi-Z texture array 的 layout transition）
             // 简化实现：通用屏障
             try {

@@ -1,8 +1,8 @@
 package com.ranecc.renderium.infrastructure.gpu;
 
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanStructs;
 import com.ranecc.renderium.infrastructure.vulkan.SubmissionPool;
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
@@ -120,8 +120,8 @@ public final class VulkanSyncManager {
      */
     public static void releaseFence(long fence) {
         if (fence == 0L) return;
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment pFence = arena.allocate(ValueLayout.JAVA_LONG);
+        try {
+            MemorySegment pFence = PerFrameArena.allocateLongs(1);
             pFence.set(ValueLayout.JAVA_LONG, 0, fence);
             ensureMH();
             mhResetFences.invokeWithArguments(deviceHandle, 1, pFence.address());
@@ -155,8 +155,8 @@ public final class VulkanSyncManager {
      */
     public static boolean waitForFence(long fence, long timeoutNs) {
         if (fence == 0L) return false;
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment pFence = arena.allocate(ValueLayout.JAVA_LONG);
+        try {
+            MemorySegment pFence = PerFrameArena.allocateLongs(1);
             pFence.set(ValueLayout.JAVA_LONG, 0, fence);
             ensureMH();
             int result = (int) mhWaitForFences.invokeWithArguments(
@@ -194,10 +194,10 @@ public final class VulkanSyncManager {
      */
     public static boolean submit(long queue, long cmdBuf, long fence) {
         if (queue == 0L || cmdBuf == 0L) return false;
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment cmdBufSeg = arena.allocate(ValueLayout.JAVA_LONG);
+        try {
+            MemorySegment cmdBufSeg = PerFrameArena.allocateLongs(1);
             cmdBufSeg.set(ValueLayout.JAVA_LONG, 0, cmdBuf);
-            MemorySegment submitInfo = arena.allocate(ValueLayout.JAVA_LONG, 6);
+            MemorySegment submitInfo = PerFrameArena.allocateLongs(6);
             submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_SUBMIT_INFO); // sType
             submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L); // pNext
             submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L); // waitSemaphoreCount
@@ -225,9 +225,9 @@ public final class VulkanSyncManager {
      */
     public static long getSemaphoreValue(long sem) {
         if (sem == 0L || deviceHandle == 0L) return -1L;
-        try (Arena arena = Arena.ofConfined()) {
-            // 使用 Arena 分配输出参数内存，避免 long[] 与 FFM 签名不匹配
-            var outValue = arena.allocate(ValueLayout.JAVA_LONG);
+        try {
+            // 使用 PerFrameArena 分配输出参数内存，避免 long[] 与 FFM 签名不匹配
+            var outValue = PerFrameArena.allocateLongs(1);
             ensureMH();
             int result = (int) mhGetSemaphoreCounterValue.invokeWithArguments(
                 deviceHandle, sem, outValue.address());
@@ -268,8 +268,8 @@ public final class VulkanSyncManager {
      */
     public static void signalTimeline(long sem, long value) {
         if (sem == 0L) return;
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment signalInfo = VulkanStructs.createSignalSemaphoreInfo(arena, sem, value);
+        try {
+            MemorySegment signalInfo = VulkanStructs.createSignalSemaphoreInfo(PerFrameArena.arena(), sem, value);
             VulkanAPIRegistry.invoke("vkSignalSemaphore", deviceHandle, signalInfo.address());
         } catch (Throwable t) {
             LOGGER.warning("signalTimeline 失败: " + t.getMessage());
@@ -281,8 +281,8 @@ public final class VulkanSyncManager {
      */
     public static boolean waitForTimelineValue(long sem, long value, long timeoutNs) {
         if (sem == 0L) return false;
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment waitInfo = VulkanStructs.createSemaphoreWaitInfo(arena, sem, value);
+        try {
+            MemorySegment waitInfo = VulkanStructs.createSemaphoreWaitInfo(PerFrameArena.arena(), sem, value);
             int result = (int) VulkanAPIRegistry.invoke(
                 "vkWaitSemaphores", deviceHandle, waitInfo.address(), timeoutNs);
             return result == VK_SUCCESS;
@@ -295,9 +295,9 @@ public final class VulkanSyncManager {
     // ==================== 内部创建 ====================
 
     private static long createFence() {
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment createInfo = VulkanStructs.createFenceCreateInfo(arena, 1);
-            var outFence = arena.allocate(ValueLayout.JAVA_LONG);
+        try {
+            MemorySegment createInfo = VulkanStructs.createFenceCreateInfo(PerFrameArena.arena(), 1);
+            var outFence = PerFrameArena.allocateLongs(1);
             int result = (int) VulkanAPIRegistry.invoke(
                 "vkCreateFence", deviceHandle, createInfo.address(), 0L, outFence.address());
             if (result == VK_SUCCESS) return outFence.get(ValueLayout.JAVA_LONG, 0);
@@ -308,9 +308,9 @@ public final class VulkanSyncManager {
     }
 
     private static long createTimelineSemaphore(long initialValue) {
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment createInfo = VulkanStructs.createSemaphoreWithTimeline(arena, initialValue);
-            var outSem = arena.allocate(ValueLayout.JAVA_LONG);
+        try {
+            MemorySegment createInfo = VulkanStructs.createSemaphoreWithTimeline(PerFrameArena.arena(), initialValue);
+            var outSem = PerFrameArena.allocateLongs(1);
             int result = (int) VulkanAPIRegistry.invoke(
                 "vkCreateSemaphore", deviceHandle, createInfo.address(), 0L, outSem.address());
             if (result == VK_SUCCESS) return outSem.get(ValueLayout.JAVA_LONG, 0);

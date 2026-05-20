@@ -8,6 +8,7 @@
 package com.ranecc.renderium.feature.blaze3d.modern;
 
 import com.ranecc.renderium.feature.blaze3d.aggressive.GPUCullingSystem;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanStructs;
 
@@ -1957,8 +1958,8 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
         long cmdBuf = extractHandle(encoder);
         if (cmdBuf == 0L) return;
         ensureMH();
-        try (var arena = java.lang.foreign.Arena.ofConfined()) {
-            var seg = arena.allocate(24);
+        var seg = PerFrameArena.allocate(24);
+        try {
             seg.set(java.lang.foreign.ValueLayout.JAVA_INT, 0, 42);
             seg.set(java.lang.foreign.ValueLayout.JAVA_LONG, 8, 0L);
             seg.set(java.lang.foreign.ValueLayout.JAVA_INT, 16, srcAccess);

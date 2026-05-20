@@ -5,7 +5,8 @@
 //
 // 崩溃隔离策略:
 //   1. 每个任务在独立 std::thread 中执行
-//   2. C++ 信号处理 (SIGSEGV/SIGABRT) 通过 sigsetjmp/siglongjmp 恢复
+//   2. POSIX: SIGSEGV/SIGABRT 信号处理 + sigsetjmp/siglongjmp 恢复
+//      Windows: SEH __try/__except 原生捕获访问违例/栈溢出
 //   3. 心跳检测 (atomic timestamp) 供 Java 侧轮询
 //   4. 退化标记: 崩溃后标记 degraded=true，所有后续任务静默跳过
 // ============================================================
@@ -15,11 +16,12 @@
 #include <functional>
 #include <chrono>
 #include <cstring>
-#include <csetjmp>
-#include <csignal>
 
 #ifdef _WIN32
     #include <windows.h>
+#else
+    #include <csetjmp>
+    #include <csignal>
 #endif
 
 #include "accel_config.h"
@@ -43,34 +45,39 @@ static std::atomic<int> g_taskState{0}; // 0=IDLE, 1=RUNNING, 2=DONE, 3=FAILED
 /// 正在运行的任务线程
 static std::thread* g_activeThread = nullptr;
 
-/// 信号跳转缓冲（用于崩溃恢复）
+/// 信号跳转缓冲（用于崩溃恢复，仅 POSIX）
+#ifndef _WIN32
 static thread_local sigjmp_buf g_signalJmpBuf;
+#endif
 
-// ==================== 信号处理 ====================
+// ==================== 信号处理（仅 POSIX） ====================
 
-/// 信号处理函数：捕获 SIGSEGV/SIGABRT 后恢复执行
+#ifndef _WIN32
+
 static void signalHandler(int sig) {
-    // 防止递归信号
     std::signal(sig, SIG_DFL);
     g_degraded.store(true, std::memory_order_release);
-    g_taskState.store(3, std::memory_order_release); // FAILED
-    // 跳回线程入口处的 sigsetjmp
+    g_taskState.store(3, std::memory_order_release);
     siglongjmp(g_signalJmpBuf, 1);
 }
 
-/// 安装信号处理器到当前线程
 static void installSignalHandlers() {
     struct sigaction sa;
     std::memset(&sa, 0, sizeof(sa));
     sa.sa_handler = signalHandler;
     sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_NODEFER; // 防止同一个信号阻塞
+    sa.sa_flags = SA_NODEFER;
     sigaction(SIGSEGV, &sa, nullptr);
     sigaction(SIGABRT, &sa, nullptr);
-#ifdef SIGBUS
-    sigaction(SIGBUS, &sa, nullptr);
-#endif
 }
+
+#else // _WIN32 — 使用 SEH __try/__except 捕获硬件异常
+
+static void installSignalHandlers() {
+    // Windows 不需要显式信号处理，__try/__except 原生捕获访问违例/栈溢出
+}
+
+#endif
 
 // ==================== 任务执行 ====================
 
@@ -80,8 +87,9 @@ template<typename Fn>
 static void safeThreadEntry(Fn&& task) {
     installSignalHandlers();
 
+#ifndef _WIN32
+    // POSIX: sigsetjmp/siglongjmp 崩溃恢复
     if (sigsetjmp(g_signalJmpBuf, 1) == 0) {
-        // 正常路径
         task();
         g_taskState.store(2, std::memory_order_release); // DONE
     } else {
@@ -89,6 +97,16 @@ static void safeThreadEntry(Fn&& task) {
         g_taskState.store(3, std::memory_order_release); // FAILED
         g_degraded.store(true, std::memory_order_release);
     }
+#else
+    // Windows: SEH __try/__except 崩溃捕获（原生捕获 AV/SO）
+    __try {
+        task();
+        g_taskState.store(2, std::memory_order_release); // DONE
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_taskState.store(3, std::memory_order_release); // FAILED
+        g_degraded.store(true, std::memory_order_release);
+    }
+#endif
 }
 
 /// 生成本地时间戳（纳秒）作为心跳信号
