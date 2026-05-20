@@ -5,6 +5,7 @@ import com.ranecc.renderium.infrastructure.vulkan.SubmissionPool;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
@@ -48,6 +49,22 @@ public final class VulkanSyncManager {
 
     /** Submission 对象池（复用 vkQueueSubmit 参数对象） */
     private static volatile SubmissionPool submissionPool = null;
+
+    // P1: 热路径 MethodHandle 缓存（每帧调用，避免重复查找）
+    private static MethodHandle mhQueueSubmit;
+    private static MethodHandle mhWaitForFences;
+    private static MethodHandle mhResetFences;
+    private static MethodHandle mhGetSemaphoreCounterValue;
+    private static boolean mhCached = false;
+
+    private static void ensureMH() {
+        if (mhCached) return;
+        mhQueueSubmit             = VulkanAPIRegistry.getHandle("vkQueueSubmit");
+        mhWaitForFences           = VulkanAPIRegistry.getHandle("vkWaitForFences");
+        mhResetFences             = VulkanAPIRegistry.getHandle("vkResetFences");
+        mhGetSemaphoreCounterValue = VulkanAPIRegistry.getHandle("vkGetSemaphoreCounterValue");
+        mhCached = true;
+    }
 
     private VulkanSyncManager() {}
 
@@ -106,7 +123,8 @@ public final class VulkanSyncManager {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment pFence = arena.allocate(ValueLayout.JAVA_LONG);
             pFence.set(ValueLayout.JAVA_LONG, 0, fence);
-            VulkanAPIRegistry.invoke("vkResetFences", deviceHandle, 1, pFence.address());
+            ensureMH();
+            mhResetFences.invokeWithArguments(deviceHandle, 1, pFence.address());
         } catch (Throwable ignored) {}
         fencePool.offer(fence);
     }
@@ -140,8 +158,9 @@ public final class VulkanSyncManager {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment pFence = arena.allocate(ValueLayout.JAVA_LONG);
             pFence.set(ValueLayout.JAVA_LONG, 0, fence);
-            int result = (int) VulkanAPIRegistry.invoke(
-                "vkWaitForFences", deviceHandle, 1, pFence.address(), 1, timeoutNs);
+            ensureMH();
+            int result = (int) mhWaitForFences.invokeWithArguments(
+                deviceHandle, 1, pFence.address(), 1, timeoutNs);
             return result == VK_SUCCESS;
         } catch (Throwable t) {
             LOGGER.warning("waitForFence 失败: " + t.getMessage());
@@ -186,8 +205,9 @@ public final class VulkanSyncManager {
             submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 1L); // commandBufferCount
             submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, cmdBufSeg.address()); // pCommandBuffers
 
-            int result = (int) VulkanAPIRegistry.invoke(
-                "vkQueueSubmit", queue, 1, submitInfo.address(), fence);
+            ensureMH();
+            int result = (int) mhQueueSubmit.invokeWithArguments(
+                queue, 1, submitInfo.address(), fence);
             return result == VK_SUCCESS;
         } catch (Throwable t) {
             LOGGER.warning("QueueSubmit 失败: " + t.getMessage());
@@ -208,8 +228,9 @@ public final class VulkanSyncManager {
         try (Arena arena = Arena.ofConfined()) {
             // 使用 Arena 分配输出参数内存，避免 long[] 与 FFM 签名不匹配
             var outValue = arena.allocate(ValueLayout.JAVA_LONG);
-            int result = (int) VulkanAPIRegistry.invoke(
-                "vkGetSemaphoreCounterValue", deviceHandle, sem, outValue.address());
+            ensureMH();
+            int result = (int) mhGetSemaphoreCounterValue.invokeWithArguments(
+                deviceHandle, sem, outValue.address());
             return (result == 0) ? outValue.get(ValueLayout.JAVA_LONG, 0) : -1L;
         } catch (Throwable t) {
             LOGGER.warning("getSemaphoreValue 失败: " + t.getMessage());

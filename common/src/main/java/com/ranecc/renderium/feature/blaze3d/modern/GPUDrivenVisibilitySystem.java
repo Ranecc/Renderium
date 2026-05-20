@@ -11,6 +11,7 @@ import com.ranecc.renderium.feature.blaze3d.aggressive.GPUCullingSystem;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanStructs;
 
+import java.lang.invoke.MethodHandle;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.atomic.AtomicLong;
@@ -288,6 +289,32 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
     /** Subgroup 压缩总耗时（纳秒） */
     private final AtomicLong totalCompactTimeNanos = new AtomicLong(0);
+
+    // ==================== P1: 热路径 MethodHandle 缓存 ====================
+    // 预缓存 VulkanAPIRegistry 中的高频调用的 MethodHandle，
+    // 避免每帧多次 ConcurrentHashMap.get() 查找。
+
+    private MethodHandle mhBindPipeline;
+    private MethodHandle mhUpdateDescriptorSets;
+    private MethodHandle mhBindDescriptorSets;
+    private MethodHandle mhCmdPushConstants;
+    private MethodHandle mhCmdFillBuffer;
+    private MethodHandle mhCmdPipelineBarrier;
+    private MethodHandle mhCmdDispatch;
+
+    private boolean mhCached = false;
+
+    private void ensureMH() {
+        if (mhCached) return;
+        mhBindPipeline          = VulkanAPIRegistry.getHandle("vkCmdBindPipeline");
+        mhUpdateDescriptorSets  = VulkanAPIRegistry.getHandle("vkUpdateDescriptorSets");
+        mhBindDescriptorSets    = VulkanAPIRegistry.getHandle("vkCmdBindDescriptorSets");
+        mhCmdPushConstants      = VulkanAPIRegistry.getHandle("vkCmdPushConstants");
+        mhCmdFillBuffer         = VulkanAPIRegistry.getHandle("vkCmdFillBuffer");
+        mhCmdPipelineBarrier    = VulkanAPIRegistry.getHandle("vkCmdPipelineBarrier");
+        mhCmdDispatch           = VulkanAPIRegistry.getHandle("vkCmdDispatch");
+        mhCached = true;
+    }
 
     // ==================== 构造函数和初始化 ====================
 
@@ -1271,16 +1298,29 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
      */
     private void executeFrustumCullPass(Object encoder, Object cameraData, int registeredChunks) {
         try {
-            // 步骤 1: 绑定 Pass 1 Compute Pipeline
             bindComputePipeline(encoder, frustumCullPipeline);
 
-            // 步骤 2: 绑定存储缓冲区
-            // Binding 0: chunkBoundsBuffer (输入) - 所有 Chunk 的 AABB 数据
-            bindStorageBuffer(encoder, 0, chunkBoundsBuffer);
-            // Binding 1: candidateListBuffer (输出) - 通过视锥测试的候选索引
-            bindStorageBuffer(encoder, 1, candidateListBuffer);
-            // Binding 2: candidateCountBuffer (原子计数器输出) - 候选数量
-            bindStorageBuffer(encoder, 2, candidateCountBuffer);
+            lazyInitDescriptors();
+            if (descSet == 0L || computePipelineLayout == 0L) return;
+            try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
+                var bi0 = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
+                bi0.buffer(extractHandle(chunkBoundsBuffer)).offset(0).range(0x7FFFFFFF);
+                var bi1 = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
+                bi1.buffer(extractHandle(candidateListBuffer)).offset(0).range(0x7FFFFFFF);
+                var bi2 = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
+                bi2.buffer(extractHandle(candidateCountBuffer)).offset(0).range(0x7FFFFFFF);
+                var writes = org.lwjgl.vulkan.VkWriteDescriptorSet.calloc(3, stack);
+                writes.get(0).sType(org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                    .dstSet(descSet).dstBinding(0).descriptorCount(1)
+                    .descriptorType(org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).pBufferInfo(bi0);
+                writes.get(1).sType(org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                    .dstSet(descSet).dstBinding(1).descriptorCount(1)
+                    .descriptorType(org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).pBufferInfo(bi1);
+                writes.get(2).sType(org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                    .dstSet(descSet).dstBinding(2).descriptorCount(1)
+                    .descriptorType(org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).pBufferInfo(bi2);
+                flushDescriptorBatch(encoder, writes);
+            }
 
             // 步骤 3: 推送相机参数（Push Constants）
             FrustumCullParams params = (FrustumCullParams) buildFrustumCullParams(cameraData);
@@ -1340,24 +1380,39 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
         int occludedCount = 0;
 
         try {
-            // 步骤 1: 绑定 Pass 2 Compute Pipeline
             bindComputePipeline(encoder, hizOcclusionCullPipeline);
 
-            // 步骤 2: 绑定 Hi-Z 纹理（Sampled Image + Sampler）
-            // Binding 0: hiZBuffer (输入) - 上一帧的深度金字塔
-            bindSampledImage(encoder, 0, hiZBuffer, hiZSampler);
-
-            // 步骤 3: 绑定存储缓冲区
-            // Binding 2: chunkBoundsBuffer (输入) - 用于屏幕空间投影
-            bindStorageBuffer(encoder, 2, chunkBoundsBuffer);
-            // Binding 3: candidateListBuffer (输入) - Pass 1 的候选列表
-            bindStorageBuffer(encoder, 3, candidateListBuffer);
-            // Binding 4: candidateCountBuffer (原子计数器输入) - 候选数量
-            bindStorageBuffer(encoder, 4, candidateCountBuffer);
-            // Binding 5: finalVisibleListBuffer (输出) - 最终可见列表
-            bindStorageBuffer(encoder, 5, finalVisibleListBuffer);
-            // Binding 6: visibleCountBuffer (原子计数器输出) - 可见数量
-            bindStorageBuffer(encoder, 6, visibleCountBuffer);
+            lazyInitDescriptors();
+            if (descSet == 0L || computePipelineLayout == 0L) return 0;
+            try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
+                var imgInfo = org.lwjgl.vulkan.VkDescriptorImageInfo.calloc(1, stack);
+                imgInfo.sampler(extractHandle(hiZSampler)).imageView(extractHandle(hiZBuffer))
+                    .imageLayout(org.lwjgl.vulkan.VK10.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                var bi2 = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
+                bi2.buffer(extractHandle(chunkBoundsBuffer)).offset(0).range(0x7FFFFFFF);
+                var bi3 = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
+                bi3.buffer(extractHandle(candidateListBuffer)).offset(0).range(0x7FFFFFFF);
+                var bi4 = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
+                bi4.buffer(extractHandle(candidateCountBuffer)).offset(0).range(0x7FFFFFFF);
+                var bi5 = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
+                bi5.buffer(extractHandle(finalVisibleListBuffer)).offset(0).range(0x7FFFFFFF);
+                var bi6 = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
+                bi6.buffer(extractHandle(visibleCountBuffer)).offset(0).range(0x7FFFFFFF);
+                var writes = org.lwjgl.vulkan.VkWriteDescriptorSet.calloc(6, stack);
+                writes.get(0).sType(org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                    .dstSet(descSet).dstBinding(0).descriptorCount(1)
+                    .descriptorType(org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).pImageInfo(imgInfo);
+                for (int i = 0; i < 5; i++) writes.get(i + 1)
+                    .sType(org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                    .dstSet(descSet).dstBinding(i + 2).descriptorCount(1)
+                    .descriptorType(org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+                writes.get(1).pBufferInfo(bi2);
+                writes.get(2).pBufferInfo(bi3);
+                writes.get(3).pBufferInfo(bi4);
+                writes.get(4).pBufferInfo(bi5);
+                writes.get(5).pBufferInfo(bi6);
+                flushDescriptorBatch(encoder, writes);
+            }
 
             // 步骤 4: 推送 Hi-Z 参数（Push Constants）
             HizOcclusionParams hizParams = (HizOcclusionParams) buildHizOcclusionParams(cameraData);
@@ -1424,16 +1479,29 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
      */
     private void executeCompactAndDrawPass(Object encoder) {
         try {
-            // 步骤 1: 绑定 Pass 3 Compute Pipeline
             bindComputePipeline(encoder, compactAndDrawPipeline);
 
-            // 步骤 2: 绑定存储缓冲区
-            // Binding 0: finalVisibleListBuffer (输入/输出) - 压缩前的可见列表
-            bindStorageBuffer(encoder, 0, finalVisibleListBuffer);
-            // Binding 1: visibleCountBuffer (原子计数器输入) - 可见对象数量
-            bindStorageBuffer(encoder, 1, visibleCountBuffer);
-            // Binding 2: indirectArgsBuffer (输出) - 生成的 Indirect Draw Commands
-            bindStorageBuffer(encoder, 2, indirectArgsBuffer);
+            lazyInitDescriptors();
+            if (descSet == 0L || computePipelineLayout == 0L) return;
+            try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
+                var bi0 = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
+                bi0.buffer(extractHandle(finalVisibleListBuffer)).offset(0).range(0x7FFFFFFF);
+                var bi1 = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
+                bi1.buffer(extractHandle(visibleCountBuffer)).offset(0).range(0x7FFFFFFF);
+                var bi2 = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
+                bi2.buffer(extractHandle(indirectArgsBuffer)).offset(0).range(0x7FFFFFFF);
+                var writes = org.lwjgl.vulkan.VkWriteDescriptorSet.calloc(3, stack);
+                writes.get(0).sType(org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                    .dstSet(descSet).dstBinding(0).descriptorCount(1)
+                    .descriptorType(org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).pBufferInfo(bi0);
+                writes.get(1).sType(org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                    .dstSet(descSet).dstBinding(1).descriptorCount(1)
+                    .descriptorType(org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).pBufferInfo(bi1);
+                writes.get(2).sType(org.lwjgl.vulkan.VK10.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET)
+                    .dstSet(descSet).dstBinding(2).descriptorCount(1)
+                    .descriptorType(org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).pBufferInfo(bi2);
+                flushDescriptorBatch(encoder, writes);
+            }
 
             // 步骤 3: 推送压缩参数（Push Constants）
             CompactParams compactParams = (CompactParams) buildCompactParams();
@@ -1642,7 +1710,21 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
         return Math.max(1, getRegisteredChunkCount() / 4);
     }
 
-    // ==================== 底层 Vulkan 抽象方法（待集成）====================
+    // ==================== P2: 批量 Descriptor Write ====================
+    private void flushDescriptorBatch(Object encoder, org.lwjgl.vulkan.VkWriteDescriptorSet.Buffer writes) {
+        long cmdBuf = extractHandle(encoder);
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (cmdBuf == 0L || device == 0L || writes == null || writes.capacity() == 0) return;
+        ensureMH();
+        try {
+            mhUpdateDescriptorSets.invokeWithArguments(device, writes.capacity(), writes.address(), 0, 0L);
+            mhBindDescriptorSets.invokeWithArguments(cmdBuf, 1, computePipelineLayout, 0, 1, new long[]{descSet}, null);
+        } catch (Throwable t) {
+            LOGGER.warning("flushDescriptorBatch 失败: " + t.getMessage());
+        }
+    }
+
+    // ==================== 底层 Vulkan 抽象方法 ====================
 
     /**
      * 绑定 Compute Pipeline
@@ -1651,16 +1733,14 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
         long cmdBuf = extractHandle(encoder);
         long pipelineHandle = extractHandle(pipeline);
         if (cmdBuf == 0L || pipelineHandle == 0L) return;
+        ensureMH();
         try {
-            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, pipelineHandle);
+            mhBindPipeline.invokeWithArguments(cmdBuf, 1, pipelineHandle);
         } catch (Throwable t) {
             LOGGER.warning("vkCmdBindPipeline 失败: " + t.getMessage());
         }
     }
 
-    /**
-     * 绑定 Storage Buffer 到指定 binding 点
-     */
     private void bindStorageBuffer(Object encoder, int binding, Object buffer) {
         long cmdBuf = extractHandle(encoder);
         long bufHandle = extractHandle(buffer);
@@ -1669,6 +1749,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
         if (descSet == 0L || computePipelineLayout == 0L) return;
         long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
         if (device == 0L) return;
+        ensureMH();
         try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
             var bufInfo = org.lwjgl.vulkan.VkDescriptorBufferInfo.calloc(1, stack);
             bufInfo.buffer(bufHandle).offset(0).range(0x7FFFFFFF);
@@ -1679,11 +1760,8 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
                 .descriptorType(org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .pBufferInfo(bufInfo);
 
-            VulkanAPIRegistry.invoke("vkUpdateDescriptorSets",
-                device, 1, writeDesc.address(), 0, 0L);
-
-            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
-                cmdBuf, 1, computePipelineLayout, 0, 1, new long[]{descSet}, null);
+            mhUpdateDescriptorSets.invokeWithArguments(device, 1, writeDesc.address(), 0, 0L);
+            mhBindDescriptorSets.invokeWithArguments(cmdBuf, 1, computePipelineLayout, 0, 1, new long[]{descSet}, null);
         } catch (Throwable t) {
             LOGGER.warning("bindStorageBuffer 失败: " + t.getMessage());
         }
@@ -1796,9 +1874,6 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
         }
     }
 
-    /**
-     * 绑定 Sampled Image + Sampler
-     */
     private void bindSampledImage(Object encoder, int binding, Object image, Object sampler) {
         long cmdBuf = extractHandle(encoder);
         long imageView = extractHandle(image);
@@ -1808,6 +1883,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
         if (descSet == 0L || computePipelineLayout == 0L) return;
         long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
         if (device == 0L) return;
+        ensureMH();
         try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
             var imgInfo = org.lwjgl.vulkan.VkDescriptorImageInfo.calloc(1, stack);
             imgInfo.sampler(samplerHandle).imageView(imageView)
@@ -1819,10 +1895,8 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
                 .descriptorType(org.lwjgl.vulkan.VK10.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .pImageInfo(imgInfo);
 
-            VulkanAPIRegistry.invoke("vkUpdateDescriptorSets",
-                device, 1, writeDesc.address(), 0, 0L);
-            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
-                cmdBuf, 1, computePipelineLayout, 0, 1, new long[]{descSet}, null);
+            mhUpdateDescriptorSets.invokeWithArguments(device, 1, writeDesc.address(), 0, 0L);
+            mhBindDescriptorSets.invokeWithArguments(cmdBuf, 1, computePipelineLayout, 0, 1, new long[]{descSet}, null);
         } catch (Throwable t) {
             LOGGER.warning("bindSampledImage 失败: " + t.getMessage());
         }
@@ -1831,6 +1905,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
     private void pushConstants(Object encoder, Object params) {
         long cmdBuf = extractHandle(encoder);
         if (cmdBuf == 0L || params == null || computePipelineLayout == 0L) return;
+        ensureMH();
         try {
             var fields = params.getClass().getFields();
             java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined();
@@ -1859,8 +1934,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
                         }
                     }
                 }
-                VulkanAPIRegistry.invoke("vkCmdPushConstants",
-                    cmdBuf, computePipelineLayout, 0x00002000, 0, totalSize, seg.address());
+                mhCmdPushConstants.invokeWithArguments(cmdBuf, computePipelineLayout, 0x00002000, 0, totalSize, seg.address());
             } finally { arena.close(); }
         } catch (Throwable t) {
             LOGGER.warning("pushConstants 失败: " + t.getMessage());
@@ -1871,8 +1945,9 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
         long cmdBuf = extractHandle(encoder);
         long bufHandle = extractHandle(buffer);
         if (cmdBuf == 0L || bufHandle == 0L) return;
+        ensureMH();
         try {
-            VulkanAPIRegistry.invoke("vkCmdFillBuffer", cmdBuf, bufHandle, offset, size, value);
+            mhCmdFillBuffer.invokeWithArguments(cmdBuf, bufHandle, offset, size, value);
         } catch (Throwable t) {
             LOGGER.warning("vkCmdFillBuffer 失败: " + t.getMessage());
         }
@@ -1881,16 +1956,14 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
     private void emitMemoryBarrier(Object encoder, int srcAccess, int dstAccess) {
         long cmdBuf = extractHandle(encoder);
         if (cmdBuf == 0L) return;
+        ensureMH();
         try (var arena = java.lang.foreign.Arena.ofConfined()) {
             var seg = arena.allocate(24);
-            seg.set(java.lang.foreign.ValueLayout.JAVA_INT, 0, 42);  // VK_STRUCTURE_TYPE_MEMORY_BARRIER
-            seg.set(java.lang.foreign.ValueLayout.JAVA_LONG, 8, 0L);  // pNext
-            seg.set(java.lang.foreign.ValueLayout.JAVA_INT, 16, srcAccess);  // srcAccessMask
-            seg.set(java.lang.foreign.ValueLayout.JAVA_INT, 20, dstAccess);  // dstAccessMask
-            VulkanAPIRegistry.invoke("vkCmdPipelineBarrier",
-                cmdBuf, 0x00000800, 0x00000800, 0,
-                1, seg.address(),
-                0, 0L, 0, 0L);
+            seg.set(java.lang.foreign.ValueLayout.JAVA_INT, 0, 42);
+            seg.set(java.lang.foreign.ValueLayout.JAVA_LONG, 8, 0L);
+            seg.set(java.lang.foreign.ValueLayout.JAVA_INT, 16, srcAccess);
+            seg.set(java.lang.foreign.ValueLayout.JAVA_INT, 20, dstAccess);
+            mhCmdPipelineBarrier.invokeWithArguments(cmdBuf, 0x00000800, 0x00000800, 0, 1, seg.address(), 0, 0L, 0, 0L);
         } catch (Throwable t) {
             LOGGER.warning("vkCmdPipelineBarrier 失败: " + t.getMessage());
         }
@@ -1899,8 +1972,9 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
     private void dispatchCompute(Object encoder, int groupCountX, int groupCountY, int groupCountZ) {
         long cmdBuf = extractHandle(encoder);
         if (cmdBuf == 0L) return;
+        ensureMH();
         try {
-            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupCountX, groupCountY, groupCountZ);
+            mhCmdDispatch.invokeWithArguments(cmdBuf, groupCountX, groupCountY, groupCountZ);
         } catch (Throwable t) {
             LOGGER.warning("vkCmdDispatch 失败: " + t.getMessage());
         }

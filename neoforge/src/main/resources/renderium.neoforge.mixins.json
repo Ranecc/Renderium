@@ -3,7 +3,6 @@
   "package": "com.ranecc.renderium.platform.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
-    "MixinWindow",
     "MixinGpuDevice",
     "MixinFrameGraph",
     "MixinRenderSystem",

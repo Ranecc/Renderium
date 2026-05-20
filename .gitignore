@@ -43,6 +43,10 @@ run/
 *.class
 *.dylib
 */target/
+*.jar
+*.dll
+*.lib
+*.so
 libs/
 
 # Other

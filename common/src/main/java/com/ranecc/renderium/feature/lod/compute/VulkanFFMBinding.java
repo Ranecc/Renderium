@@ -287,90 +287,98 @@ public final class VulkanFFMBinding {
 
     private VulkanFFMBinding() {}
 
-    // ==================== 静态初始化块 ====================
+    // ==================== 延迟加载 ====================
+    // P3: 移除 static {} 同步加载，改为首次 getter 调用时按需触发。
+    // 避免类加载时加载 vulkan-1.dll 阻塞 2-5 秒。
 
-    static {
-        loadFFMMethodHandles();
+    private static final Object loadLock = new Object();
+
+    private static void ensureLoaded() {
+        if (ffmLoaded) return;
+        synchronized (loadLock) {
+            if (ffmLoaded) return;
+            loadFFMMethodHandles();
+        }
     }
 
-    // ==================== 公共 getter ====================
+    // ==================== 公共 getter（首次调用触发延迟加载）====================
 
-    public static MethodHandle getVkCreateShaderModule() { return VK_CREATE_SHADER_MODULE; }
-    public static MethodHandle getVkCreateComputePipelines() { return VK_CREATE_COMPUTE_PIPELINES; }
-    public static MethodHandle getVkDestroyShaderModule() { return VK_DESTROY_SHADER_MODULE; }
-    public static MethodHandle getVkDestroyPipeline() { return VK_DESTROY_PIPELINE; }
-    public static MethodHandle getVkDestroyPipelineLayout() { return VK_DESTROY_PIPELINE_LAYOUT; }
-    public static MethodHandle getVkDestroyDescriptorSetLayout() { return VK_DESTROY_DESCRIPTOR_SET_LAYOUT; }
-    public static MethodHandle getVkAllocateCommandBuffers() { return VK_ALLOCATE_COMMAND_BUFFERS; }
-    public static MethodHandle getVkBeginCommandBuffer() { return VK_BEGIN_COMMAND_BUFFER; }
-    public static MethodHandle getVkEndCommandBuffer() { return VK_END_COMMAND_BUFFER; }
-    public static MethodHandle getVkCmdBindPipeline() { return VK_CMD_BIND_PIPELINE; }
-    public static MethodHandle getVkCmdBindDescriptorSets() { return VK_CMD_BIND_DESCRIPTOR_SETS; }
-    public static MethodHandle getVkCmdDispatch() { return VK_CMD_DISPATCH; }
-    public static MethodHandle getVkCmdPipelineBarrier() { return VK_CMD_PIPELINE_BARRIER; }
-    public static MethodHandle getVkQueueSubmit() { return VK_QUEUE_SUBMIT; }
-    public static MethodHandle getVkWaitForFences() { return VK_WAIT_FOR_FENCES; }
-    public static MethodHandle getVkResetFences() { return VK_RESET_FENCES; }
-    public static MethodHandle getVkCreateFence() { return VK_CREATE_FENCE; }
-    public static MethodHandle getVkDestroyFence() { return VK_DESTROY_FENCE; }
-    public static MethodHandle getVkCreateCommandPool() { return VK_CREATE_COMMAND_POOL; }
-    public static MethodHandle getVkDestroyCommandPool() { return VK_DESTROY_COMMAND_POOL; }
-    public static MethodHandle getVkCreatePipelineLayout() { return VK_CREATE_PIPELINE_LAYOUT; }
-    public static MethodHandle getVkCreateDescriptorSetLayout() { return VK_CREATE_DESCRIPTOR_SET_LAYOUT; }
+    public static MethodHandle getVkCreateShaderModule() { ensureLoaded(); return VK_CREATE_SHADER_MODULE; }
+    public static MethodHandle getVkCreateComputePipelines() { ensureLoaded(); return VK_CREATE_COMPUTE_PIPELINES; }
+    public static MethodHandle getVkDestroyShaderModule() { ensureLoaded(); return VK_DESTROY_SHADER_MODULE; }
+    public static MethodHandle getVkDestroyPipeline() { ensureLoaded(); return VK_DESTROY_PIPELINE; }
+    public static MethodHandle getVkDestroyPipelineLayout() { ensureLoaded(); return VK_DESTROY_PIPELINE_LAYOUT; }
+    public static MethodHandle getVkDestroyDescriptorSetLayout() { ensureLoaded(); return VK_DESTROY_DESCRIPTOR_SET_LAYOUT; }
+    public static MethodHandle getVkAllocateCommandBuffers() { ensureLoaded(); return VK_ALLOCATE_COMMAND_BUFFERS; }
+    public static MethodHandle getVkBeginCommandBuffer() { ensureLoaded(); return VK_BEGIN_COMMAND_BUFFER; }
+    public static MethodHandle getVkEndCommandBuffer() { ensureLoaded(); return VK_END_COMMAND_BUFFER; }
+    public static MethodHandle getVkCmdBindPipeline() { ensureLoaded(); return VK_CMD_BIND_PIPELINE; }
+    public static MethodHandle getVkCmdBindDescriptorSets() { ensureLoaded(); return VK_CMD_BIND_DESCRIPTOR_SETS; }
+    public static MethodHandle getVkCmdDispatch() { ensureLoaded(); return VK_CMD_DISPATCH; }
+    public static MethodHandle getVkCmdPipelineBarrier() { ensureLoaded(); return VK_CMD_PIPELINE_BARRIER; }
+    public static MethodHandle getVkQueueSubmit() { ensureLoaded(); return VK_QUEUE_SUBMIT; }
+    public static MethodHandle getVkWaitForFences() { ensureLoaded(); return VK_WAIT_FOR_FENCES; }
+    public static MethodHandle getVkResetFences() { ensureLoaded(); return VK_RESET_FENCES; }
+    public static MethodHandle getVkCreateFence() { ensureLoaded(); return VK_CREATE_FENCE; }
+    public static MethodHandle getVkDestroyFence() { ensureLoaded(); return VK_DESTROY_FENCE; }
+    public static MethodHandle getVkCreateCommandPool() { ensureLoaded(); return VK_CREATE_COMMAND_POOL; }
+    public static MethodHandle getVkDestroyCommandPool() { ensureLoaded(); return VK_DESTROY_COMMAND_POOL; }
+    public static MethodHandle getVkCreatePipelineLayout() { ensureLoaded(); return VK_CREATE_PIPELINE_LAYOUT; }
+    public static MethodHandle getVkCreateDescriptorSetLayout() { ensureLoaded(); return VK_CREATE_DESCRIPTOR_SET_LAYOUT; }
 
-    public static MethodHandle getVkCreateGraphicsPipelines() { return VK_CREATE_GRAPHICS_PIPELINES; }
-    public static MethodHandle getVkCmdDraw() { return VK_CMD_DRAW; }
-    public static MethodHandle getVkCreateRenderPass() { return VK_CREATE_RENDER_PASS; }
-    public static MethodHandle getVkDestroyRenderPass() { return VK_DESTROY_RENDER_PASS; }
-    public static MethodHandle getVkCmdBeginRenderPass() { return VK_CMD_BEGIN_RENDER_PASS; }
-    public static MethodHandle getVkCmdEndRenderPass() { return VK_CMD_END_RENDER_PASS; }
-    public static MethodHandle getVkCreateImage() { return VK_CREATE_IMAGE; }
-    public static MethodHandle getVkDestroyImage() { return VK_DESTROY_IMAGE; }
-    public static MethodHandle getVkCreateImageView() { return VK_CREATE_IMAGE_VIEW; }
-    public static MethodHandle getVkDestroyImageView() { return VK_DESTROY_IMAGE_VIEW; }
-    public static MethodHandle getVkCreateSampler() { return VK_CREATE_SAMPLER; }
-    public static MethodHandle getVkDestroySampler() { return VK_DESTROY_SAMPLER; }
-    public static MethodHandle getVkAllocateMemory() { return VK_ALLOCATE_MEMORY; }
-    public static MethodHandle getVkFreeMemory() { return VK_FREE_MEMORY; }
-    public static MethodHandle getVkBindImageMemory() { return VK_BIND_IMAGE_MEMORY; }
-    public static MethodHandle getVkGetImageMemoryRequirements() { return VK_GET_IMAGE_MEMORY_REQUIREMENTS; }
-    public static MethodHandle getVkCreateFramebuffer() { return VK_CREATE_FRAMEBUFFER; }
-    public static MethodHandle getVkDestroyFramebuffer() { return VK_DESTROY_FRAMEBUFFER; }
+    public static MethodHandle getVkCreateGraphicsPipelines() { ensureLoaded(); return VK_CREATE_GRAPHICS_PIPELINES; }
+    public static MethodHandle getVkCmdDraw() { ensureLoaded(); return VK_CMD_DRAW; }
+    public static MethodHandle getVkCreateRenderPass() { ensureLoaded(); return VK_CREATE_RENDER_PASS; }
+    public static MethodHandle getVkDestroyRenderPass() { ensureLoaded(); return VK_DESTROY_RENDER_PASS; }
+    public static MethodHandle getVkCmdBeginRenderPass() { ensureLoaded(); return VK_CMD_BEGIN_RENDER_PASS; }
+    public static MethodHandle getVkCmdEndRenderPass() { ensureLoaded(); return VK_CMD_END_RENDER_PASS; }
+    public static MethodHandle getVkCreateImage() { ensureLoaded(); return VK_CREATE_IMAGE; }
+    public static MethodHandle getVkDestroyImage() { ensureLoaded(); return VK_DESTROY_IMAGE; }
+    public static MethodHandle getVkCreateImageView() { ensureLoaded(); return VK_CREATE_IMAGE_VIEW; }
+    public static MethodHandle getVkDestroyImageView() { ensureLoaded(); return VK_DESTROY_IMAGE_VIEW; }
+    public static MethodHandle getVkCreateSampler() { ensureLoaded(); return VK_CREATE_SAMPLER; }
+    public static MethodHandle getVkDestroySampler() { ensureLoaded(); return VK_DESTROY_SAMPLER; }
+    public static MethodHandle getVkAllocateMemory() { ensureLoaded(); return VK_ALLOCATE_MEMORY; }
+    public static MethodHandle getVkFreeMemory() { ensureLoaded(); return VK_FREE_MEMORY; }
+    public static MethodHandle getVkBindImageMemory() { ensureLoaded(); return VK_BIND_IMAGE_MEMORY; }
+    public static MethodHandle getVkGetImageMemoryRequirements() { ensureLoaded(); return VK_GET_IMAGE_MEMORY_REQUIREMENTS; }
+    public static MethodHandle getVkCreateFramebuffer() { ensureLoaded(); return VK_CREATE_FRAMEBUFFER; }
+    public static MethodHandle getVkDestroyFramebuffer() { ensureLoaded(); return VK_DESTROY_FRAMEBUFFER; }
 
-    public static MethodHandle getVkCreateDescriptorPool() { return VK_CREATE_DESCRIPTOR_POOL; }
-    public static MethodHandle getVkDestroyDescriptorPool() { return VK_DESTROY_DESCRIPTOR_POOL; }
-    public static MethodHandle getVkAllocateDescriptorSets() { return VK_ALLOCATE_DESCRIPTOR_SETS; }
-    public static MethodHandle getVkUpdateDescriptorSets() { return VK_UPDATE_DESCRIPTOR_SETS; }
-    public static MethodHandle getVkFreeDescriptorSets() { return VK_FREE_DESCRIPTOR_SETS; }
-    public static MethodHandle getVkMapMemory() { return VK_MAP_MEMORY; }
-    public static MethodHandle getVkUnmapMemory() { return VK_UNMAP_MEMORY; }
-    public static MethodHandle getVkInvalidateMappedMemoryRanges() { return VK_INVALIDATE_MAPPED_MEMORY_RANGES; }
-    public static MethodHandle getVkFlushMappedMemoryRanges() { return VK_FLUSH_MAPPED_MEMORY_RANGES; }
-    public static MethodHandle getVkCmdCopyBuffer() { return VK_CMD_COPY_BUFFER; }
-    public static MethodHandle getVkCmdBindVertexBuffers() { return VK_CMD_BIND_VERTEX_BUFFERS; }
-    public static MethodHandle getVkCmdBindIndexBuffer() { return VK_CMD_BIND_INDEX_BUFFER; }
-    public static MethodHandle getVkCmdDrawIndexed() { return VK_CMD_DRAW_INDEXED; }
-    public static MethodHandle getVkCreateBuffer() { return VK_CREATE_BUFFER; }
-    public static MethodHandle getVkDestroyBuffer() { return VK_DESTROY_BUFFER; }
-    public static MethodHandle getVkGetBufferMemoryRequirements() { return VK_GET_BUFFER_MEMORY_REQUIREMENTS; }
-    public static MethodHandle getVkBindBufferMemory() { return VK_BIND_BUFFER_MEMORY; }
-    public static MethodHandle getVkFreeCommandBuffers() { return VK_FREE_COMMAND_BUFFERS; }
-    public static MethodHandle getVkCreateSemaphore() { return VK_CREATE_SEMAPHORE; }
-    public static MethodHandle getVkDestroySemaphore() { return VK_DESTROY_SEMAPHORE; }
-    public static MethodHandle getVkWaitSemaphores() { return VK_WAIT_SEMAPHORES; }
-    public static MethodHandle getVkSignalSemaphore() { return VK_SIGNAL_SEMAPHORE; }
-    public static MethodHandle getVkGetSemaphoreCounterValue() { return VK_GET_SEMAPHORE_COUNTER_VALUE; }
-    public static MethodHandle getVkGetPhysicalDeviceMemoryProperties() { return VK_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES; }
-    public static MethodHandle getVkCreateAccelerationStructureKHR() { return VK_CREATE_ACCELERATION_STRUCTURE_KHR; }
-    public static MethodHandle getVkDestroyAccelerationStructureKHR() { return VK_DESTROY_ACCELERATION_STRUCTURE_KHR; }
-    public static MethodHandle getVkCmdBuildAccelerationStructuresKHR() { return VK_CMD_BUILD_ACCELERATION_STRUCTURES_KHR; }
-    public static MethodHandle getVkCmdTraceRaysKHR() { return VK_CMD_TRACE_RAYS_KHR; }
-    public static MethodHandle getVkCreateRayTracingPipelinesKHR() { return VK_CREATE_RAY_TRACING_PIPELINES_KHR; }
-    public static MethodHandle getVkCmdCopyAccelerationStructureKHR() { return VK_CMD_COPY_ACCELERATION_STRUCTURE_KHR; }
-    public static MethodHandle getVkCmdDrawMeshTasksEXT() { return VK_CMD_DRAW_MESH_TASKS_EXT; }
+    public static MethodHandle getVkCreateDescriptorPool() { ensureLoaded(); return VK_CREATE_DESCRIPTOR_POOL; }
+    public static MethodHandle getVkDestroyDescriptorPool() { ensureLoaded(); return VK_DESTROY_DESCRIPTOR_POOL; }
+    public static MethodHandle getVkAllocateDescriptorSets() { ensureLoaded(); return VK_ALLOCATE_DESCRIPTOR_SETS; }
+    public static MethodHandle getVkUpdateDescriptorSets() { ensureLoaded(); return VK_UPDATE_DESCRIPTOR_SETS; }
+    public static MethodHandle getVkFreeDescriptorSets() { ensureLoaded(); return VK_FREE_DESCRIPTOR_SETS; }
+    public static MethodHandle getVkMapMemory() { ensureLoaded(); return VK_MAP_MEMORY; }
+    public static MethodHandle getVkUnmapMemory() { ensureLoaded(); return VK_UNMAP_MEMORY; }
+    public static MethodHandle getVkInvalidateMappedMemoryRanges() { ensureLoaded(); return VK_INVALIDATE_MAPPED_MEMORY_RANGES; }
+    public static MethodHandle getVkFlushMappedMemoryRanges() { ensureLoaded(); return VK_FLUSH_MAPPED_MEMORY_RANGES; }
+    public static MethodHandle getVkCmdCopyBuffer() { ensureLoaded(); return VK_CMD_COPY_BUFFER; }
+    public static MethodHandle getVkCmdBindVertexBuffers() { ensureLoaded(); return VK_CMD_BIND_VERTEX_BUFFERS; }
+    public static MethodHandle getVkCmdBindIndexBuffer() { ensureLoaded(); return VK_CMD_BIND_INDEX_BUFFER; }
+    public static MethodHandle getVkCmdDrawIndexed() { ensureLoaded(); return VK_CMD_DRAW_INDEXED; }
+    public static MethodHandle getVkCreateBuffer() { ensureLoaded(); return VK_CREATE_BUFFER; }
+    public static MethodHandle getVkDestroyBuffer() { ensureLoaded(); return VK_DESTROY_BUFFER; }
+    public static MethodHandle getVkGetBufferMemoryRequirements() { ensureLoaded(); return VK_GET_BUFFER_MEMORY_REQUIREMENTS; }
+    public static MethodHandle getVkBindBufferMemory() { ensureLoaded(); return VK_BIND_BUFFER_MEMORY; }
+    public static MethodHandle getVkFreeCommandBuffers() { ensureLoaded(); return VK_FREE_COMMAND_BUFFERS; }
+    public static MethodHandle getVkCreateSemaphore() { ensureLoaded(); return VK_CREATE_SEMAPHORE; }
+    public static MethodHandle getVkDestroySemaphore() { ensureLoaded(); return VK_DESTROY_SEMAPHORE; }
+    public static MethodHandle getVkWaitSemaphores() { ensureLoaded(); return VK_WAIT_SEMAPHORES; }
+    public static MethodHandle getVkSignalSemaphore() { ensureLoaded(); return VK_SIGNAL_SEMAPHORE; }
+    public static MethodHandle getVkGetSemaphoreCounterValue() { ensureLoaded(); return VK_GET_SEMAPHORE_COUNTER_VALUE; }
+    public static MethodHandle getVkGetPhysicalDeviceMemoryProperties() { ensureLoaded(); return VK_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES; }
+    public static MethodHandle getVkCreateAccelerationStructureKHR() { ensureLoaded(); return VK_CREATE_ACCELERATION_STRUCTURE_KHR; }
+    public static MethodHandle getVkDestroyAccelerationStructureKHR() { ensureLoaded(); return VK_DESTROY_ACCELERATION_STRUCTURE_KHR; }
+    public static MethodHandle getVkCmdBuildAccelerationStructuresKHR() { ensureLoaded(); return VK_CMD_BUILD_ACCELERATION_STRUCTURES_KHR; }
+    public static MethodHandle getVkCmdTraceRaysKHR() { ensureLoaded(); return VK_CMD_TRACE_RAYS_KHR; }
+    public static MethodHandle getVkCreateRayTracingPipelinesKHR() { ensureLoaded(); return VK_CREATE_RAY_TRACING_PIPELINES_KHR; }
+    public static MethodHandle getVkCmdCopyAccelerationStructureKHR() { ensureLoaded(); return VK_CMD_COPY_ACCELERATION_STRUCTURE_KHR; }
+    public static MethodHandle getVkCmdDrawMeshTasksEXT() { ensureLoaded(); return VK_CMD_DRAW_MESH_TASKS_EXT; }
 
     /** FFM 方法句柄是否已加载成功 */
-    public static boolean isFfmLoaded() { return ffmLoaded; }
+    public static boolean isFfmLoaded() { ensureLoaded(); return ffmLoaded; }
 
     /**
      * 通过 Panama FFM 加载 Vulkan API 方法句柄并注册到 {@link VulkanAPIRegistry}。
