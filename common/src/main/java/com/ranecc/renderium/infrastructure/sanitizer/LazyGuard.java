@@ -247,7 +247,10 @@ public final class LazyGuard {
     private static int computeResetWindow() {
         long frameTime = lastFrameTimeNs.get();
         int targetFps = (int) (1_000_000_000L / Math.max(frameTime, 1_000_000L));
-        return Math.max(5, Math.min(10, targetFps / 100));
+        // 自适应复位窗口：保持 ~10-35ms 的恒定时间窗口
+        // 高帧率→更多帧（快速检测到脏数据）
+        // 低帧率→更少帧（快速恢复）
+        return Math.max(1, Math.min(20, targetFps / 30));
     }
 
     // ==================== 异步检测 ====================
