@@ -38,7 +38,7 @@ public final class ConvergenceMonitorFFIAdapter {
      * 构造函数 - 通过NativeLibraryLoader初始化FFI适配器
      * @param loader Native库加载器实例
      */
-    ConvergenceMonitorFFIAdapter(NativeLibraryLoader loader) {
+    public ConvergenceMonitorFFIAdapter(NativeLibraryLoader loader) {
         this.loader = loader;
     }
 

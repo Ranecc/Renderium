@@ -28,7 +28,7 @@ public final class LodCalculatorFFIAdapter {
      * 构造函数 - 通过NativeLibraryLoader初始化FFI适配器
      * @param loader Native库加载器实例
      */
-    LodCalculatorFFIAdapter(NativeLibraryLoader loader) {
+    public LodCalculatorFFIAdapter(NativeLibraryLoader loader) {
         this.loader = loader;
     }
 

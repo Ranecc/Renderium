@@ -17,7 +17,7 @@ public final class KahanAccumulatorFFIAdapter {
 
     private final NativeLibraryLoader loader;
 
-    KahanAccumulatorFFIAdapter(NativeLibraryLoader loader) {
+    public KahanAccumulatorFFIAdapter(NativeLibraryLoader loader) {
         this.loader = loader;
     }
 

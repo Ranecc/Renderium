@@ -28,7 +28,7 @@ public final class LyapunovEvaluatorFFIAdapter {
      * 构造函数 - 通过NativeLibraryLoader初始化FFI适配器
      * @param loader Native库加载器实例
      */
-    LyapunovEvaluatorFFIAdapter(NativeLibraryLoader loader) {
+    public LyapunovEvaluatorFFIAdapter(NativeLibraryLoader loader) {
         this.loader = loader;
     }
 

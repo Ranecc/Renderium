@@ -3,6 +3,7 @@
 
 package com.ranecc.renderium.tech.streamline;
 
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.tech.streamline.ffm.SLFFMBindings;
 
 import java.lang.foreign.Arena;
@@ -181,43 +182,31 @@ public final class FrameEvaluator {
             return true;
         }
 
-        try (Arena arena = Arena.ofConfined()) {
-            int count = resources.size();
-            // 分配 ResourceTag 数组（每个 64 字节）
-            MemorySegment resourceTags = arena.allocate(count * 64L);
+        int count = resources.size();
+        MemorySegment resourceTags = PerFrameArena.allocate(count * 64L);
 
-            int idx = 0;
-            for (var entry : resources.entrySet()) {
-                long offset = idx * 64L;
-                // resource.type = 0（占位，仅用于填充结构体对齐）
-                resourceTags.set(ValueLayout.JAVA_INT, offset, 0);
-                // resource.view = VkImageView 句柄
-                resourceTags.set(ValueLayout.JAVA_LONG, offset + 24, entry.getValue());
-                // resource.state = UINT32_MAX（未初始化状态）
-                resourceTags.set(ValueLayout.JAVA_INT, offset + 32, 0xFFFFFFFF);
-                // type = 缓冲区类型（用于 tag 标识）
-                resourceTags.set(ValueLayout.JAVA_INT, offset + 40, entry.getKey());
-                // lifecycle = eValid（0）
-                resourceTags.set(ValueLayout.JAVA_INT, offset + 44, 0);
-                idx++;
-            }
+        int idx = 0;
+        for (var entry : resources.entrySet()) {
+            long offset = idx * 64L;
+            resourceTags.set(ValueLayout.JAVA_LONG, offset + 24, entry.getValue());
+            resourceTags.set(ValueLayout.JAVA_INT, offset + 32, 0xFFFFFFFF);
+            resourceTags.set(ValueLayout.JAVA_INT, offset + 40, entry.getKey());
+            resourceTags.set(ValueLayout.JAVA_INT, offset + 44, 0);
+            idx++;
+        }
 
-            int result = SLFFMBindings.slSetTagForFrame(
-                currentFrameToken.get(ValueLayout.ADDRESS, 0),
-                viewportHandle, resourceTags, count,
-                MemorySegment.NULL);
+        int result = SLFFMBindings.slSetTagForFrame(
+            currentFrameToken.get(ValueLayout.ADDRESS, 0),
+            viewportHandle, resourceTags, count,
+            MemorySegment.NULL);
 
-            if (!SLFFMBindings.isOk(result)) {
-                LOGGER.warning("slSetTagForFrame(Map) failed: " + SLFFMBindings.getResultDescription(result));
-                return false;
-            }
-
-            LOGGER.fine("tagResources (Map): " + count + " resources tagged via SDK");
-            return true;
-        } catch (SLFFMBindings.SLException e) {
-            LOGGER.severe("tagResources(Map) error: " + e.getMessage());
+        if (!SLFFMBindings.isOk(result)) {
+            LOGGER.warning("slSetTagForFrame(Map) failed: " + SLFFMBindings.getResultDescription(result));
             return false;
         }
+
+        LOGGER.fine("tagResources (Map): " + count + " resources tagged via SDK");
+        return true;
     }
 
     /**
@@ -239,43 +228,33 @@ public final class FrameEvaluator {
             return true;
         }
 
-        try (Arena arena = Arena.ofConfined()) {
-            int count = resources.length;
-            // 分配 ResourceTag 数组（每个 64 字节）
-            MemorySegment resourceTags = arena.allocate(count * 64L);
+        int count = resources.length;
+        MemorySegment resourceTags = PerFrameArena.allocate(count * 64L);
 
-            for (int i = 0; i < count; i++) {
-                ResourceTagData tag = (ResourceTagData) resources[i];
-                long offset = i * 64L;
-                // resource.view = VkImageView 句柄
-                resourceTags.set(ValueLayout.JAVA_LONG, offset + 24, tag.imageView);
-                // resource.state = UINT32_MAX（未初始化状态）
-                resourceTags.set(ValueLayout.JAVA_INT, offset + 32, 0xFFFFFFFF);
-                // type = 缓冲区类型
-                resourceTags.set(ValueLayout.JAVA_INT, offset + 40, tag.bufferType);
-                // lifecycle = eValid（0）
-                resourceTags.set(ValueLayout.JAVA_INT, offset + 44, 0);
+        for (int i = 0; i < count; i++) {
+            ResourceTagData tag = (ResourceTagData) resources[i];
+            long offset = i * 64L;
+            resourceTags.set(ValueLayout.JAVA_LONG, offset + 24, tag.imageView);
+            resourceTags.set(ValueLayout.JAVA_INT, offset + 32, 0xFFFFFFFF);
+            resourceTags.set(ValueLayout.JAVA_INT, offset + 40, tag.bufferType);
+            resourceTags.set(ValueLayout.JAVA_INT, offset + 44, 0);
 
-                LOGGER.fine("  Tag[" + i + "]: type=" + tag.bufferType
-                    + " view=0x" + Long.toHexString(tag.imageView));
-            }
+            LOGGER.fine("  Tag[" + i + "]: type=" + tag.bufferType
+                + " view=0x" + Long.toHexString(tag.imageView));
+        }
 
-            int result = SLFFMBindings.slSetTagForFrame(
-                currentFrameToken.get(ValueLayout.ADDRESS, 0),
-                viewportHandle, resourceTags, count,
-                MemorySegment.NULL);
+        int result = SLFFMBindings.slSetTagForFrame(
+            currentFrameToken.get(ValueLayout.ADDRESS, 0),
+            viewportHandle, resourceTags, count,
+            MemorySegment.NULL);
 
-            if (!SLFFMBindings.isOk(result)) {
-                LOGGER.warning("slSetTagForFrame(Object[]) failed: " + SLFFMBindings.getResultDescription(result));
-                return false;
-            }
-
-            LOGGER.fine("tagResources (Object[]): " + count + " resources tagged via SDK");
-            return true;
-        } catch (SLFFMBindings.SLException e) {
-            LOGGER.severe("tagResources(Object[]) error: " + e.getMessage());
+        if (!SLFFMBindings.isOk(result)) {
+            LOGGER.warning("slSetTagForFrame(Object[]) failed: " + SLFFMBindings.getResultDescription(result));
             return false;
         }
+
+        LOGGER.fine("tagResources (Object[]): " + count + " resources tagged via SDK");
+        return true;
     }
 
     /**
