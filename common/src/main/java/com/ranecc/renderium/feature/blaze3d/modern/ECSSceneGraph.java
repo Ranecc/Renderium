@@ -147,9 +147,9 @@ public class ECSSceneGraph implements AutoCloseable {
      * 每个实体占用 3 个 float（12 字节）
      * 总大小: entityCount * 3 * 4 bytes
      */
-    private float[] positionX;  // X 坐标数组
-    private float[] positionY;  // Y 坐标数组
-    private float[] positionZ;  // Z 坐标数组
+    private volatile float[] positionX;  // X 坐标数组
+    private volatile float[] positionY;  // Y 坐标数组
+    private volatile float[] positionZ;  // Z 坐标数组
 
     /**
      * 实体包围盒分量（Bounding Box Component）
@@ -158,12 +158,12 @@ public class ECSSceneGraph implements AutoCloseable {
      * 每个实体占用 6 个 float（24 字节）
      * 用于视锥体剔除和碰撞检测
      */
-    private float[] boundingBoxMinX;
-    private float[] boundingBoxMinY;
-    private float[] boundingBoxMinZ;
-    private float[] boundingBoxMaxX;
-    private float[] boundingBoxMaxY;
-    private float[] boundingBoxMaxZ;
+    private volatile float[] boundingBoxMinX;
+    private volatile float[] boundingBoxMinY;
+    private volatile float[] boundingBoxMinZ;
+    private volatile float[] boundingBoxMaxX;
+    private volatile float[] boundingBoxMaxY;
+    private volatile float[] boundingBoxMaxZ;
 
     /**
      * 区块 ID 分量（Chunk ID Component）
@@ -171,7 +171,7 @@ public class ECSSceneGraph implements AutoCloseable {
      * 标识该实体所属的 Chunk（区块坐标编码为单个整数）
      * 用于空间分区和批量处理
      */
-    private int[] chunkIds;
+    private volatile int[] chunkIds;
 
     /**
      * 可见性标志分量（Visibility Flag Component）
@@ -179,7 +179,7 @@ public class ECSSceneGraph implements AutoCloseable {
      * 标记该实体是否通过可见性测试（视锥+遮挡）
      * 在 queryVisibleEntities() 时批量更新
      */
-    private boolean[] visibilityFlags;
+    private volatile boolean[] visibilityFlags;
 
     /**
      * 纹理索引分量（Texture Index Component）
@@ -187,7 +187,7 @@ public class ECSSceneGraph implements AutoCloseable {
      * 该实体使用的纹理在 Bindless 描述符表中的索引
      * 来自 {@link BindlessResourceManager#getTextureIndex(Object)}
      */
-    private int[] textureIndices;
+    private volatile int[] textureIndices;
 
     /**
      * 渲染距离分量（Render Distance Component）
@@ -195,7 +195,7 @@ public class ECSSceneGraph implements AutoCloseable {
      * 该实体的渲染距离优先级（用于 LOD 和距离剔除）
      * 值越小越先被剔除（或值越大表示允许的渲染距离越远）
      */
-    private float[] renderDistances;
+    private volatile float[] renderDistances;
 
     // ==================== 元数据和状态 ====================
 
@@ -215,7 +215,7 @@ public class ECSSceneGraph implements AutoCloseable {
     private volatile boolean sceneBuilt = false;
 
     /** 关联的 Level 引用（用于增量更新） */
-    private Object associatedLevel;
+    private volatile Object associatedLevel;
 
     // ==================== 构造函数和初始化 ====================
 

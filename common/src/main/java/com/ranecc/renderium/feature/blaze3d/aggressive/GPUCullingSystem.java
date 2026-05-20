@@ -31,24 +31,24 @@ public class GPUCullingSystem implements AutoCloseable {
     public static final int MAX_CHUNK_COUNT = 65536;
     public static final float DEFAULT_RENDER_DISTANCE = 16.0f;
 
-    protected static long cullingPipeline = 0L;
-protected static long chunkBoundsBuffer = 0L;
-protected static long indirectArgsBuffer = 0L;
-private static long chunkBoundsMemory = 0L;
-private static long indirectArgsMemory = 0L;
-private static long cullingShaderModule = 0L;
-private static long pipelineLayout = 0L;
+    protected static volatile long cullingPipeline = 0L;
+protected static volatile long chunkBoundsBuffer = 0L;
+protected static volatile long indirectArgsBuffer = 0L;
+private static volatile long chunkBoundsMemory = 0L;
+private static volatile long indirectArgsMemory = 0L;
+private static volatile long cullingShaderModule = 0L;
+private static volatile long pipelineLayout = 0L;
 /** frustum_culling.comp 的 4 个 binding: SSBO(0/1/2) + UBO(3) */
-private static long descriptorSetLayout = 0L;
-private static long descriptorPool = 0L;
-private static long descriptorSet = 0L;
+private static volatile long descriptorSetLayout = 0L;
+private static volatile long descriptorPool = 0L;
+private static volatile long descriptorSet = 0L;
 /** binding=1/2/3 对应 visibility 输出、原子计数器、Camera UBO */
-private static long visibilityBuffer = 0L;
-private static long visibilityMemory = 0L;
-private static long counterBuffer = 0L;
-private static long counterMemory = 0L;
-private static long cameraUBO = 0L;
-private static long cameraUBOMemory = 0L;
+private static volatile long visibilityBuffer = 0L;
+private static volatile long visibilityMemory = 0L;
+private static volatile long counterBuffer = 0L;
+private static volatile long counterMemory = 0L;
+private static volatile long cameraUBO = 0L;
+private static volatile long cameraUBOMemory = 0L;
 private static byte[] FRUSTUM_CULLING_SPIRV;
 
     /** 是否需要销毁 chunkBoundsBuffer/indirectArgsBuffer（外部创建标记） */

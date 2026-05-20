@@ -9,6 +9,7 @@ import com.ranecc.renderium.infrastructure.gpu.VulkanStructs;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.file.*;
 import java.util.List;
 import java.util.Map;
@@ -144,8 +145,9 @@ public final class ShaderTranspilerPipeline implements AutoCloseable {
 
         // 分配 UBO 内存 (这里需要与 VulkanFFM 协作分配 vkMapMemory 的内存)
         // 暂时使用 Arena 分配，实际应通过 VulkanFFM 创建 UBO buffer 并 map
-        try {
-            MemorySegment uboMemory = allocateUBOForPipeline(maxSize);
+        // 使用 Arena.ofConfined() 替代 Arena.ofAuto()，避免 GC 可能提前回收内存
+        try (Arena uboArena = Arena.ofConfined()) {
+            MemorySegment uboMemory = allocateUBOForPipeline(uboArena, maxSize);
             long deviceMemory = createUBOBuffer(uboMemory);
 
             UniformRedirector redirector = UniformRedirector.getInstance();
@@ -275,12 +277,22 @@ public final class ShaderTranspilerPipeline implements AutoCloseable {
                 .toList();
     }
 
-    /** 为 Pipeline 分配 UBO 内存 (占位实现，需与 VulkanFFM 对接) */
-    private MemorySegment allocateUBOForPipeline(int sizeBytes) {
+    /**
+     * 为 Pipeline 分配 UBO 内存 (占位实现，需与 VulkanFFM 对接)
+     *
+     * <p>使用调用方提供的 Arena 分配内存，避免使用 {@code Arena.ofAuto()} 导致
+     * GC 可能在 GPU 仍在访问 UBO 时回收底层内存段（use-after-free）。
+     * 调用方必须确保 Arena 在 GPU 完成 UBO 读取之前保持打开状态。
+     *
+     * @param arena    调用方管理的 Arena，其生命周期必须覆盖 GPU 对 UBO 的访问期间
+     * @param sizeBytes 分配字节数
+     * @return 分配的内存段
+     */
+    private MemorySegment allocateUBOForPipeline(Arena arena, int sizeBytes) {
         // TODO: 通过 VulkanFFM 创建 VkBuffer → vkMapMemory → 返回 MappedMemorySegment
         // 这里先用 Java 堆外内存作为临时替代
         try {
-            return java.lang.foreign.Arena.ofAuto().allocate(sizeBytes);
+            return arena.allocate(sizeBytes);
         } catch (Exception e) {
             throw new RuntimeException("无法分配 UBO 内存: " + sizeBytes + " bytes", e);
         }
@@ -309,18 +321,19 @@ public final class ShaderTranspilerPipeline implements AutoCloseable {
             // 创建 VkBufferCreateInfo: size = bufferSize, usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
             MemorySegment createInfo = VulkanStructs.createBufferCreateInfo(
                     arena, bufferSize, 0x00000010);
-            long[] outBuffer = new long[1];
+            var outBuffer = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke(
-                    "vkCreateBuffer", device, createInfo.address(), 0L, outBuffer);
+                    "vkCreateBuffer", device, createInfo.address(), 0L, outBuffer.address());
             if (result != 0) {
                 LOGGER.warning("createUBOBuffer: vkCreateBuffer 返回 " + result);
                 return 0L;
             }
-            if (outBuffer[0] == 0L) {
+            long buffer = outBuffer.get(ValueLayout.JAVA_LONG, 0);
+            if (buffer == 0L) {
                 LOGGER.warning("createUBOBuffer: vkCreateBuffer 返回空句柄");
                 return 0L;
             }
-            return outBuffer[0];
+            return buffer;
         } catch (Throwable t) {
             LOGGER.warning("createUBOBuffer 失败: " + t.getMessage());
             return 0L;

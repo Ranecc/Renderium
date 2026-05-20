@@ -1,5 +1,6 @@
 package com.ranecc.renderium.infrastructure.gpu;
 
+import com.ranecc.renderium.infrastructure.gpu.VulkanStructs;
 import com.ranecc.renderium.infrastructure.vulkan.SubmissionPool;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -178,7 +179,7 @@ public final class VulkanSyncManager {
             MemorySegment cmdBufSeg = arena.allocate(ValueLayout.JAVA_LONG);
             cmdBufSeg.set(ValueLayout.JAVA_LONG, 0, cmdBuf);
             MemorySegment submitInfo = arena.allocate(ValueLayout.JAVA_LONG, 6);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 0L); // sType
+            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_SUBMIT_INFO); // sType
             submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L); // pNext
             submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L); // waitSemaphoreCount
             submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L); // pWaitSemaphores
@@ -204,11 +205,12 @@ public final class VulkanSyncManager {
      */
     public static long getSemaphoreValue(long sem) {
         if (sem == 0L || deviceHandle == 0L) return -1L;
-        try {
-            long[] outValue = new long[1];
+        try (Arena arena = Arena.ofConfined()) {
+            // 使用 Arena 分配输出参数内存，避免 long[] 与 FFM 签名不匹配
+            var outValue = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke(
-                "vkGetSemaphoreCounterValue", deviceHandle, sem, outValue);
-            return (result == 0) ? outValue[0] : -1L;
+                "vkGetSemaphoreCounterValue", deviceHandle, sem, outValue.address());
+            return (result == 0) ? outValue.get(ValueLayout.JAVA_LONG, 0) : -1L;
         } catch (Throwable t) {
             LOGGER.warning("getSemaphoreValue 失败: " + t.getMessage());
             return -1L;
@@ -274,10 +276,10 @@ public final class VulkanSyncManager {
     private static long createFence() {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment createInfo = VulkanStructs.createFenceCreateInfo(arena, 1);
-            long[] outFence = new long[1];
+            var outFence = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke(
-                "vkCreateFence", deviceHandle, createInfo.address(), 0L, outFence);
-            if (result == VK_SUCCESS) return outFence[0];
+                "vkCreateFence", deviceHandle, createInfo.address(), 0L, outFence.address());
+            if (result == VK_SUCCESS) return outFence.get(ValueLayout.JAVA_LONG, 0);
         } catch (Throwable t) {
             LOGGER.fine("createFence 失败: " + t.getMessage());
         }
@@ -287,10 +289,10 @@ public final class VulkanSyncManager {
     private static long createTimelineSemaphore(long initialValue) {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment createInfo = VulkanStructs.createSemaphoreWithTimeline(arena, initialValue);
-            long[] outSem = new long[1];
+            var outSem = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke(
-                "vkCreateSemaphore", deviceHandle, createInfo.address(), 0L, outSem);
-            if (result == VK_SUCCESS) return outSem[0];
+                "vkCreateSemaphore", deviceHandle, createInfo.address(), 0L, outSem.address());
+            if (result == VK_SUCCESS) return outSem.get(ValueLayout.JAVA_LONG, 0);
         } catch (Throwable t) {
             LOGGER.warning("createTimelineSemaphore 失败: " + t.getMessage());
         }

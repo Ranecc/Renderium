@@ -179,11 +179,10 @@ public final class HiZBufferManager {
 
     // ==================== Vulkan 枚举常量 ====================
 
-    private static final int VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO = 11;
-    private static final int VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO = 12;
-    private static final int VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO = 3;
-    private static final int VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO = 32;
-    private static final int VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO = 20;
+    // 使用 VulkanStructs 中的 sType 常量，不再本地定义
+    // VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO -> VulkanStructs.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO (10)
+    // VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO -> VulkanStructs.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO (12)
+    // VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO -> VulkanStructs.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO (12)
 
     private static final int VK_IMAGE_TYPE_2D = 1;
     private static final int VK_IMAGE_VIEW_TYPE_2D = 1;
@@ -536,7 +535,7 @@ public final class HiZBufferManager {
 
                 // ==================== 1. 创建 Sampler ====================
                 MemorySegment samplerCreateInfo = arena.allocate(SZ_SAMPLER_CREATE_INFO);
-                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_STYPE / 4, VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO);
+                samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_STYPE / 4, VulkanStructs.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO);
                 samplerCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_SCI_PNEXT / 8, 0L);
                 samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_FLAGS / 4, 0);
                 samplerCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_SCI_MAG_FILTER / 4, VK_FILTER_NEAREST);
@@ -566,7 +565,7 @@ public final class HiZBufferManager {
 
                 // ==================== 2. 创建 Hi-Z Image + 分配内存 ====================
                 MemorySegment imageCreateInfo = arena.allocate(SZ_IMAGE_CREATE_INFO);
-                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_STYPE / 4, VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
+                imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_STYPE / 4, VulkanStructs.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
                 imageCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_ICI_PNEXT / 8, 0L);
                 imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_FLAGS / 4, 0);
                 imageCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_ICI_IMAGE_TYPE / 4, VK_IMAGE_TYPE_2D);
@@ -659,7 +658,7 @@ public final class HiZBufferManager {
                                   long image, int viewType, int format, int aspectMask,
                                   int baseMipLevel, int levelCount) throws Throwable {
         MemorySegment viewCreateInfo = arena.allocate(SZ_IMAGE_VIEW_CREATE_INFO);
-        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_STYPE / 4, VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
+        viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_STYPE / 4, VulkanStructs.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
         viewCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_IVCI_PNEXT / 8, 0L);
         viewCreateInfo.setAtIndex(ValueLayout.JAVA_INT, OFF_IVCI_FLAGS / 4, 0);
         viewCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, OFF_IVCI_IMAGE / 8, image);

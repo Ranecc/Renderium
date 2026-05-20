@@ -81,12 +81,13 @@ public final class VulkanDescriptorManager {
             var createInfo = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createDescriptorPoolCreateInfoCompact(
                 arena, VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT, BINDLESS_TARGET_SLOTS, 4, sizes);
 
-            long[] outPool = new long[1];
+            var outPool = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke("vkCreateDescriptorPool",
-                device, createInfo.address(), 0L, outPool);
+                device, createInfo.address(), 0L, outPool.address());
+            long poolHandle = outPool.get(ValueLayout.JAVA_LONG, 0);
             if (result == VK_SUCCESS) {
-                descriptorPool.set(outPool[0]);
-                LOGGER.info("Global DescriptorPool created: 0x" + Long.toHexString(outPool[0]));
+                descriptorPool.set(poolHandle);
+                LOGGER.info("Global DescriptorPool created: 0x" + Long.toHexString(poolHandle));
             } else {
                 LOGGER.warning("vkCreateDescriptorPool failed VkResult=" + result);
                 created.set(false);
@@ -149,24 +150,26 @@ public final class VulkanDescriptorManager {
             layoutInfo.set(ValueLayout.JAVA_INT, 8, 3);
             layoutInfo.set(ValueLayout.ADDRESS, 16, bindings);
 
-            long[] outLayout = new long[1];
+            var outLayout = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke("vkCreateDescriptorSetLayout",
-                device, layoutInfo.address(), 0L, outLayout);
+                device, layoutInfo.address(), 0L, outLayout.address());
+            long layoutHandle = outLayout.get(ValueLayout.JAVA_LONG, 0);
             if (result != VK_SUCCESS) return false;
-            bindlessSetLayout.set(outLayout[0]);
+            bindlessSetLayout.set(layoutHandle);
 
             var allocInfo = com.ranecc.renderium.infrastructure.gpu.VulkanStructs.createDescriptorSetAllocateInfoCompact(
-                arena, pool, 1, outLayout[0]);
+                arena, pool, 1, layoutHandle);
             allocInfo.set(ValueLayout.JAVA_INT, 0, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
 
-            long[] outSet = new long[1];
+            var outSet = arena.allocate(ValueLayout.JAVA_LONG);
             result = (int) VulkanAPIRegistry.invoke("vkAllocateDescriptorSets",
-                device, allocInfo.address(), outSet);
+                device, allocInfo.address(), outSet.address());
+            long setHandle = outSet.get(ValueLayout.JAVA_LONG, 0);
             if (result == VK_SUCCESS) {
-                bindlessDescriptorSet.set(outSet[0]);
+                bindlessDescriptorSet.set(setHandle);
                 LOGGER.info("Bindless DescriptorSet allocated: layout=0x"
-                    + Long.toHexString(outLayout[0])
-                    + " set=0x" + Long.toHexString(outSet[0]));
+                    + Long.toHexString(layoutHandle)
+                    + " set=0x" + Long.toHexString(setHandle));
                 return true;
             }
             return false;

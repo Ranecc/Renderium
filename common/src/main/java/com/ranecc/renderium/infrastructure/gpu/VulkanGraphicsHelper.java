@@ -6,6 +6,8 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
+import static com.ranecc.renderium.infrastructure.gpu.VulkanStructs.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+
 /**
  * Vulkan 全屏渲染辅助类
  *
@@ -76,14 +78,14 @@ public final class VulkanGraphicsHelper {
             subpass.set(ValueLayout.JAVA_LONG, 8, 0L);
 
             MemorySegment createInfo = arena.allocate(56);
-            createInfo.set(ValueLayout.JAVA_INT, 0, 0); // sType placeholder
+            createInfo.set(ValueLayout.JAVA_INT, 0, VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO); // sType
             createInfo.set(ValueLayout.JAVA_LONG, 8, attachmentDesc.address());
             createInfo.set(ValueLayout.JAVA_INT, 16, 1);
             createInfo.set(ValueLayout.JAVA_LONG, 24, subpass.address());
 
-            long[] outPass = new long[1];
-            int result = (int) VulkanAPIRegistry.invoke("vkCreateRenderPass", device, createInfo.address(), 0L, outPass);
-            return result == VK_SUCCESS ? outPass[0] : 0L;
+            var outPass = arena.allocate(ValueLayout.JAVA_LONG);
+            int result = (int) VulkanAPIRegistry.invoke("vkCreateRenderPass", device, createInfo.address(), 0L, outPass.address());
+            return result == VK_SUCCESS ? outPass.get(ValueLayout.JAVA_LONG, 0) : 0L;
         } catch (Throwable t) {
             LOGGER.warning("createSimpleRenderPass failed: " + t.getMessage());
             return 0L;
@@ -114,10 +116,11 @@ public final class VulkanGraphicsHelper {
             viewportState.set(ValueLayout.JAVA_INT, 24, 1);
             viewportState.set(ValueLayout.JAVA_INT, 28, 1);
 
-            long[] outPipeline = new long[1];
+            // 使用 Arena 分配输出参数内存，避免 long[] 与 FFM 签名不匹配
+            var outPipeline = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke("vkCreateGraphicsPipelines",
-                device, 0L, 1, 0L, 0L, outPipeline);
-            return result == VK_SUCCESS ? outPipeline[0] : 0L;
+                device, 0L, 1, 0L, 0L, outPipeline.address());
+            return result == VK_SUCCESS ? outPipeline.get(ValueLayout.JAVA_LONG, 0) : 0L;
         } catch (Throwable t) {
             LOGGER.warning("createFullScreenPipeline failed: " + t.getMessage());
             return 0L;

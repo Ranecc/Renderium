@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.GPULODDataManager;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanStructs;
 import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
@@ -1012,7 +1013,7 @@ public final class LodCullingComputePass {
             // pCode = spirvCode 地址
 
             MemorySegment createInfo = arena.allocate(ValueLayout.JAVA_LONG, 4);  // 简化的结构体
-            createInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 9L);  // sType
+            createInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);  // sType
             createInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);  // pNext
             createInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, spirvCode.length);  // codeSize
             // pCode 需要指向 SPIR-V 数据...
@@ -1107,7 +1108,7 @@ public final class LodCullingComputePass {
             // [3] bindingCount = 3
             // [4] pBindings = hizBindings 地址
             MemorySegment hizCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
-            hizCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 11L);          // sType = DESCRIPTOR_SET_LAYOUT_CREATE_INFO
+            hizCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);          // sType = DESCRIPTOR_SET_LAYOUT_CREATE_INFO
             hizCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);           // pNext = null
             hizCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);           // flags = 0
             hizCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 3L);           // bindingCount = 3
@@ -1176,7 +1177,7 @@ public final class LodCullingComputePass {
 
             // VkDescriptorSetLayoutCreateInfo (Occlusion Query):
             MemorySegment occCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
-            occCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 11L);          // sType = DESCRIPTOR_SET_LAYOUT_CREATE_INFO
+            occCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);          // sType = DESCRIPTOR_SET_LAYOUT_CREATE_INFO
             occCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);           // pNext = null
             occCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);           // flags = 0
             occCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 4L);           // bindingCount = 4
@@ -1264,7 +1265,7 @@ public final class LodCullingComputePass {
             // [5] pushConstantRangeCount = 1 (一个 Push Constant 范围)
             // [6] pPushConstantRanges = pushConstantRange 地址
             MemorySegment layoutCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
-            layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 12L);                       // sType = PIPELINE_LAYOUT_CREATE_INFO
+            layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);                       // sType = PIPELINE_LAYOUT_CREATE_INFO
             layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                        // pNext = null
             layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                        // flags = 0
             layoutCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 2L);                        // setLayoutCount = 2
@@ -1317,7 +1318,7 @@ public final class LodCullingComputePass {
      * @throws Exception 如果分配失败
      */
     private static void createDescriptorPoolInternal() throws Exception {
-        MethodHandle vkCreateDescriptorPool = VulkanFFMBinding.getVkCreateDescriptorPool();
+        MethodHandle vkCreateDescriptorPool = VulkanAPIRegistry.getHandle("vkCreateDescriptorPool");
         if (vkCreateDescriptorPool == null) {
             throw new IllegalStateException("vkCreateDescriptorPool FFM 句柄未加载");
         }
@@ -1341,7 +1342,7 @@ public final class LodCullingComputePass {
     }
 
     private static void allocateHiZDescriptorSets() throws Exception {
-        MethodHandle vkAllocateDescriptorSets = VulkanFFMBinding.getVkAllocateDescriptorSets();
+        MethodHandle vkAllocateDescriptorSets = VulkanAPIRegistry.getHandle("vkAllocateDescriptorSets");
         if (!ffmLoaded || vkAllocateDescriptorSets == null) {
             throw new IllegalStateException("vkAllocateDescriptorSets 方法句柄未加载");
         }
@@ -1350,7 +1351,7 @@ public final class LodCullingComputePass {
             // ==================== 分配 HiZ Build DescriptorSet ====================
             // VkDescriptorSetAllocateInfo: [0]sType, [1]pNext, [2]descriptorPool, [3]descriptorSetCount, [4]pSetLayouts
             MemorySegment buildAllocInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
-            buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 48L);              // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO
+            buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);              // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO
             buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);              // pNext
             buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, hizDescriptorPool);
             buildAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 1L);              // descriptorSetCount = 1
@@ -1370,7 +1371,7 @@ public final class LodCullingComputePass {
 
             // ==================== 分配 Occlusion Query DescriptorSet ====================
             MemorySegment occAllocInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
-            occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 48L);
+            occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
             occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
             occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, hizDescriptorPool);
             occAllocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 1L);
@@ -1423,7 +1424,7 @@ public final class LodCullingComputePass {
 
             // --- Hi-Z Build Shader Stage ---
             MemorySegment hizStageInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
-            hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 10L);                                // sType = PIPELINE_SHADER_STAGE_CREATE_INFO
+            hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO);                                // sType = PIPELINE_SHADER_STAGE_CREATE_INFO
             hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                                 // pNext = null
             hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                                 // flags = 0
             hizStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) VK_SHADER_STAGE_COMPUTE_BIT); // stage = COMPUTE
@@ -1432,7 +1433,7 @@ public final class LodCullingComputePass {
 
             // --- Occlusion Query Shader Stage ---
             MemorySegment occStageInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
-            occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 10L);                                // sType = PIPELINE_SHADER_STAGE_CREATE_INFO
+            occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO);                                // sType = PIPELINE_SHADER_STAGE_CREATE_INFO
             occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                                 // pNext = null
             occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                                 // flags = 0
             occStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) VK_SHADER_STAGE_COMPUTE_BIT); // stage = COMPUTE
@@ -1448,7 +1449,7 @@ public final class LodCullingComputePass {
 
             // --- Hi-Z Build Pipeline CreateInfo ---
             MemorySegment hizPipelineInfo = arena.allocate(ValueLayout.JAVA_LONG, createInfoFieldCount);
-            hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 24L);                    // sType = COMPUTE_PIPELINE_CREATE_INFO
+            hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);                    // sType = COMPUTE_PIPELINE_CREATE_INFO
             hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                     // pNext = null
             hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                     // flags = 0
             hizPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, hizStageInfo.address()); // stage = HiZ Build Stage Info
@@ -1458,7 +1459,7 @@ public final class LodCullingComputePass {
 
             // --- Occlusion Query Pipeline CreateInfo ---
             MemorySegment occPipelineInfo = arena.allocate(ValueLayout.JAVA_LONG, createInfoFieldCount);
-            occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 24L);                    // sType = COMPUTE_PIPELINE_CREATE_INFO
+            occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);                    // sType = COMPUTE_PIPELINE_CREATE_INFO
             occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                     // pNext = null
             occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                     // flags = 0
             occPipelineInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, occStageInfo.address()); // stage = Occ Query Stage Info
@@ -1583,7 +1584,7 @@ public final class LodCullingComputePass {
 
             // VkDescriptorSetLayoutCreateInfo (LOD):
             MemorySegment lodDSLCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
-            lodDSLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 11L);          // sType = DESCRIPTOR_SET_LAYOUT_CREATE_INFO
+            lodDSLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);          // sType = DESCRIPTOR_SET_LAYOUT_CREATE_INFO
             lodDSLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);           // pNext = null
             lodDSLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);           // flags = 0
             lodDSLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 3L);           // bindingCount = 3
@@ -1614,7 +1615,7 @@ public final class LodCullingComputePass {
             lodPushConstRange.setAtIndex(ValueLayout.JAVA_LONG, 2, 128L); // size = 128 bytes
 
             MemorySegment lodPLCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
-            lodPLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 12L);                        // sType = PIPELINE_LAYOUT_CREATE_INFO
+            lodPLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);                        // sType = PIPELINE_LAYOUT_CREATE_INFO
             lodPLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                         // pNext = null
             lodPLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                         // flags = 0
             lodPLCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 1L);                         // setLayoutCount = 1
@@ -1642,7 +1643,7 @@ public final class LodCullingComputePass {
 
             // VkPipelineShaderStageCreateInfo (LOD)
             MemorySegment lodStageInfo = arena.allocate(ValueLayout.JAVA_LONG, 7);
-            lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 10L);                                // sType = PIPELINE_SHADER_STAGE_CREATE_INFO
+            lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO);                                // sType = PIPELINE_SHADER_STAGE_CREATE_INFO
             lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                                 // pNext = null
             lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                                 // flags = 0
             lodStageInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) VK_SHADER_STAGE_COMPUTE_BIT); // stage = COMPUTE
@@ -1652,7 +1653,7 @@ public final class LodCullingComputePass {
             // VkComputePipelineCreateInfo (LOD)
             int ciFieldCount = 7;
             MemorySegment lodPipelineCI = arena.allocate(ValueLayout.JAVA_LONG, ciFieldCount);
-            lodPipelineCI.setAtIndex(ValueLayout.JAVA_LONG, 0, 24L);                      // sType = COMPUTE_PIPELINE_CREATE_INFO
+            lodPipelineCI.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);                      // sType = COMPUTE_PIPELINE_CREATE_INFO
             lodPipelineCI.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                       // pNext = null
             lodPipelineCI.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);                       // flags = 0
             lodPipelineCI.setAtIndex(ValueLayout.JAVA_LONG, 3, lodStageInfo.address());   // stage
@@ -1730,7 +1731,7 @@ public final class LodCullingComputePass {
 
             if (VK_CREATE_COMMAND_POOL != null) {
                 MemorySegment poolCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 4);
-                poolCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 27L);                       // sType = COMMAND_POOL_CREATE_INFO
+                poolCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO);                       // sType = COMMAND_POOL_CREATE_INFO
                 poolCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);                        // pNext = null
                 poolCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 6L);                        // flags = TRANSIENT | RESET_COMMAND_BUFFER
                 poolCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, (long) computeQueueFamilyIndex); // queueFamilyIndex
@@ -1769,7 +1770,7 @@ public final class LodCullingComputePass {
 
             if (VK_CREATE_FENCE != null) {
                 MemorySegment fenceCreateInfo = arena.allocate(ValueLayout.JAVA_LONG, 3);
-                fenceCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 9L);   // sType = FENCE_CREATE_INFO
+                fenceCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);   // sType = FENCE_CREATE_INFO
                 fenceCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);    // pNext = null
                 fenceCreateInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 1L);    // flags = SIGNALED
 
@@ -1839,7 +1840,7 @@ public final class LodCullingComputePass {
             // [4] commandBufferCount = 1 (仅分配一个)
 
             MemorySegment allocInfo = arena.allocate(ValueLayout.JAVA_LONG, 5);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 44L);          // sType = COMMAND_BUFFER_ALLOCATE_INFO
+            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO);          // sType = COMMAND_BUFFER_ALLOCATE_INFO
             allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);           // pNext = null
             allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, commandPool);   // commandPool
             allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L);           // level = PRIMARY (0)
@@ -1902,7 +1903,7 @@ public final class LodCullingComputePass {
             //   - pInheritanceInfo = nullptr (primary buffer)
 
             MemorySegment beginInfo = arena.allocate(ValueLayout.JAVA_LONG, 4);
-            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 28L);  // sType
+            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);  // sType
             beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);  // flags
             beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);  // pInheritanceInfo
 
@@ -2411,7 +2412,7 @@ public final class LodCullingComputePass {
 
             // 销毁 Descriptor Pool（自动释放所有分配出的 Descriptor Sets）
             if (hizDescriptorPool != 0L) {
-                MethodHandle vkDestroyDescriptorPool = VulkanFFMBinding.getVkDestroyDescriptorPool();
+                MethodHandle vkDestroyDescriptorPool = VulkanAPIRegistry.getHandle("vkDestroyDescriptorPool");
                 if (vkDestroyDescriptorPool != null) {
                     try {
                         vkDestroyDescriptorPool.invokeExact(vkDevice, hizDescriptorPool, 0L);

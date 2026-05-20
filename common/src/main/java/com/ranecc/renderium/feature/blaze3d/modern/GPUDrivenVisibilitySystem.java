@@ -9,6 +9,7 @@ package com.ranecc.renderium.feature.blaze3d.modern;
 
 import com.ranecc.renderium.feature.blaze3d.aggressive.GPUCullingSystem;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+import com.ranecc.renderium.infrastructure.gpu.VulkanStructs;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -221,27 +222,27 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
      * 基于实际尺寸计算：floor(log2(max(width, height))) + 1
      * 例如 1920×1080 → log2(1920) ≈ 10.9 → 11 层
      */
-    private int actualMipLevels;
+    private volatile int actualMipLevels;
 
     // ==================== MR1 Compute Pipeline 句柄 ====================
 
     /** Pass 1: Frustum Culling Compute Pipeline */
-    private Object frustumCullPipeline;
+    private volatile Object frustumCullPipeline;
 
     /** Pass 2: Hi-Z Occlusion Culling Compute Pipeline */
-    private Object hizOcclusionCullPipeline;
+    private volatile Object hizOcclusionCullPipeline;
 
     /** Pass 3: Compact + Indirect Draw Generation Compute Pipeline */
-    private Object compactAndDrawPipeline;
+    private volatile Object compactAndDrawPipeline;
 
     /** 全局 bindless DescriptorPool（SSBO + Sampler binding 按需分配） */
-    private long descPool = 0L;
+    private volatile long descPool = 0L;
     /** 全局 bindless DescriptorSet */
-    private long descSet = 0L;
+    private volatile long descSet = 0L;
     /** 全局 bindless DescriptorSet Layout */
-    private long descSetLayout = 0L;
+    private volatile long descSetLayout = 0L;
     /** Compute Pipeline Layout（父类 pipelineLayout 是 private，自行缓存） */
-    private long computePipelineLayout = 0L;
+    private volatile long computePipelineLayout = 0L;
 
     // ==================== MR1 GPU Buffer（三阶段中间数据） ====================
 
@@ -251,7 +252,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
      * 存储通过视锥测试但尚未进行遮挡测试的对象索引。
      * 格式: uint32[] candidateIndices[MAX_CHUNK_COUNT]
      */
-    private Object candidateListBuffer;
+    private volatile Object candidateListBuffer;
 
     /**
      * 候选数量计数器（Atomic Counter Buffer）
@@ -259,7 +260,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
      * Pass 1 写入候选数量，Pass 2 读取作为输入范围。
      * 使用 Vulkan Atomic Counter 或 SSBO 实现。
      */
-    private Object candidateCountBuffer;
+    private volatile Object candidateCountBuffer;
 
     /**
      * 最终可见列表缓冲区（Pass 2 输出 / Pass 3 输入）
@@ -267,12 +268,12 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
      * 存储通过视锥+遮挡测试的最终可见对象索引。
      * 格式: uint32[] visibleIndices[MAX_CHUNK_COUNT]
      */
-    private Object finalVisibleListBuffer;
+    private volatile Object finalVisibleListBuffer;
 
     /**
      * 最终可见数量计数器（Pass 3 读取用于生成 Indirect Draw Commands）
      */
-    private Object visibleCountBuffer;
+    private volatile Object visibleCountBuffer;
 
     // ==================== MR1 统计字段 ====================
 
@@ -453,29 +454,68 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
     @Override
     public void close() {
         if (!isInitialized()) {
-            return; // 未初始化或已释放
+            return;
         }
 
         try {
-            // 释放 MR1 新增资源
+            long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+
+            // 销毁 3 个 Compute Pipeline (VkPipeline)
+            if (frustumCullPipeline != null) {
+                long h = extractHandle(frustumCullPipeline);
+                if (h != 0L) VulkanAPIRegistry.invoke("vkDestroyPipeline", device, h, 0L);
+            }
+            if (hizOcclusionCullPipeline != null) {
+                long h = extractHandle(hizOcclusionCullPipeline);
+                if (h != 0L) VulkanAPIRegistry.invoke("vkDestroyPipeline", device, h, 0L);
+            }
+            if (compactAndDrawPipeline != null) {
+                long h = extractHandle(compactAndDrawPipeline);
+                if (h != 0L) VulkanAPIRegistry.invoke("vkDestroyPipeline", device, h, 0L);
+            }
+
+            // 销毁 Buffer
+            long[] bufHandles = new long[]{
+                extractHandle(candidateListBuffer),
+                extractHandle(candidateCountBuffer),
+                extractHandle(finalVisibleListBuffer),
+                extractHandle(visibleCountBuffer),
+            };
+            for (long h : bufHandles) {
+                if (h != 0L) VulkanAPIRegistry.invoke("vkDestroyBuffer", device, h, 0L);
+            }
+
+            // 销毁 Image + Sampler
+            long hiZImg = extractHandle(hiZBuffer);
+            if (hiZImg != 0L) VulkanAPIRegistry.invoke("vkDestroyImage", device, hiZImg, 0L);
+            long hiZSmp = extractHandle(hiZSampler);
+            if (hiZSmp != 0L) VulkanAPIRegistry.invoke("vkDestroySampler", device, hiZSmp, 0L);
+
+            // 销毁 DescriptorPool / SetLayout / PipelineLayout
+            if (descPool != 0L) VulkanAPIRegistry.invoke("vkDestroyDescriptorPool", device, descPool, 0L);
+            if (descSetLayout != 0L) VulkanAPIRegistry.invoke("vkDestroyDescriptorSetLayout", device, descSetLayout, 0L);
+            if (computePipelineLayout != 0L) VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", device, computePipelineLayout, 0L);
+
             frustumCullPipeline = null;
             hizOcclusionCullPipeline = null;
             compactAndDrawPipeline = null;
-
             candidateListBuffer = null;
             candidateCountBuffer = null;
             finalVisibleListBuffer = null;
             visibleCountBuffer = null;
-
             hiZBuffer = null;
+            hiZSampler = null;
+            descPool = 0L;
+            descSet = 0L;
+            descSetLayout = 0L;
+            computePipelineLayout = 0L;
 
-            // 调用父类 close() 释放基础资源
             super.close();
 
-            LOGGER.info("GPUDrivenVisibilitySystem 已释放所有资源 (包括 Hi-Z 和 Pipeline)");
+            LOGGER.info("GPUDrivenVisibilitySystem 已释放所有资源 (包含 MR1 + Descriptors)");
 
-        } catch (Exception e) {
-            LOGGER.warning("释放 GPUDrivenVisibilitySystem 资源时发生异常: " + e.getMessage());
+        } catch (Throwable t) {
+            LOGGER.warning("释放 GPUDrivenVisibilitySystem 资源时发生异常: " + t.getMessage());
         }
     }
 
@@ -1068,7 +1108,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
             var outImage = arena.allocate(L);
             int rc = (int) VulkanAPIRegistry.invoke("vkCreateImage",
-                device, seg.address(), 0L, outImage.address());
+                device, seg.address(), 0L, outImage);
             if (rc != 0) return Long.valueOf(0L);
             long image = outImage.get(L, 0);
             LOGGER.fine("createHiZImage: handle=0x" + Long.toHexString(image));
@@ -1103,7 +1143,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
 
             var outSampler = arena.allocate(L);
             int rc = (int) VulkanAPIRegistry.invoke("vkCreateSampler",
-                device, seg.address(), 0L, outSampler.address());
+                device, seg.address(), 0L, outSampler);
             if (rc != 0) return Long.valueOf(0L);
             long sampler = outSampler.get(L, 0);
             LOGGER.fine("createHiZSampler: handle=0x" + Long.toHexString(sampler));
@@ -1138,7 +1178,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
             var seg = arena.allocate(48);
             // VkBufferCreateInfo: sType(I4)+pNext(L8)+flags(I4)+size(L8)+usage(I4)
             //   +sharingMode(I4)+queueFamilyIndexCount(I4)+pQueueFamilyIndices(L8) = 48B
-            seg.set(I, 0, 8);            // VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO
+            seg.set(I, 0, VulkanStructs.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO); // VkBufferCreateInfo
             seg.set(L, 8, 0L);           // pNext
             seg.set(I, 16, 0);           // flags
             seg.set(L, 24, size);        // size
@@ -1169,7 +1209,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
             var I = java.lang.foreign.ValueLayout.JAVA_INT;
             var L = java.lang.foreign.ValueLayout.JAVA_LONG;
             var seg = arena.allocate(48);
-            seg.set(I, 0, 8);
+            seg.set(I, 0, VulkanStructs.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO); // VkBufferCreateInfo
             seg.set(L, 8, 0L);
             seg.set(I, 16, 0);
             seg.set(L, 24, (long) size);
@@ -1650,10 +1690,14 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
     }
 
     private void lazyInitDescriptors() {
+        // 快速路径：已初始化则直接返回（volatile 保证可见性，无需锁）
         if (descSet != 0L) return;
-        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
-        if (device == 0L) return;
-        try (var arena = java.lang.foreign.Arena.ofConfined()) {
+        // 慢速路径：使用 double-checked locking 确保只初始化一次
+        synchronized (this) {
+            if (descSet != 0L) return;
+            long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+            if (device == 0L) return;
+            try (var arena = java.lang.foreign.Arena.ofConfined()) {
             try {
             var I = java.lang.foreign.ValueLayout.JAVA_INT;
             var L = java.lang.foreign.ValueLayout.JAVA_LONG;
@@ -1702,7 +1746,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
             // VkDescriptorPoolCreateInfo (40 bytes):
             //   sType(I4)+padding(4)+pNext(L8)+flags(I4)+maxSets(I4)+poolSizeCount(I4)+padding(4)+pPoolSizes(L8)
             var poolInfo = arena.allocate(40);
-            poolInfo.set(I, 0, 20);      // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
+            poolInfo.set(I, 0, VulkanStructs.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO); // sType
             poolInfo.set(L, 8, 0L);      // pNext
             poolInfo.set(I, 16, 2);      // flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT
             poolInfo.set(I, 20, 1);      // maxSets = 1
@@ -1720,7 +1764,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
             var setLayoutAddr = arena.allocate(L);
             setLayoutAddr.set(L, 0, descSetLayout);
             var allocInfo = arena.allocate(40);
-            allocInfo.set(I, 0, 21);     // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO
+            allocInfo.set(I, 0, VulkanStructs.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO); // sType
             allocInfo.set(L, 8, 0L);     // pNext
             allocInfo.set(L, 16, descPool);  // descriptorPool
             allocInfo.set(I, 24, 1);     // descriptorSetCount
@@ -1736,7 +1780,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
             var setLayoutAddrForPL = arena.allocate(L);
             setLayoutAddrForPL.set(L, 0, descSetLayout);
             var plInfo = arena.allocate(32);
-            plInfo.set(I, 0, 13);        // VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO
+            plInfo.set(I, 0, VulkanStructs.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO); // sType
             plInfo.set(L, 8, 0L);        // pNext
             plInfo.set(I, 16, 0);        // flags
             plInfo.set(I, 20, 1);        // setLayoutCount
@@ -1748,6 +1792,7 @@ public class GPUDrivenVisibilitySystem extends GPUCullingSystem {
             } catch (Throwable t) {
                 LOGGER.warning("lazyInitDescriptors 失败: " + t.getMessage());
             }
+        }
         }
     }
 

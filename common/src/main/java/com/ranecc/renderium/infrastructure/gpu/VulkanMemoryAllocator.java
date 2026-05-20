@@ -93,12 +93,12 @@ public final class VulkanMemoryAllocator {
 
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment createInfo = VulkanStructs.createBufferCreateInfo(arena, size, usageBits);
-            long[] outBuf = new long[1];
+            var outBuf = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke(
-                "vkCreateBuffer", device, createInfo.address(), 0L, outBuf);
+                "vkCreateBuffer", device, createInfo.address(), 0L, outBuf.address());
             if (result != VK_SUCCESS) return new long[]{0L, 0L};
 
-            long vkBuffer = outBuf[0];
+            long vkBuffer = outBuf.get(ValueLayout.JAVA_LONG, 0);
             MemorySegment memReqs = arena.allocate(32);
             VulkanAPIRegistry.invoke("vkGetBufferMemoryRequirements", device, vkBuffer, memReqs.address());
             long memSize = memReqs.get(ValueLayout.JAVA_LONG, 0);
@@ -135,23 +135,20 @@ public final class VulkanMemoryAllocator {
     public static long[] createImage(long device, long imageCreateInfoAddr) {
         if (device == 0L || imageCreateInfoAddr == 0L) return new long[]{0L, 0L};
 
-        try {
-            long[] outImg = new long[1];
+        try (Arena arena = Arena.ofConfined()) {
+            var outImg = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke(
-                "vkCreateImage", device, imageCreateInfoAddr, 0L, outImg);
+                "vkCreateImage", device, imageCreateInfoAddr, 0L, outImg.address());
             if (result != VK_SUCCESS) return new long[]{0L, 0L};
 
-            long vkImage = outImg[0];
-            long[] outMem = new long[1];
-            try (Arena arena = Arena.ofConfined()) {
-                MemorySegment memReqs = arena.allocate(32);
-                VulkanAPIRegistry.invoke("vkGetImageMemoryRequirements", device, vkImage, memReqs.address());
-                long memSize = memReqs.get(ValueLayout.JAVA_LONG, 0);
-                int typeFilter = memReqs.get(ValueLayout.JAVA_INT, 16);
+            long vkImage = outImg.get(ValueLayout.JAVA_LONG, 0);
+            MemorySegment memReqs = arena.allocate(32);
+            VulkanAPIRegistry.invoke("vkGetImageMemoryRequirements", device, vkImage, memReqs.address());
+            long memSize = memReqs.get(ValueLayout.JAVA_LONG, 0);
+            int typeFilter = memReqs.get(ValueLayout.JAVA_INT, 16);
 
-                int memType = findMemoryType(device, typeFilter, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-                return new long[]{vkImage, allocateAndBindImageMemory(device, vkImage, memSize, memType)};
-            }
+            int memType = findMemoryType(device, typeFilter, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            return new long[]{vkImage, allocateAndBindImageMemory(device, vkImage, memSize, memType)};
         } catch (Throwable t) {
             LOGGER.warning("createImage failed: " + t.getMessage());
             return new long[]{0L, 0L};
@@ -238,13 +235,14 @@ public final class VulkanMemoryAllocator {
     private static long allocateAndBindMemory(long device, long vkBuffer, long size, int memType) {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment allocInfo = VulkanStructs.createMemoryAllocateInfo(arena, size, memType);
-            long[] outMem = new long[1];
+            var outMem = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke(
-                "vkAllocateMemory", device, allocInfo.address(), 0L, outMem);
+                "vkAllocateMemory", device, allocInfo.address(), 0L, outMem.address());
             if (result != VK_SUCCESS) return 0L;
 
-            VulkanAPIRegistry.invoke("vkBindBufferMemory", device, vkBuffer, outMem[0], 0L);
-            return outMem[0];
+            long mem = outMem.get(ValueLayout.JAVA_LONG, 0);
+            VulkanAPIRegistry.invoke("vkBindBufferMemory", device, vkBuffer, mem, 0L);
+            return mem;
         } catch (Throwable t) {
             LOGGER.fine("allocateAndBindMemory 失败: " + t.getMessage());
             return 0L;
@@ -254,13 +252,14 @@ public final class VulkanMemoryAllocator {
     private static long allocateAndBindImageMemory(long device, long vkImage, long size, int memType) {
         try (Arena arena = Arena.ofConfined()) {
             MemorySegment allocInfo = VulkanStructs.createMemoryAllocateInfo(arena, size, memType);
-            long[] outMem = new long[1];
+            var outMem = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke(
-                "vkAllocateMemory", device, allocInfo.address(), 0L, outMem);
+                "vkAllocateMemory", device, allocInfo.address(), 0L, outMem.address());
             if (result != VK_SUCCESS) return 0L;
 
-            VulkanAPIRegistry.invoke("vkBindImageMemory", device, vkImage, outMem[0], 0L);
-            return outMem[0];
+            long mem = outMem.get(ValueLayout.JAVA_LONG, 0);
+            VulkanAPIRegistry.invoke("vkBindImageMemory", device, vkImage, mem, 0L);
+            return mem;
         } catch (Throwable t) {
             LOGGER.fine("allocateAndBindImageMemory 失败: " + t.getMessage());
             return 0L;

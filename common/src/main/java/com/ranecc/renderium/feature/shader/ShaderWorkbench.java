@@ -453,8 +453,10 @@ public final class ShaderWorkbench {
             var arena = java.lang.foreign.Arena.ofConfined();
             var seg = arena.allocate(spirvData.length);
             for (int i = 0; i < spirvData.length; i++) seg.set(java.lang.foreign.ValueLayout.JAVA_BYTE, i, spirvData[i]);
-            long module = (long) com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkCreateShaderModule()
-                .invoke(device, seg.address(), 0L, 0L, 0L, 0L);
+            // vkCreateShaderModule 签名: VkResult(VkDevice, pCreateInfo, pAllocator, pShaderModule)
+            // 使用 VulkanAPIRegistry.invoke 统一调用，参数数量与 FDB 匹配（4 个参数）
+            long module = (long) com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke(
+                "vkCreateShaderModule", device, seg.address(), 0L, 0L);
             LOGGER.fine("ShaderModule created: " + passName + " (" + spirvData.length + " bytes)");
             return module;
         } catch (Throwable t) {

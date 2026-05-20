@@ -29,22 +29,28 @@ public final class VulkanStructs {
 
     private VulkanStructs() {}
 
-    // ==================== sType 常量 ====================
+    // ==================== sType 常量（真实 Vulkan 1.0 头文件值） ====================
 
-    public static final int VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO = 1;
-    public static final int VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO = 4;
-    public static final int VK_STRUCTURE_TYPE_FENCE_CREATE_INFO = 9;
-    public static final int VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO = 10;
-    public static final int VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO = 12;
-    public static final int VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO = 24;
-    public static final int VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO = 27;
-    public static final int VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO = 35;  // 紧凑版
-    public static final int VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO = 48;   // 标准版
-    public static final int VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO_ALIGNED = 48;  // 对齐版（别名）
-    public static final int VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO = 44;
-    public static final int VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO = 5;              // VkMemoryAllocateInfo
-    public static final int VK_STRUCTURE_TYPE_SUBMIT_INFO = 4;                      // VkSubmitInfo
-    public static final int VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO = 43;  // VkDescriptorSetLayoutCreateInfo
+    public static final int VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO = 12;
+    public static final int VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO = 9;
+    public static final int VK_STRUCTURE_TYPE_FENCE_CREATE_INFO = 8;
+    public static final int VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO = 18;
+    public static final int VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO = 30;
+    public static final int VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO = 29;
+    public static final int VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO = 39;
+    public static final int VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO = 33;
+    public static final int VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO = 34;
+    public static final int VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO = 40;
+    public static final int VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO = 5;
+    public static final int VK_STRUCTURE_TYPE_SUBMIT_INFO = 4;
+    public static final int VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO = 32;
+    public static final int VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO = 16;
+    public static final int VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO = 14;
+    public static final int VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO = 31;
+    public static final int VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO = 15;
+    public static final int VK_STRUCTURE_TYPE_MEMORY_BARRIER = 46;
+    public static final int VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO = 38;
+    public static final int VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO = 42;
     public static final int VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO = 1000203001;
     public static final int VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO = 1000203002;
     public static final int VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO = 1000203003;
@@ -124,7 +130,7 @@ public final class VulkanStructs {
         var I = ValueLayout.JAVA_INT;
         var L = ValueLayout.JAVA_LONG;
         MemorySegment s = arena.allocate(40);
-        s.set(I, 0, 20);  // VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO
+        s.set(I, 0, VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);  // 35
         s.set(L, 8, 0L);  // pNext
         s.set(I, 16, 0);  // flags
         s.set(I, 20, maxSets);
@@ -304,7 +310,7 @@ public final class VulkanStructs {
         var I = ValueLayout.JAVA_INT;
         var L = ValueLayout.JAVA_LONG;
         MemorySegment s = arena.allocate(48);
-        s.set(I, 0, 13);  // VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO
+        s.set(I, 0, VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO); // sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO
         s.set(L, 8, 0L);  // pNext
         s.set(I, 16, 0);  // flags
         s.set(I, 20, setLayoutCount);
@@ -338,7 +344,7 @@ public final class VulkanStructs {
         var I = ValueLayout.JAVA_INT;
         var L = ValueLayout.JAVA_LONG;
         MemorySegment s = arena.allocate(32);
-        s.set(I, 0, 43);  // VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO
+        s.set(I, 0, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO); // sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO
         s.set(L, 8, 0L);  // pNext
         s.set(I, 16, flags);
         s.set(I, 20, bindingCount);

@@ -82,14 +82,15 @@ public final class VulkanAccelerationStructureManager {
             asCreateInfo.set(ValueLayout.JAVA_LONG, 8, 0L);
             asCreateInfo.set(ValueLayout.JAVA_INT, 16, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL);
 
-            long[] outAS = new long[1];
+            var outAS = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke("vkCreateAccelerationStructureKHR",
-                device, asCreateInfo.address(), 0L, outAS);
+                device, asCreateInfo.address(), 0L, outAS.address());
+            long asHandle = outAS.get(ValueLayout.JAVA_LONG, 0);
             if (result == VK_SUCCESS) {
-                tlas.set(outAS[0]);
-                LOGGER.info("TLAS created: 0x" + Long.toHexString(outAS[0])
+                tlas.set(asHandle);
+                LOGGER.info("TLAS created: 0x" + Long.toHexString(asHandle)
                     + " maxInstances=" + maxInstances);
-                return outAS[0];
+                return asHandle;
             }
             LOGGER.warning("vkCreateAccelerationStructureKHR(TLAS) failed: " + result);
             return 0L;
@@ -136,13 +137,14 @@ public final class VulkanAccelerationStructureManager {
             asCreateInfo.set(ValueLayout.JAVA_LONG, 32, 0L);
             asCreateInfo.set(ValueLayout.ADDRESS, 40, buildInfo);
 
-            long[] outBLAS = new long[1];
+            var outBLAS = arena.allocate(ValueLayout.JAVA_LONG);
             int result = (int) VulkanAPIRegistry.invoke("vkCreateAccelerationStructureKHR",
-                device, asCreateInfo.address(), 0L, outBLAS);
+                device, asCreateInfo.address(), 0L, outBLAS.address());
+            long blasHandle = outBLAS.get(ValueLayout.JAVA_LONG, 0);
             if (result == VK_SUCCESS) {
-                LOGGER.fine("BLAS created: 0x" + Long.toHexString(outBLAS[0])
+                LOGGER.fine("BLAS created: 0x" + Long.toHexString(blasHandle)
                     + " tris=" + indexCount / 3);
-                return outBLAS[0];
+                return blasHandle;
             }
             return 0L;
         } catch (Throwable t) {
