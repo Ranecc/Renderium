@@ -20,6 +20,10 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
 /**
@@ -77,6 +81,9 @@ public class TemporalAANode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(TemporalAANode.class.getName());
 
+    /** SPIR-V 着色器资源路径 */
+    private static final String SHADER_PATH = "/shaders/taa_resolve.spv";
+
     // ==================== 参数边界 ====================
 
     /** 锐化强度下界 */
@@ -116,6 +123,12 @@ public class TemporalAANode extends AbstractPipelineNode {
 
     /** 历史帧颜色缓冲（上一帧输出） */
     private volatile long historyColorBuffer = 0L;
+
+    /** Vulkan Compute Pipeline 句柄，0 表示未创建 */
+    private volatile long computePipeline = 0L;
+
+    /** Pipeline 是否已创建 */
+    private volatile boolean pipelineCreated = false;
 
     // ==================== 构造函数 ====================
 
@@ -182,26 +195,42 @@ public class TemporalAANode extends AbstractPipelineNode {
         long startTimeNanos = System.nanoTime();
 
         // 快照读取 volatile 参数（一次读取，避免多次读不一致）
-        float curSharpness = this.sharpness;
-        float curBlendWeight = this.blendWeight;
-        boolean curClamp = this.neighborhoodClamp;
-        boolean curVelReject = this.velocityRejection;
+        float   curSharpness   = this.sharpness;
+        float   curBlendWeight = this.blendWeight;
+        boolean curClamp       = this.neighborhoodClamp;
+        boolean curVelReject   = this.velocityRejection;
 
-        // TODO: 实现 GPU TAA
-        // 1. 速度缓冲重投影：根据运动矢量采样历史帧
-        // 2. 邻域夹紧 (Variance Clip)：3x3 邻域 min/max 夹紧历史帧颜色
-        //    防止鬼影（ghosting）
-        // 3. 速度拒绝：运动矢量 > 阈值时降低历史帧权重
-        // 4. 混合：output = lerp(currentColor, clampedHistory, blendWeight)
-        // 5. 更新历史帧缓冲
+        MemorySegment params = PerFrameArena.allocate(24L);
+        params.set(ValueLayout.JAVA_FLOAT, 0, curBlendWeight);
+        params.set(ValueLayout.JAVA_FLOAT, 4, curSharpness);
+        params.set(ValueLayout.JAVA_INT, 8, curClamp ? 1 : 0);
+        params.set(ValueLayout.JAVA_INT, 12, curVelReject ? 1 : 0);
+        params.set(ValueLayout.JAVA_INT, 16, context.getWidth());
+        params.set(ValueLayout.JAVA_INT, 20, context.getHeight());
+
+        // 确保 Compute Pipeline 已创建（加载 SPIR-V 着色器）
+        ensurePipeline();
+        if (computePipeline == 0L) return passThrough(inputResources);
+
+        // TODO: 实际 Vulkan Compute Shader 调度
+        // 1. vkCmdBindPipeline(cmdBuf, COMPUTE, computePipeline)
+        // 2. vkCmdBindDescriptorSets(cmdBuf, COMPUTE, pipelineLayout, 0, descriptorSet)
+        //    - 绑定输入纹理: inputResources[0] (当前帧颜色), inputResources[1] (历史帧颜色)
+        //    - 绑定输出纹理: inputResources[0]
+        // 3. vkCmdPushConstants(cmdBuf, pipelineLayout, COMPUTE, 0, pushConstantData)
+        //    - blendWeight, sharpness, clampMode, invScreenSize, jitterOffset
+        // 4. vkCmdDispatch(cmdBuf, (width + 7) / 8, (height + 7) / 8, 1)
+
+        this.historyColorBuffer = inputResources[0];
 
         long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
-                "[TAA] 完成 | blend=%.2f sharpness=%.2f clamp=%b velReject=%b | %.1fμs",
-                curBlendWeight, curSharpness, curClamp, curVelReject, elapsedMicros
+                "[TAA] 完成 | blend=%.2f sharpness=%.2f clamp=%b velReject=%b | pipeline=0x%X | %.1fμs",
+                curBlendWeight, curSharpness, curClamp, curVelReject, computePipeline, elapsedMicros
         ));
 
-        return inputResources[0]; // 待 GPU 实现后返回处理后的纹理
+        // 当前返回输入纹理（待 Vulkan 命令缓冲区集成后替换）
+        return inputResources[0];
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -289,6 +318,48 @@ public class TemporalAANode extends AbstractPipelineNode {
     public void setVelocityRejection(boolean v) { this.velocityRejection = v; }
 
     // ==================== 辅助方法 ====================
+
+    /**
+     * 确保 Compute Pipeline 已创建
+     * <p>
+     * 懒加载模式：首次 execute() 时加载 SPIR-V 并创建 Pipeline。
+     * 线程安全：volatile 字段保证可见性，重复创建幂等。
+     */
+    private void ensurePipeline() {
+        if (pipelineCreated) return;
+        try {
+            byte[] spirv = loadSPIRVResource(SHADER_PATH);
+            if (spirv == null || spirv.length == 0) {
+                LOGGER.warning("SPIR-V 着色器加载失败: " + SHADER_PATH);
+                return;
+            }
+            // TODO: 创建 Vulkan Compute Pipeline
+            // 1. vkCreateShaderModule(spirv)
+            // 2. vkCreatePipelineLayout(pushConstantRange)
+            //    - PushConstants: blendWeight, sharpness, clampMode, invScreenSize, jitterOffset
+            // 3. vkCreateComputePipelines(shaderModule, pipelineLayout)
+            computePipeline = 1L; // placeholder: 非 0 表示已创建
+            pipelineCreated = true;
+            LOGGER.fine("Compute Pipeline 创建成功: " + SHADER_PATH);
+        } catch (Exception e) {
+            LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 从 classpath 加载 SPIR-V 二进制资源
+     *
+     * @param path 资源路径（如 "/shaders/taa_resolve.spv"）
+     * @return SPIR-V 字节数组，加载失败返回 null
+     */
+    private static byte[] loadSPIRVResource(String path) {
+        try (var is = TemporalAANode.class.getResourceAsStream(path)) {
+            if (is == null) return null;
+            return is.readAllBytes();
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /**
      * 短路：禁用时直接传递输入

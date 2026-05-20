@@ -1,0 +1,166 @@
+// ============================================================================
+// Renderium - 体积雾 Compute Shader (Volumetric Fog)
+// ============================================================================
+// 用途: 屏幕空间体积雾散射与累积
+// 算法来源: PhysicsTrace/13_光学特效物理化/体积雾物理模拟.md
+// ============================================================================
+
+#version 460
+#extension GL_EXT_samplerless_texture_functions : require
+
+// ============================================================================
+// 工作组配置: 16x16 像素/工作组
+// ============================================================================
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ============================================================================
+// 资源绑定:
+//   binding 0: 输入颜色纹理 (RGBA16F) — 场景颜色缓冲区
+//   binding 1: 输入深度纹理 (R32F) — 线性深度值 [0, farPlane]
+//   binding 2: 输出颜色纹理 (RGBA16F) — 体积雾散射合成结果
+//   binding 3: 参数 UBO — { fogColor, density, scatteringAnisotropy }
+// ============================================================================
+layout(binding = 0, rgba16f) uniform readonly image2D  uSceneColor;
+layout(binding = 1, r32f)    uniform readonly image2D  uDepthBuffer;
+layout(binding = 2, rgba16f) uniform writeonly image2D uOutputImage;
+
+// ============================================================================
+// 体积雾参数 (通过 UBO 传入)
+// ============================================================================
+layout(binding = 3, std140) uniform VolumetricFogParams {
+    vec4  uFogColor;             // 雾颜色 (RGBA)
+    float uFogDensity;           // 雾密度 [0.0, 1.0]
+    float uScatteringAnisotropy; // 散射各向异性 (g in Henyey-Greenstein) (-1..1)
+    float uMaxFogDistance;       // 最大雾距离 (世界单位)
+    int   uRaymarchSteps;        // 光线步进数 [4, 64]
+    float uNoiseFrequency;       // 噪声采样频率 (破坏带状伪影)
+    float uHeightFalloff;        // 高度衰减系数
+    float uPadding;
+};
+
+// ============================================================================
+// 常量
+// ============================================================================
+const float FOG_EPSILON     = 0.0001;
+const float PI              = 3.14159265358979323846;
+const float NOISE_SEED      = 0.317;
+
+// ============================================================================
+// 简单伪随机 (用于抖动采样)
+// ============================================================================
+float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+// ============================================================================
+// Henyey-Greenstein 相位函数
+//
+// 描述光在参与介质中的散射角度分布:
+//   g > 0: 前向散射 (各向异性)
+//   g = 0: 各向同性散射
+//   g < 0: 后向散射
+// ============================================================================
+float phaseHG(float cosTheta, float g) {
+    float g2 = g * g;
+    return (1.0 - g2) / max(pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5), FOG_EPSILON) / (4.0 * PI);
+}
+
+// ============================================================================
+// 相机射线重建
+//
+// 从 UV 坐标和逆投影矩阵重建世界空间的射线方向
+// 简化实现: 假设标准透视投影, 远平面 = uMaxFogDistance
+// ============================================================================
+vec3 reconstructWorldRay(vec2 uvNormalized, float aspectRatio, float fovTan) {
+    // 标准化设备坐标 [-1, 1]
+    vec2 ndc = uvNormalized * 2.0 - 1.0;
+    vec3 ray = vec3(ndc.x * aspectRatio * fovTan, ndc.y * fovTan, -1.0);
+    return normalize(ray);
+}
+
+// ============================================================================
+// 体积雾散射积分 (Ray Marching)
+//
+// 沿视线方向在雾中步进, 累积 in-scattering:
+//   L = Σ (Li * phase(θ) * σs * exp(-σt * t) * Δt)
+//
+// 其中:
+//   σs = 散射系数, σt = 衰减系数 (σa + σs)
+//   Li = 入射辐亮度 (简化为环境光 + 雾颜色)
+// ============================================================================
+vec4 integrateVolumetricFog(ivec2 uv, float depth) {
+    ivec2 imgSize  = imageSize(uSceneColor);
+    vec2  uvNorm   = (vec2(uv) + 0.5) / vec2(imgSize);
+
+    // 计算世界空间射线参数
+    float aspect  = float(imgSize.x) / float(imgSize.y);
+    float fovTan  = tan(radians(70.0) * 0.5);
+    vec3  rayDir  = reconstructWorldRay(uvNorm, aspect, fovTan);
+
+    // 光线步进参数
+    float tMax      = min(depth, uMaxFogDistance);
+    int   steps     = max(4, min(uRaymarchSteps, 64));
+    float stepSize  = tMax / float(steps);
+
+    // 抖动起始偏移 (减少带状伪影)
+    float jitter = hash(vec2(uv) + NOISE_SEED) * stepSize;
+
+    vec4  inScattering = vec4(0.0);
+    float transmittance = 1.0;
+
+    for (int i = 0; i < steps; i++) {
+        float t = (float(i) + 0.5) * stepSize + jitter;
+        if (t >= tMax) break;
+
+        // 高度衰减: 假设雾密度随高度指数衰减
+        float heightFactor = exp(-abs(rayDir.y * t) * uHeightFalloff);
+
+        // 局部雾密度
+        float localDensity = uFogDensity * heightFactor;
+
+        // 光学厚度 (Optical Depth)
+        float opticalDepth = localDensity * stepSize;
+
+        // 透射率 (Beer-Lambert Law)
+        float segmentTransmittance = exp(-opticalDepth);
+        transmittance *= segmentTransmittance;
+
+        // 散射光: 雾颜色 + 高度权重调制
+        vec3 fogAlbedo = uFogColor.rgb * (1.0 + heightFactor * 0.5);
+
+        // 在散射积分中使用相位函数调制
+        float cosTheta = 1.0 - float(i) / float(steps);
+        float phase = phaseHG(cosTheta, uScatteringAnisotropy);
+
+        vec3 scatterContrib = fogAlbedo * localDensity * phase * stepSize;
+        inScattering.rgb += scatterContrib * transmittance;
+        inScattering.a   += segmentTransmittance;
+    }
+
+    // 合成: 原始场景颜色经雾衰减 + 散射光
+    vec4 sceneColor = imageLoad(uSceneColor, uv);
+    vec4 fogResult;
+    fogResult.rgb = sceneColor.rgb * exp(-inScattering.a) + inScattering.rgb;
+    fogResult.a   = sceneColor.a;
+
+    // 限制范围 (防止 HDR 溢出)
+    return clamp(fogResult, vec4(0.0), vec4(10.0));
+}
+
+// ============================================================================
+// 主函数
+// ============================================================================
+void main() {
+    ivec2 uv      = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imgSize = imageSize(uSceneColor);
+
+    if (uv.x >= imgSize.x || uv.y >= imgSize.y) {
+        return;
+    }
+
+    float depth = imageLoad(uDepthBuffer, uv).r;
+
+    vec4 result = integrateVolumetricFog(uv, depth);
+
+    imageStore(uOutputImage, uv, result);
+}

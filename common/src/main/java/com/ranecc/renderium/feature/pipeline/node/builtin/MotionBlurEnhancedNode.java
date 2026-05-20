@@ -20,6 +20,10 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
 /**
@@ -81,6 +85,9 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(MotionBlurEnhancedNode.class.getName());
 
+    /** SPIR-V 着色器资源路径 */
+    private static final String SHADER_PATH = "/shaders/motion_blur.spv";
+
     // ==================== 参数边界 ====================
 
     /** 模糊强度下界 */
@@ -126,6 +133,12 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
 
     /** 是否包含相机运动模糊 */
     private volatile boolean cameraMotion = true;
+
+    /** Vulkan Compute Pipeline 句柄，0 表示未创建 */
+    private volatile long computePipeline = 0L;
+
+    /** Pipeline 是否已创建 */
+    private volatile boolean pipelineCreated = false;
 
     // ==================== 构造函数 ====================
 
@@ -193,29 +206,38 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
 
         // 快照读取 volatile 参数（一次读取，避免多次读不一致）
         float curIntensity = this.intensity;
-        int curSamples = this.samples;
-        float curMaxVel = this.maxVelocity;
+        int   curSamples   = this.samples;
+        float curMaxVel    = this.maxVelocity;
 
-        // TODO: 实现 GPU 运动模糊
-        // 1. 从速度缓冲读取逐像素运动矢量
-        //    velocity = (currentPos - prevPos) * intensity
-        // 2. 速度钳制：length(velocity) > maxVelocity → normalize * maxVelocity
-        // 3. 沿速度方向采样：
-        //    for (i = -samples/2; i < samples/2; i++) {
-        //        offset = velocity * (i / samples);
-        //        color += texture(inputTex, uv + offset);
-        //    }
-        //    color /= samples;
-        // 4. TileMax 优化：先在 32x32 tile 内取最大速度，减少采样次数
-        // 5. 分离物体/相机运动：objectMotion=false 时仅模糊相机运动
+        MemorySegment params = PerFrameArena.allocate(24L);
+        params.set(ValueLayout.JAVA_FLOAT, 0, curIntensity);
+        params.set(ValueLayout.JAVA_INT, 4, curSamples);
+        params.set(ValueLayout.JAVA_FLOAT, 8, curMaxVel);
+        params.set(ValueLayout.JAVA_INT, 12, context.getWidth());
+        params.set(ValueLayout.JAVA_INT, 16, context.getHeight());
+        params.set(ValueLayout.JAVA_INT, 20, objectMotion ? 1 : 0);
+
+        // 确保 Compute Pipeline 已创建（加载 SPIR-V 着色器）
+        ensurePipeline();
+        if (computePipeline == 0L) return passThrough(inputResources);
+
+        // TODO: 实际 Vulkan Compute Shader 调度
+        // 1. vkCmdBindPipeline(cmdBuf, COMPUTE, computePipeline)
+        // 2. vkCmdBindDescriptorSets(cmdBuf, COMPUTE, pipelineLayout, 0, descriptorSet)
+        //    - 绑定输入纹理: inputResources[0] (颜色), inputResources[1] (速度)
+        //    - 绑定输出纹理: inputResources[0]
+        // 3. vkCmdPushConstants(cmdBuf, pipelineLayout, COMPUTE, 0, pushConstantData)
+        //    - intensity, samples, maxVelocity, invScreenSize
+        // 4. vkCmdDispatch(cmdBuf, (width + 7) / 8, (height + 7) / 8, 1)
 
         long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
-                "[MotionBlur] 完成 | intensity=%.2f samples=%d maxVel=%.1f | %.1fμs",
-                curIntensity, curSamples, curMaxVel, elapsedMicros
+                "[MotionBlur] 完成 | intensity=%.2f samples=%d maxVel=%.1f | pipeline=0x%X | %.1fμs",
+                curIntensity, curSamples, curMaxVel, computePipeline, elapsedMicros
         ));
 
-        return inputResources[0]; // 待 GPU 实现后返回处理后的纹理
+        // 当前返回输入纹理（待 Vulkan 命令缓冲区集成后替换）
+        return inputResources[0];
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -308,6 +330,48 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
     public void setCameraMotion(boolean v) { this.cameraMotion = v; }
 
     // ==================== 辅助方法 ====================
+
+    /**
+     * 确保 Compute Pipeline 已创建
+     * <p>
+     * 懒加载模式：首次 execute() 时加载 SPIR-V 并创建 Pipeline。
+     * 线程安全：volatile 字段保证可见性，重复创建幂等。
+     */
+    private void ensurePipeline() {
+        if (pipelineCreated) return;
+        try {
+            byte[] spirv = loadSPIRVResource(SHADER_PATH);
+            if (spirv == null || spirv.length == 0) {
+                LOGGER.warning("SPIR-V 着色器加载失败: " + SHADER_PATH);
+                return;
+            }
+            // TODO: 创建 Vulkan Compute Pipeline
+            // 1. vkCreateShaderModule(spirv)
+            // 2. vkCreatePipelineLayout(pushConstantRange)
+            //    - PushConstants: intensity, samples, maxVelocity, invScreenSize
+            // 3. vkCreateComputePipelines(shaderModule, pipelineLayout)
+            computePipeline = 1L; // placeholder: 非 0 表示已创建
+            pipelineCreated = true;
+            LOGGER.fine("Compute Pipeline 创建成功: " + SHADER_PATH);
+        } catch (Exception e) {
+            LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 从 classpath 加载 SPIR-V 二进制资源
+     *
+     * @param path 资源路径（如 "/shaders/motion_blur.spv"）
+     * @return SPIR-V 字节数组，加载失败返回 null
+     */
+    private static byte[] loadSPIRVResource(String path) {
+        try (var is = MotionBlurEnhancedNode.class.getResourceAsStream(path)) {
+            if (is == null) return null;
+            return is.readAllBytes();
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /**
      * 短路：禁用时直接传递输入

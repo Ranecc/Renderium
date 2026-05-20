@@ -1,0 +1,321 @@
+// Renderium - 光影系统 v2.0
+// 色差 (Chromatic Aberration) 后处理节点
+//
+// 核心算法:
+//   1. 计算每通道偏移：R 偏移 = -strength, B 偏移 = +strength, G = 0
+//   2. 若 radial：偏移按距中心距离缩放
+//   3. 分别采样 R, G, B 通道，使用不同 UV 偏移
+//   4. 合成：output = vec3(sampleR, sampleG, sampleB)
+//
+// 性能预算:
+//   - 采样 + 合成: < 0.3ms/帧
+//   - 总计: < 0.3ms/帧
+
+package com.ranecc.renderium.feature.pipeline.node.builtin;
+
+import com.ranecc.renderium.feature.intercept.base.RenderContext;
+import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
+import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+
+import java.util.logging.Logger;
+
+/**
+ * 色差节点 (Chromatic Aberration)
+ * <p>
+ * 模拟真实镜头的色差效果，通过 RGB 通道分离采样实现。
+ * 需要色调映射后的场景纹理。
+ * <p>
+ * Blender: Lens Distortion | Unreal: Chromatic Aberration | Unity: Chromatic Aberration
+ * <p>
+ * GPU 开销：<0.3ms (1080p)
+ * 短路条件：enabled == false OR strength == 0 → 直接返回输入纹理
+ *
+ * <h2>算法概述：</h2>
+ * <pre>
+ * ┌──────────────────────────────────────────────────────────────┐
+ * │ execute() 入口                                                │
+ *     ↓                                                          │
+ * ├─ Step 1: 短路检查（enabled == false OR strength == 0）        │
+ *     ↓                                                          │
+ * ├─ Step 2: 输入校验（至少需要颜色纹理 1 张）                     │
+ *     ↓                                                          │
+ * ├─ Step 3: 计算每通道 UV 偏移                                   │
+ * │   R 偏移 = -strength, B 偏移 = +strength, G = 0              │
+ * │   若 radial：偏移按距中心距离缩放                               │
+ *     ↓                                                          │
+ * ├─ Step 4: 分通道采样                                          │
+ * │   sampleR = texture(input, uv + offsetR)                     │
+ * │   sampleG = texture(input, uv)                               │
+ * │   sampleB = texture(input, uv + offsetB)                     │
+ *     ↓                                                          │
+ * ├─ Step 5: 合成输出                                            │
+ * │   output = vec3(sampleR.r, sampleG.g, sampleB.b)             │
+ *     ↓                                                          │
+ * └─ Step 6: 返回处理后的纹理句柄                                │
+ * └──────────────────────────────────────────────────────────────┘
+ * </pre>
+ *
+ * <h2>参数调优建议：</h2>
+ * <table border="1">
+ *   <tr><th>参数</th><th>默认值</th><th>效果</th></tr>
+ *   <tr><td>strength</td><td>0.003</td><td>色差强度，0.0-0.05，越大越明显</td></tr>
+ *   <tr><td>radial</td><td>true</td><td>径向模式，偏移按距中心距离缩放</td></tr>
+ *   <tr><td>centerOffsetX</td><td>0.0</td><td>中心点 X 偏移，-1.0~1.0</td></tr>
+ *   <tr><td>centerOffsetY</td><td>0.0</td><td>中心点 Y 偏移，-1.0~1.0</td></tr>
+ * </table>
+ *
+ * @see AbstractPipelineNode
+ * @see PipelineNode.Category#POST_PROCESS
+ * @since 5.5.0
+ */
+public class ChromaticAberrationNode extends AbstractPipelineNode {
+
+    private static final Logger LOGGER = Logger.getLogger(ChromaticAberrationNode.class.getName());
+
+    // ==================== 参数边界 ====================
+
+    /** 色差强度下界 */
+    private static final float STRENGTH_MIN = 0.0f;
+
+    /** 色差强度上界 */
+    private static final float STRENGTH_MAX = 0.05f;
+
+    /** 色差强度默认值 */
+    private static final float STRENGTH_DEFAULT = 0.003f;
+
+    /** 中心点偏移下界 */
+    private static final float CENTER_OFFSET_MIN = -1.0f;
+
+    /** 中心点偏移上界 */
+    private static final float CENTER_OFFSET_MAX = 1.0f;
+
+    /** 中心点偏移默认值 */
+    private static final float CENTER_OFFSET_DEFAULT = 0.0f;
+
+    // ==================== 可调参数 ====================
+
+    /** 是否启用色差 */
+    private volatile boolean enabled = false;
+
+    /** 色差强度，控制 RGB 通道分离程度 */
+    private volatile float strength = STRENGTH_DEFAULT;
+
+    /** 是否使用径向模式（偏移按距中心距离缩放） */
+    private volatile boolean radial = true;
+
+    /** 中心点 X 偏移 */
+    private volatile float centerOffsetX = CENTER_OFFSET_DEFAULT;
+
+    /** 中心点 Y 偏移 */
+    private volatile float centerOffsetY = CENTER_OFFSET_DEFAULT;
+
+    // ==================== 构造函数 ====================
+
+    /**
+     * 构造色差节点
+     * <p>
+     * 配置节点身份信息：
+     * <ul>
+     *   <li>ID: "chromatic_aberration"</li>
+     *   <li>DisplayName: "Chromatic Aberration (色差)"</li>
+     *   <li>Category: {@link PipelineNode.Category#POST_PROCESS}</li>
+     *   <li>Priority: 180（后处理阶段，色调映射之后）</li>
+     *   <li>依赖: ["tonemap"]</li>
+     * </ul>
+     */
+    public ChromaticAberrationNode() {
+        super(
+                "chromatic_aberration",                         // 唯一标识符（kebab-case）
+                "Chromatic Aberration (色差)",                  // 显示名称
+                PipelineNode.Category.POST_PROCESS,            // 分类：后处理阶段
+                180,                                           // 优先级
+                new String[]{"tonemap"}                        // 依赖：色调映射节点
+        );
+    }
+
+    // ==================== PipelineNode 核心方法 ====================
+
+    /**
+     * 执行色差计算
+     * <p>
+     * 每帧调用一次的热路径方法。完整流程：
+     * <ol>
+     *   <li>短路检查：enabled == false 或 strength == 0 时直接返回输入纹理</li>
+     *   <li>输入校验：至少需要颜色纹理 1 张</li>
+     *   <li>计算每通道 UV 偏移</li>
+     *   <li>分通道采样 R, G, B</li>
+     *   <li>合成输出</li>
+     * </ol>
+     *
+     * 【方法参数】
+     * @param context         RenderContext - 当前帧渲染上下文
+     * @param inputResources long...      - 上游节点输出的资源句柄数组
+     *                                  [0] = 颜色纹理句柄
+     *
+     * 【返回值】
+     * @return long - 处理后的颜色纹理句柄，0 表示失败
+     *
+     * 【性能预算】
+     * - 1080p 目标: < 0.3ms (Fragment Shader)
+     */
+    @Override
+    public long execute(RenderContext context, long... inputResources) {
+        // 短路：禁用时直接传递输入
+        if (!enabled) return passThrough(inputResources);
+
+        // 短路：强度为 0 时无效果
+        if (strength == 0.0f) return passThrough(inputResources);
+
+        // 输入校验
+        if (inputResources == null || inputResources.length < 1) {
+            LOGGER.warning("[ChromaticAberration] 输入资源不足: 需要颜色纹理 1 张, "
+                    + "实际收到 " + (inputResources == null ? 0 : inputResources.length) + " 张");
+            return 0L;
+        }
+
+        long startTimeNanos = System.nanoTime();
+
+        // 快照读取 volatile 参数（一次读取，避免多次读不一致）
+        float curStrength = this.strength;
+        boolean curRadial = this.radial;
+        float curCenterOffsetX = this.centerOffsetX;
+        float curCenterOffsetY = this.centerOffsetY;
+
+        // TODO: 实现 GPU Chromatic Aberration
+        // 1. 计算每通道偏移：R 偏移 = -strength, B 偏移 = +strength, G = 0
+        //    vec2 dir = uv - vec2(0.5 + centerOffsetX, 0.5 + centerOffsetY);
+        //    float dist = length(dir);
+        //    vec2 offsetR, offsetB;
+        //    if (radial) {
+        //        offsetR = -dir * strength * dist;
+        //        offsetB =  dir * strength * dist;
+        //    } else {
+        //        offsetR = vec2(-strength, 0);
+        //        offsetB = vec2( strength, 0);
+        //    }
+        //
+        // 2. 若 radial：偏移按距中心距离缩放
+        //    已在上方计算中体现
+        //
+        // 3. 分别采样 R, G, B 通道，使用不同 UV 偏移
+        //    float r = texture(input, uv + offsetR).r;
+        //    float g = texture(input, uv).g;
+        //    float b = texture(input, uv + offsetB).b;
+        //
+        // 4. 合成：output = vec3(r, g, b)
+
+        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
+        LOGGER.fine(String.format(
+                "[ChromaticAberration] 完成 | strength=%.4f radial=%b center=(%.2f,%.2f) | %.1fμs",
+                curStrength, curRadial, curCenterOffsetX, curCenterOffsetY, elapsedMicros
+        ));
+
+        return inputResources[0]; // 待 GPU 实现后返回处理后的纹理
+    }
+
+    // ==================== 初始化与释放钩子 ====================
+
+    /**
+     * 节点初始化钩子
+     *
+     * 【方法参数】
+     * @param context RenderContext - 渲染上下文
+     *
+     * 【返回值】
+     * @return boolean - 是否成功初始化
+     */
+    @Override
+    protected boolean onInitialize(RenderContext context) {
+        LOGGER.info(String.format(
+                "[ChromaticAberration] 初始化成功 | strength=%.4f radial=%b center=(%.2f,%.2f)",
+                this.strength, this.radial, this.centerOffsetX, this.centerOffsetY
+        ));
+        return true;
+    }
+
+    /**
+     * 节点资源释放钩子
+     * <p>
+     * 清空内部缓冲区。
+     */
+    @Override
+    protected void onDispose() {
+        LOGGER.fine("[ChromaticAberration] 资源已释放");
+    }
+
+    // ==================== 参数 Setter ====================
+
+    /**
+     * 设置是否启用色差
+     *
+     * @param v 是否启用
+     */
+    public void setEnabled(boolean v) { this.enabled = v; }
+
+    /**
+     * 获取当前启用状态
+     *
+     * @return boolean - 是否启用
+     */
+    public boolean isEnabled() { return enabled; }
+
+    /**
+     * 设置色差强度
+     * <p>
+     * 值会被钳制到有效范围 [{@value #STRENGTH_MIN}, {@value #STRENGTH_MAX}]。
+     *
+     * @param v 色差强度（0.0 ~ 0.05）
+     */
+    public void setStrength(float v) {
+        this.strength = Math.max(STRENGTH_MIN, Math.min(STRENGTH_MAX, v));
+    }
+
+    /**
+     * 设置是否使用径向模式
+     *
+     * @param v 是否使用径向模式（偏移按距中心距离缩放）
+     */
+    public void setRadial(boolean v) { this.radial = v; }
+
+    /**
+     * 设置中心点 X 偏移
+     * <p>
+     * 值会被钳制到有效范围 [{@value #CENTER_OFFSET_MIN}, {@value #CENTER_OFFSET_MAX}]。
+     *
+     * @param v 中心点 X 偏移（-1.0 ~ 1.0）
+     */
+    public void setCenterOffsetX(float v) {
+        this.centerOffsetX = Math.max(CENTER_OFFSET_MIN, Math.min(CENTER_OFFSET_MAX, v));
+    }
+
+    /**
+     * 设置中心点 Y 偏移
+     * <p>
+     * 值会被钳制到有效范围 [{@value #CENTER_OFFSET_MIN}, {@value #CENTER_OFFSET_MAX}]。
+     *
+     * @param v 中心点 Y 偏移（-1.0 ~ 1.0）
+     */
+    public void setCenterOffsetY(float v) {
+        this.centerOffsetY = Math.max(CENTER_OFFSET_MIN, Math.min(CENTER_OFFSET_MAX, v));
+    }
+
+    // ==================== 辅助方法 ====================
+
+    /**
+     * 短路：禁用时直接传递输入
+     *
+     * @param inputs 输入资源句柄数组
+     * @return long - 第一个输入资源句柄，无输入时返回 0
+     */
+    private long passThrough(long[] inputs) {
+        return (inputs != null && inputs.length > 0) ? inputs[0] : 0L;
+    }
+
+    @Override
+    public String toString() {
+        return String.format(
+                "ChromaticAberrationNode{enabled=%b strength=%.4f radial=%b center=(%.2f,%.2f)}",
+                enabled, strength, radial, centerOffsetX, centerOffsetY
+        );
+    }
+}

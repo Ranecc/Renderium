@@ -1,0 +1,140 @@
+// ============================================================================
+// Renderium - 运动模糊 Compute Shader (Motion Blur)
+// ============================================================================
+// 用途: 基于速度向量的后处理运动模糊
+// 算法来源: PhysicsTrace/13_光学特效物理化/运动模糊物理模拟.md
+// ============================================================================
+
+#version 460
+#extension GL_EXT_samplerless_texture_functions : require
+
+// ============================================================================
+// 工作组配置: 16x16 像素/工作组
+// ============================================================================
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ============================================================================
+// 资源绑定:
+//   binding 0: 输入颜色纹理 (RGBA16F) — 当前帧的场景颜色
+//   binding 1: 输入速度纹理 (RG16F) — 屏幕空间运动向量 (UV 偏移)
+//   binding 2: 输出颜色纹理 (RGBA16F) — 运动模糊后的结果
+//   binding 3: 参数 UBO — { blurStrength, sampleCount, velocityScale }
+// ============================================================================
+layout(binding = 0, rgba16f) uniform readonly image2D  uInputColor;
+layout(binding = 1, rg16f)   uniform readonly image2D  uVelocityBuffer;
+layout(binding = 2, rgba16f) uniform writeonly image2D uOutputImage;
+
+// ============================================================================
+// 运动模糊参数 (通过 UBO 传入)
+// ============================================================================
+layout(binding = 3, std140) uniform MotionBlurParams {
+    float uBlurStrength;      // 模糊强度 [0.0, 2.0]
+    int   uSampleCount;       // 采样数 [4, 32]
+    float uVelocityScale;     // 速度缩放系数
+    float uMaxBlurLength;     // 最大模糊长度 (像素)
+    float uDepthDiscontinuity; // 深度不连续性阈值 (防止边缘渗色)
+    float uPadding0;
+    float uPadding1;
+    float uPadding2;
+};
+
+// ============================================================================
+// 常量
+// ============================================================================
+const float MOTION_BLUR_EPSILON = 0.001;
+
+// ============================================================================
+// 计算运动模糊方向与长度
+//
+// 从速度缓冲区读取当前像素的运动向量,
+// 将其转换为采样方向与步长
+// ============================================================================
+float computeBlurDirection(ivec2 uv, out vec2 direction) {
+    ivec2 imgSize = imageSize(uInputColor);
+
+    vec2 velocity = imageLoad(uVelocityBuffer, uv).rg * uVelocityScale;
+
+    float length2D = length(velocity);
+
+    if (length2D < MOTION_BLUR_EPSILON) {
+        direction = vec2(0.0, 0.0);
+        return 0.0;
+    }
+
+    direction = normalize(velocity);
+
+    // 限制最大模糊长度
+    float blurLength = min(length2D * uBlurStrength, uMaxBlurLength);
+
+    return blurLength;
+}
+
+// ============================================================================
+// 沿运动方向的半分辨率自适应采样 (重要性采样)
+//
+// 策略: 在运动方向上均匀分布采样点,
+// 对接近中心的采样点赋予更高权重 (高斯型权重)
+// ============================================================================
+vec4 sampleMotionBlur(ivec2 center, vec2 direction, float blurLength) {
+    if (blurLength < 0.5) {
+        return imageLoad(uInputColor, center);
+    }
+
+    int   samples     = max(4, min(uSampleCount, 32));
+    ivec2 imgSize     = imageSize(uInputColor);
+    float halfSamples = float(samples) * 0.5;
+
+    vec4  accumColor  = vec4(0.0);
+    float totalWeight = 0.0;
+
+    float centerDepth = imageLoad(uVelocityBuffer, center).r;
+    // 简化为使用速度纹理的红通道存储深度 (实际通过 G-Buffer 深度)
+
+    for (int i = -samples / 2; i <= samples / 2; i++) {
+        float t = float(i) / halfSamples;
+        vec2 offset = direction * t * blurLength;
+        ivec2 samplePos = ivec2(vec2(center) + offset + 0.5);
+
+        // 边界检查
+        if (samplePos.x < 0 || samplePos.x >= imgSize.x ||
+            samplePos.y < 0 || samplePos.y >= imgSize.y) {
+            continue;
+        }
+
+        vec4 color = imageLoad(uInputColor, samplePos);
+
+        // 高斯权重: 中心采样权重最高
+        float weight = exp(-t * t * 2.0);
+
+        // 深度不连续性检测: 如果采样点深度与中心差异过大则降低权重
+        float sampleDepth = imageLoad(uVelocityBuffer, samplePos).r;
+        float depthDiff = abs(sampleDepth - centerDepth);
+        if (depthDiff > uDepthDiscontinuity) {
+            weight *= 0.3;
+        }
+
+        accumColor  += color * weight;
+        totalWeight += weight;
+    }
+
+    return (totalWeight > 0.001) ? (accumColor / totalWeight) : imageLoad(uInputColor, center);
+}
+
+// ============================================================================
+// 主函数
+// ============================================================================
+void main() {
+    ivec2 uv      = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imgSize = imageSize(uInputColor);
+
+    if (uv.x >= imgSize.x || uv.y >= imgSize.y) {
+        return;
+    }
+
+    vec2 direction;
+    float blurLength = computeBlurDirection(uv, direction);
+
+    vec4 result = sampleMotionBlur(uv, direction, blurLength);
+
+    imageStore(uOutputImage, uv, result);
+}

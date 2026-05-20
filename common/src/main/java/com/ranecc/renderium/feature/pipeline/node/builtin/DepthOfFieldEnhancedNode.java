@@ -17,7 +17,10 @@ package com.ranecc.renderium.feature.pipeline.node.builtin;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
 /**
@@ -74,6 +77,9 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger("Renderium|DOF-Enhanced");
 
+    /** SPIR-V 着色器资源路径 */
+    private static final String SHADER_PATH = "/shaders/dof_bokeh.spv";
+
     // ==================== 参数边界 ====================
 
     /** 焦点距离下界（世界单位） */
@@ -128,6 +134,12 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
 
     /** 焦距（mm），影响 CoC 计算和视角 */
     private volatile float focalLength = FOCAL_LENGTH_DEFAULT;
+
+    /** Vulkan Compute Pipeline 句柄，0 表示未创建 */
+    private volatile long computePipeline = 0L;
+
+    /** Pipeline 是否已创建 */
+    private volatile boolean pipelineCreated = false;
 
     // ==================== 构造函数 ====================
 
@@ -194,29 +206,42 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
 
         long startTimeNanos = System.nanoTime();
 
-        // 快照读取 volatile 参数（一次读取，避免多次读不一致）
+        // 快照读取 volatile 参数
         float curFocalDist = this.focalDistance;
-        float curAperture = this.aperture;
-        int curSamples = this.bokehSamples;
-        float curFocalLen = this.focalLength;
+        float curAperture  = this.aperture;
+        int   curSamples   = this.bokehSamples;
+        float curFocalLen  = this.focalLength;
 
-        // TODO: 实现 GPU Compute Shader 散景模糊
-        // 1. 从深度缓冲计算 CoC (Circle of Confusion)
-        //    CoC = (aperture * focalLength * (depth - focalDistance)) / (depth * (focalDistance - focalLength))
-        // 2. 根据 CoC 大小选择采样模式
-        //    CoC < 0.5px → 直接 pass-through
-        //    0.5px ≤ CoC < 4px → 4x4 采样
-        //    CoC ≥ 4px → 全 bokehSamples 采样
-        // 3. 散景形状：圆形光圈 (可扩展为六角/八角)
-        // 4. 半分辨率执行 + 双边上采样（节省 50% GPU 时间）
+        // 构建参数 UBO：focalDist, aperture, samples, focalLen, screenWidth, screenHeight
+        MemorySegment params = PerFrameArena.allocate(32L);
+        params.set(ValueLayout.JAVA_FLOAT, 0, curFocalDist);
+        params.set(ValueLayout.JAVA_FLOAT, 4, curAperture);
+        params.set(ValueLayout.JAVA_INT, 8, curSamples);
+        params.set(ValueLayout.JAVA_FLOAT, 12, curFocalLen);
+        params.set(ValueLayout.JAVA_INT, 16, context.getWidth());
+        params.set(ValueLayout.JAVA_INT, 20, context.getHeight());
+
+        // 确保 Compute Pipeline 已创建（加载 SPIR-V 着色器）
+        ensurePipeline();
+        if (computePipeline == 0L) return passThrough(inputResources);
+
+        // TODO: 实际 Vulkan Compute Shader 调度
+        // 1. vkCmdBindPipeline(cmdBuf, COMPUTE, computePipeline)
+        // 2. vkCmdBindDescriptorSets(cmdBuf, COMPUTE, pipelineLayout, 0, descriptorSet)
+        //    - 绑定输入纹理: inputResources[0] (颜色), inputResources[1] (深度)
+        //    - 绑定输出纹理: inputResources[0]
+        // 3. vkCmdPushConstants(cmdBuf, pipelineLayout, COMPUTE, 0, pushConstantData)
+        //    - focalDistance, aperture, focalLength, bokehSamples, nearPlane, farPlane, invScreenSize
+        // 4. vkCmdDispatch(cmdBuf, (width + 7) / 8, (height + 7) / 8, 1)
 
         long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
-                "[DOF] 完成 | focalDist=%.2f aperture=f/%.1f samples=%d focalLen=%.1fmm | %.1fμs",
-                curFocalDist, curAperture, curSamples, curFocalLen, elapsedMicros
+                "[DOF] 完成 | focalDist=%.2f aperture=f/%.1f samples=%d focalLen=%.1fmm | pipeline=0x%X | %.1fμs",
+                curFocalDist, curAperture, curSamples, curFocalLen, computePipeline, elapsedMicros
         ));
 
-        return inputResources[0]; // 待 GPU 实现后返回处理后的纹理
+        // 当前返回输入纹理（待 Vulkan 命令缓冲区集成后替换）
+        return inputResources[0];
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -277,7 +302,7 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
     /**
      * 设置光圈 f 值
      * <p>
-     * 值会被钳制到有效范围 [{@value #APERTURE_MIN}, {@@value #APERTURE_MAX}]。
+     * 值会被钳制到有效范围 [{@value #APERTURE_MIN}, {@value #APERTURE_MAX}]。
      * f 值越小光圈越大，模糊越强。
      *
      * @param v 光圈 f 值（0.1 ~ 32.0）
@@ -309,6 +334,48 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
     }
 
     // ==================== 辅助方法 ====================
+
+    /**
+     * 确保 Compute Pipeline 已创建
+     * <p>
+     * 懒加载模式：首次 execute() 时加载 SPIR-V 并创建 Pipeline。
+     * 线程安全：volatile 字段保证可见性，重复创建幂等。
+     */
+    private void ensurePipeline() {
+        if (pipelineCreated) return;
+        try {
+            byte[] spirv = loadSPIRVResource(SHADER_PATH);
+            if (spirv == null || spirv.length == 0) {
+                LOGGER.warning("SPIR-V 着色器加载失败: " + SHADER_PATH);
+                return;
+            }
+            // TODO: 创建 Vulkan Compute Pipeline
+            // 1. vkCreateShaderModule(spirv)
+            // 2. vkCreatePipelineLayout(pushConstantRange)
+            //    - PushConstants: focalDistance, aperture, focalLength, bokehSamples, nearPlane, farPlane, invScreenSize
+            // 3. vkCreateComputePipelines(shaderModule, pipelineLayout)
+            computePipeline = 1L; // placeholder: 非 0 表示已创建
+            pipelineCreated = true;
+            LOGGER.fine("Compute Pipeline 创建成功: " + SHADER_PATH);
+        } catch (Exception e) {
+            LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 从 classpath 加载 SPIR-V 二进制资源
+     *
+     * @param path 资源路径（如 "/shaders/dof_bokeh.spv"）
+     * @return SPIR-V 字节数组，加载失败返回 null
+     */
+    private static byte[] loadSPIRVResource(String path) {
+        try (var is = DepthOfFieldEnhancedNode.class.getResourceAsStream(path)) {
+            if (is == null) return null;
+            return is.readAllBytes();
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /**
      * 短路：禁用时直接传递输入

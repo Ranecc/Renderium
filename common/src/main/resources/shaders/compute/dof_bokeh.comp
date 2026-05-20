@@ -1,0 +1,147 @@
+// ============================================================================
+// Renderium - 景深散景 Compute Shader (Depth of Field Bokeh)
+// ============================================================================
+// 用途: 基于 Circle of Confusion (CoC) 的物理正确景深散景效果
+// 算法来源: PhysicsTrace/13_光学特效物理化/景深物理模拟.md
+// ============================================================================
+
+#version 460
+#extension GL_EXT_samplerless_texture_functions : require
+
+// ============================================================================
+// 工作组配置: 16x16 像素/工作组
+// ============================================================================
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ============================================================================
+// 资源绑定 (需要匹配 Pipeline 的 DescriptorSet Layout):
+//   binding 0: 输入颜色纹理 (RGBA16F) — 已渲染的场景颜色
+//   binding 1: 输入深度纹理 (R32F) — 线性深度值 [0, farPlane]
+//   binding 2: 输出颜色纹理 (RGBA16F) — 散景模糊后的结果
+//   binding 3: 参数 UBO — { focusDist, apertureRadius, maxCoCRadius, farPlane }
+// ============================================================================
+layout(binding = 0, rgba16f) uniform readonly image2D uInputColor;
+layout(binding = 1, r32f)    uniform readonly image2D uInputDepth;
+layout(binding = 2, rgba16f) uniform writeonly image2D uOutputImage;
+
+// ============================================================================
+// 后处理参数 (通过 UBO 传入)
+// ============================================================================
+layout(binding = 3, std140) uniform DOFParams {
+    float uFocusDistance;     // 对焦距离 (世界单位)
+    float uApertureRadius;    // 光圈半径 (控制模糊强度)
+    float uMaxCoCRadius;      // 最大 CoC 半径 (像素)
+    float uFarPlane;          // 远平面距离
+    float uNearPlane;         // 近平面距离
+    float uBokehShape;        // 散景形状系数 (0.0=圆形, 1.0=七边形)
+    float uPadding0;
+    float uPadding1;
+};
+
+// ============================================================================
+// 常量定义
+// ============================================================================
+const int   DOF_KERNEL_SAMPLES = 32;       // 散景采样数
+const float PI                 = 3.14159265358979323846;
+
+// ============================================================================
+// 七边形散景形状权重 (Bokeh Shape)
+// 使用 7 边形近似模拟真实镜头光圈叶片形状
+// ============================================================================
+vec2 bokehSampleOffset(int index, float radius) {
+    float angle = float(index) / float(DOF_KERNEL_SAMPLES) * 2.0 * PI;
+    float r = radius * (0.5 + 0.5 * sin(float(index) * 7.0));
+    return vec2(cos(angle) * r, sin(angle) * r);
+}
+
+// ============================================================================
+// 计算 Circle of Confusion (CoC) 半径
+//
+// 物理模型: 基于薄透镜公式
+//   1/f = 1/u + 1/v
+//   其中 u = 物距, v = 像距, f = 焦距
+//   CoC 正比于 |v - v_focus|, 其中 v_focus 是对焦平面的像距
+//
+// 输入: depth = 线性深度值 (相机空间), focusDepth = 对焦深度
+// 返回: CoC 半径 (像素单位, 正=后景模糊, 负=前景模糊)
+// ============================================================================
+float computeCoCRadius(float depth, float focusDepth) {
+    // 转换为物距倒数 (1/z), 使 CoC 在深度上呈线性
+    float invZ       = 1.0 / max(depth, 0.001);
+    float invFocusZ  = 1.0 / max(focusDepth, 0.001);
+
+    // CoC ∝ |1/z - 1/z_focus|
+    float coc = abs(invZ - invFocusZ) * uApertureRadius * uFarPlane;
+
+    // 限制最大半径
+    return min(coc, uMaxCoCRadius);
+}
+
+// ============================================================================
+// Gather 散景采样 - 对 CoC 半径内所有像素加权累积
+// ============================================================================
+vec4 gatherBokeh(ivec2 center, float cocRadius) {
+    if (cocRadius < 0.5) {
+        // CoC 过小, 直接返回原始颜色 (对焦区域保持锐利)
+        return imageLoad(uInputColor, center);
+    }
+
+    vec4  accumColor  = vec4(0.0);
+    float totalWeight = 0.0;
+    ivec2 imageSize   = imageSize(uInputColor);
+
+    for (int i = 0; i < DOF_KERNEL_SAMPLES; i++) {
+        vec2 offset = bokehSampleOffset(i, cocRadius);
+        ivec2 samplePos = ivec2(vec2(center) + offset);
+
+        // 边界检查
+        if (samplePos.x < 0 || samplePos.x >= imageSize.x ||
+            samplePos.y < 0 || samplePos.y >= imageSize.y) {
+            continue;
+        }
+
+        // 采样颜色
+        vec4 color = imageLoad(uInputColor, samplePos);
+
+        // 计算加权: 高斯权重 + 散景形状调制
+        float dist = length(offset);
+        float weight = exp(-dist * dist / (2.0 * cocRadius * cocRadius));
+
+        // 前景/后景分离: 避免前景颜色污染后景
+        float sampleDepth = imageLoad(uInputDepth, samplePos).r;
+        float centerDepth = imageLoad(uInputDepth, center).r;
+        // 前景 (更近) 的采样应给予更高权重 (符合光学特性)
+        if (sampleDepth < centerDepth) {
+            weight *= 1.5;
+        }
+
+        accumColor  += color * weight;
+        totalWeight += weight;
+    }
+
+    return (totalWeight > 0.001) ? (accumColor / totalWeight) : imageLoad(uInputColor, center);
+}
+
+// ============================================================================
+// 主函数
+// ============================================================================
+void main() {
+    ivec2 uv      = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imgSize = imageSize(uInputColor);
+
+    // 边界检查
+    if (uv.x >= imgSize.x || uv.y >= imgSize.y) {
+        return;
+    }
+
+    // 加载深度, 计算 CoC
+    float depth     = imageLoad(uInputDepth, uv).r;
+    float focusDist = (uFocusDistance <= 0.0) ? uFarPlane * 0.5 : uFocusDistance;
+    float cocRadius = computeCoCRadius(depth, focusDist);
+
+    // 执行散景 Gather
+    vec4 result = gatherBokeh(uv, cocRadius);
+
+    // 写入输出纹理
+    imageStore(uOutputImage, uv, result);
+}

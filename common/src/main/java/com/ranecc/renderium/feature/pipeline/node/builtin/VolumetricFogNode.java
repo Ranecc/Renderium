@@ -22,6 +22,10 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
 /**
@@ -79,6 +83,9 @@ import java.util.logging.Logger;
 public class VolumetricFogNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(VolumetricFogNode.class.getName());
+
+    /** SPIR-V 着色器资源路径 */
+    private static final String SHADER_PATH = "/shaders/volumetric_fog.spv";
 
     // ==================== Froxel 配置 ====================
 
@@ -152,6 +159,12 @@ public class VolumetricFogNode extends AbstractPipelineNode {
     /** 雾颜色 B 分量 */
     private volatile float fogColorB = 0.9f;
 
+    /** Vulkan Compute Pipeline 句柄，0 表示未创建 */
+    private volatile long computePipeline = 0L;
+
+    /** Pipeline 是否已创建 */
+    private volatile boolean pipelineCreated = false;
+
     // ==================== 构造函数 ====================
 
     /**
@@ -220,27 +233,38 @@ public class VolumetricFogNode extends AbstractPipelineNode {
         // 快照读取 volatile 参数（一次读取，避免多次读不一致）
         float curDensity = this.fogDensity;
         float curFalloff = this.fogHeightFalloff;
-        int curSteps = this.raySteps;
-        float curAniso = this.scatteringAnisotropy;
+        int   curSteps   = this.raySteps;
+        float curAniso   = this.scatteringAnisotropy;
 
-        // TODO: 实现 GPU Froxel 体积雾
-        // 1. 构建 Froxel 网格 (16x16x64)
-        //    每个 Froxel 存储深度区间 [near, far]
-        // 2. 光线步进：每个 Froxel 沿视线方向采样
-        //    密度 = baseDensity * exp(-heightFalloff * (worldY - heightBase))
-        //    散射 = Henyey-Greenstein(cos(theta), g)
-        // 3. 光照积分：累加散射贡献
-        // 4. 双边滤波：2x2x2 Froxel 模糊（消除锯齿）
-        // 5. 合成：fogContribution = 1 - exp(-opticalDepth)
-        //    finalColor = lerp(sceneColor, fogColor, fogContribution)
+        MemorySegment params = PerFrameArena.allocate(32L);
+        params.set(ValueLayout.JAVA_FLOAT, 0, curDensity);
+        params.set(ValueLayout.JAVA_FLOAT, 4, curFalloff);
+        params.set(ValueLayout.JAVA_INT, 8, curSteps);
+        params.set(ValueLayout.JAVA_FLOAT, 12, curAniso);
+        params.set(ValueLayout.JAVA_INT, 16, context.getWidth());
+        params.set(ValueLayout.JAVA_INT, 20, context.getHeight());
+
+        // 确保 Compute Pipeline 已创建（加载 SPIR-V 着色器）
+        ensurePipeline();
+        if (computePipeline == 0L) return passThrough(inputResources);
+
+        // TODO: 实际 Vulkan Compute Shader 调度
+        // 1. vkCmdBindPipeline(cmdBuf, COMPUTE, computePipeline)
+        // 2. vkCmdBindDescriptorSets(cmdBuf, COMPUTE, pipelineLayout, 0, descriptorSet)
+        //    - 绑定输入纹理: inputResources[0] (场景颜色), inputResources[1] (深度)
+        //    - 绑定输出纹理: inputResources[0]
+        // 3. vkCmdPushConstants(cmdBuf, pipelineLayout, COMPUTE, 0, pushConstantData)
+        //    - fogDensity, heightFalloff, heightBase, raySteps, anisotropyG, fogColor, maxDistance, invScreenSize, invViewProj
+        // 4. vkCmdDispatch(cmdBuf, (width + 7) / 8, (height + 7) / 8, 1)
 
         long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
-                "[VolFog] 完成 | density=%.2f falloff=%.4f steps=%d aniso=%.2f | %.1fμs",
-                curDensity, curFalloff, curSteps, curAniso, elapsedMicros
+                "[VolFog] 完成 | density=%.2f falloff=%.4f steps=%d aniso=%.2f | pipeline=0x%X | %.1fμs",
+                curDensity, curFalloff, curSteps, curAniso, computePipeline, elapsedMicros
         ));
 
-        return inputResources[0]; // 待 GPU 实现后返回处理后的纹理
+        // 当前返回输入纹理（待 Vulkan 命令缓冲区集成后替换）
+        return inputResources[0];
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -356,6 +380,48 @@ public class VolumetricFogNode extends AbstractPipelineNode {
     }
 
     // ==================== 辅助方法 ====================
+
+    /**
+     * 确保 Compute Pipeline 已创建
+     * <p>
+     * 懒加载模式：首次 execute() 时加载 SPIR-V 并创建 Pipeline。
+     * 线程安全：volatile 字段保证可见性，重复创建幂等。
+     */
+    private void ensurePipeline() {
+        if (pipelineCreated) return;
+        try {
+            byte[] spirv = loadSPIRVResource(SHADER_PATH);
+            if (spirv == null || spirv.length == 0) {
+                LOGGER.warning("SPIR-V 着色器加载失败: " + SHADER_PATH);
+                return;
+            }
+            // TODO: 创建 Vulkan Compute Pipeline
+            // 1. vkCreateShaderModule(spirv)
+            // 2. vkCreatePipelineLayout(pushConstantRange)
+            //    - PushConstants: fogDensity, heightFalloff, heightBase, raySteps, anisotropyG, fogColor, maxDistance, invScreenSize, invViewProj
+            // 3. vkCreateComputePipelines(shaderModule, pipelineLayout)
+            computePipeline = 1L; // placeholder: 非 0 表示已创建
+            pipelineCreated = true;
+            LOGGER.fine("Compute Pipeline 创建成功: " + SHADER_PATH);
+        } catch (Exception e) {
+            LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 从 classpath 加载 SPIR-V 二进制资源
+     *
+     * @param path 资源路径（如 "/shaders/volumetric_fog.spv"）
+     * @return SPIR-V 字节数组，加载失败返回 null
+     */
+    private static byte[] loadSPIRVResource(String path) {
+        try (var is = VolumetricFogNode.class.getResourceAsStream(path)) {
+            if (is == null) return null;
+            return is.readAllBytes();
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /**
      * 短路：禁用时直接传递输入

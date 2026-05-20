@@ -1,0 +1,165 @@
+// ============================================================================
+// Renderium - 时域抗锯齿 Compute Shader (Temporal Anti-Aliasing)
+// ============================================================================
+// 用途: 基于时域累积与空间修复的 TAA Resolve
+// 算法来源: PhysicsTrace/13_光学特效物理化/TAA抗锯齿物理模拟.md
+// ============================================================================
+
+#version 460
+#extension GL_EXT_samplerless_texture_functions : require
+
+// ============================================================================
+// 工作组配置: 16x16 像素/工作组
+// ============================================================================
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ============================================================================
+// 资源绑定:
+//   binding 0: 输入颜色纹理 (RGBA16F) — 当前帧渲染结果 (含抖动)
+//   binding 1: 输入深度纹理 (R32F) — 当前帧线性深度
+//   binding 2: 输出颜色纹理 (RGBA16F) — TAA 累积结果 (当前帧输出 + 历史帧更新)
+//   binding 3: 参数 UBO — { jitterOffset, blendFactor, sharpenStrength }
+//
+// 注意: 历史帧由外部管理 (ping-pong 纹理交换),
+//       当前帧的 TAA 输出将作为下一帧的历史输入
+// ============================================================================
+layout(binding = 0, rgba16f) uniform readonly image2D  uCurrentFrame;
+layout(binding = 1, r32f)    uniform readonly image2D  uDepthBuffer;
+layout(binding = 2, rgba16f) uniform writeonly image2D uOutputImage;
+
+// ============================================================================
+// TAA 参数 (通过 UBO 传入)
+// ============================================================================
+layout(binding = 3, std140) uniform TAAParams {
+    vec2  uJitterOffset;           // 当前帧的投影抖动偏移 (像素)
+    float uBlendFactor;            // 历史帧混合因子 [0.0, 1.0] (0.95 = 强时域稳定)
+    float uSharpenStrength;        // 后锐化强度 [0.0, 1.0]
+    float uColorClampRadius;       // 颜色钳制半径 (AABB 裁剪)
+    float uNeighborhoodBias;       // 邻域偏差系数
+    float uPadding0;
+    float uPadding1;
+    float uPadding2;
+};
+
+// ============================================================================
+// 常量
+// ============================================================================
+const int TAA_CLAMP_HALF_SIZE = 1;  // 邻域采样半窗口
+
+// ============================================================================
+// 颜色空间裁剪 (Color Clamping) — AABB 裁剪
+//
+// 防止历史帧与当前帧之间的差异引入鬼影 (Ghosting) 
+// 通过计算当前帧 3x3 邻域的颜色 AABB,
+// 将历史帧颜色裁剪到该 AABB 范围内
+// ============================================================================
+vec4 clipToAABB(vec4 historyColor, ivec2 center) {
+    ivec2 imgSize = imageSize(uCurrentFrame);
+
+    // 计算 3x3 邻域的颜色 AABB
+    vec4 minColor = vec4(1e10);
+    vec4 maxColor = vec4(-1e10);
+
+    for (int dy = -TAA_CLAMP_HALF_SIZE; dy <= TAA_CLAMP_HALF_SIZE; dy++) {
+        for (int dx = -TAA_CLAMP_HALF_SIZE; dx <= TAA_CLAMP_HALF_SIZE; dx++) {
+            ivec2 neighbor = center + ivec2(dx, dy);
+            if (neighbor.x < 0 || neighbor.x >= imgSize.x ||
+                neighbor.y < 0 || neighbor.y >= imgSize.y) {
+                continue;
+            }
+            vec4 color = imageLoad(uCurrentFrame, neighbor);
+            minColor = min(minColor, color);
+            maxColor = max(maxColor, color);
+        }
+    }
+
+    // 扩展 AABB (避免过度裁剪导致闪烁)
+    vec4 centerColor = imageLoad(uCurrentFrame, center);
+    vec4 range = maxColor - minColor;
+    minColor -= range * uNeighborhoodBias;
+    maxColor += range * uNeighborhoodBias;
+
+    // 将历史颜色裁剪到 AABB 内
+    return clamp(historyColor, minColor, maxColor);
+}
+
+// ============================================================================
+// 时域累积
+//
+// 当前帧的颜色与裁剪后的历史帧按比例混合:
+//   output = blendFactor * clip(history) + (1 - blendFactor) * current
+//
+// 在运动区域降低 blendFactor 以减少鬼影;
+// 在静止区域提高 blendFactor 以获得最大抗锯齿效果
+// ============================================================================
+vec4 temporalResolve(ivec2 uv, vec4 historyColor) {
+    vec4 currentColor = imageLoad(uCurrentFrame, uv);
+
+    vec4 clampedHistory = clipToAABB(historyColor, uv);
+
+    float depth = imageLoad(uDepthBuffer, uv).r;
+    float motionFactor = abs(depth - 0.5) * 2.0;
+    float blendFactor = mix(uBlendFactor, 0.5, motionFactor * 0.3);
+
+    return mix(currentColor, clampedHistory, blendFactor);
+}
+
+// ============================================================================
+// 后锐化 (Post-Sharpen)
+//
+// TAA 累积会导致轻微模糊, 使用简化的 Unsharp Mask 补偿
+// ============================================================================
+vec4 applySharpen(vec4 color, ivec2 uv) {
+    if (uSharpenStrength < 0.001) {
+        return color;
+    }
+
+    ivec2 imgSize = imageSize(uCurrentFrame);
+
+    // 3x3 拉普拉斯核锐化
+    vec4 sum = vec4(0.0);
+    int count = 0;
+
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            ivec2 neighbor = uv + ivec2(dx, dy);
+            if (neighbor.x < 0 || neighbor.x >= imgSize.x ||
+                neighbor.y < 0 || neighbor.y >= imgSize.y) {
+                continue;
+            }
+            sum += imageLoad(uOutputImage, neighbor);
+            count++;
+        }
+    }
+
+    if (count > 0) {
+        vec4 blurred = sum / float(count);
+        vec4 sharpened = color + (color - blurred) * uSharpenStrength;
+        return sharpened;
+    }
+
+    return color;
+}
+
+// ============================================================================
+// 主函数
+// ============================================================================
+void main() {
+    ivec2 uv      = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imgSize = imageSize(uCurrentFrame);
+
+    if (uv.x >= imgSize.x || uv.y >= imgSize.y) {
+        return;
+    }
+
+    // TAA Resolve: 历史帧混合
+    // 实际流水线中, 历史帧通过 ping-pong 纹理传递 (binding 4, rgba16f),
+    // 需要在 PipelineLayout 中添加对应的 DescriptorSet Binding
+    // 当前 placeholder 使用自身像素作为回退
+    vec4 historyColor = imageLoad(uCurrentFrame, uv);
+    vec4 result = temporalResolve(uv, historyColor);
+
+    result = applySharpen(result, uv);
+
+    imageStore(uOutputImage, uv, result);
+}
