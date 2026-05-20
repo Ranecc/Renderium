@@ -31,8 +31,8 @@ public abstract class MixinLevelRendererACL {
         Vec3 pos = camera.position();
         acl.onRenderFrame(pos.x(), pos.y(), pos.z(),
             camera.yRot(), camera.xRot(),
-            0.05f,
+            tickDelta,
             (float) Minecraft.getInstance().options.fov().get(),
-            256.0);
+            (float) Minecraft.getInstance().options.renderDistance().get() * 16.0f);
     }
 }

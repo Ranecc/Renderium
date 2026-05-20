@@ -15,8 +15,8 @@ public final class MC26Adapter {
     /** GameRenderer 的帧渲染方法名 */
     public static final String GAME_RENDERER_RENDER = "render";
 
-    /** LevelRenderer 的世界渲染方法名 */
-    public static final String LEVEL_RENDERER_RENDER = "render";
+    /** LevelRenderer 的世界渲染方法名（MC 26.2 实际 API） */
+    public static final String LEVEL_RENDERER_RENDER = "renderLevel";
 
     /** RenderSystem 的初始化方法名 */
     public static final String RENDER_SYSTEM_INIT = "initRenderer";

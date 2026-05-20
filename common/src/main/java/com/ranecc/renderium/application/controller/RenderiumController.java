@@ -124,8 +124,16 @@ public final class RenderiumController {
             // 创建 Controller 实例
             instance = new RenderiumController(core);
 
-            // 委托给 Core 初始化（传入 null 设备句柄，由平台层后续设置）
-            core.initialize(null);
+            // 如果 Vulkan 设备已初始化，优先传入有效句柄；否则暂传 null
+            Object deviceHandle = null;
+            try {
+                deviceHandle = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getVulkanDevice();
+            } catch (Exception ignored) {
+                // VulkanDeviceHolder 可能尚未初始化，静默使用 null
+            }
+
+            // 委托给 Core 初始化（传入设备句柄，由平台层后续设置或覆盖）
+            core.initialize(deviceHandle);
 
             LOGGER.info("RenderiumController initialized successfully");
 

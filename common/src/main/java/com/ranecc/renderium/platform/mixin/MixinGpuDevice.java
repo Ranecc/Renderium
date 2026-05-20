@@ -28,15 +28,19 @@ public abstract class MixinGpuDevice {
     /**
      * Buffer 创建 - HEAD 注入
      * <p>
-     * 仅做: 委托 HookDispatcher.dispatchGpuDeviceBuffer()
-     * 用于 GPU 后端的 Buffer 分配优化。
+     * 捕获 createBuffer(int, long) 的参数，将缓冲区大小传递给 HookDispatcher
+     * 用于 GPU 后端的 Buffer 分配优化和内存追踪。
+     * <p>
+     * 方法签名: createBuffer(int usage, long size) → GpuBuffer
      *
-     * @param ci Mixin 回调信息
+     * @param usage 缓冲区用途标志位（从 createBuffer 的第一个 int 参数捕获）
+     * @param size  缓冲区大小（字节，从 createBuffer 的第二个 long 参数捕获）
+     * @param ci    Mixin 回调信息
      */
     @Inject(method = "createBuffer", at = @At("HEAD"))
-    private void onBufferCreate(CallbackInfo ci) {
+    private void onBufferCreate(int usage, long size, CallbackInfo ci) {
         if (VulkanDeviceHolder.isAvailable()) {
-            HookDispatcher.dispatchGpuDeviceBuffer();
+            HookDispatcher.dispatchGpuDeviceBuffer(size);
         }
     }
 }

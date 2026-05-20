@@ -130,7 +130,7 @@ public final class VulkanStructs {
         var I = ValueLayout.JAVA_INT;
         var L = ValueLayout.JAVA_LONG;
         MemorySegment s = arena.allocate(40);
-        s.set(I, 0, VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);  // 35
+        s.set(I, 0, VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);
         s.set(L, 8, 0L);  // pNext
         s.set(I, 16, 0);  // flags
         s.set(I, 20, maxSets);
@@ -364,7 +364,7 @@ public final class VulkanStructs {
     public static MemorySegment createDescriptorSetAllocateInfoCompact(
             Arena arena, long descriptorPool, int setCount, long setLayoutHandle) {
         MemorySegment s = arena.allocate(DSAI_TOTAL);
-        s.set(ValueLayout.JAVA_INT, 0, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO); // sType = 48
+        s.set(ValueLayout.JAVA_INT, 0, VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
         s.set(ValueLayout.JAVA_LONG, DSAI_POOL, descriptorPool);
         s.set(ValueLayout.JAVA_INT, DSAI_SETCOUNT, setCount);
         s.set(ValueLayout.JAVA_LONG, DSAI_PSETLAYOUTS, setLayoutHandle);

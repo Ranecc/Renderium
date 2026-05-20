@@ -8,11 +8,15 @@
     "MixinFrameGraph",
     "MixinRenderSystem",
     "MixinLevelRenderer",
-    "MixinGameRenderer"
+    "MixinGameRenderer",
+    "MixinLevelRendererACL",
+    "MixinChunkManagerACL",
+    "MixinGameRendererACL",
+    "MixinRenderSystemACL"
   ],
   "injectors": {
-    "defaultRequire": 0
+    "defaultRequire": 1
   },
   "mixins": [],
-  "comment": "Renderium Mixins v1.1.0 - MC 26.2-snapshot-3 (L0 Anti-Corruption Layer: 6 platform-independent mixins)"
+  "comment": "Renderium Mixins v3.1 - Fabric (shared platform-independent mixins; critical injectors @Require(1) by default)"
 }

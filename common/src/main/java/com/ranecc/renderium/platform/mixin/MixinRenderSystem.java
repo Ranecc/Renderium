@@ -15,16 +15,17 @@ import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 
 /**
- * RenderSystem Mixin — Vulkan 设备句柄提取（零反射版 v2）
+ * RenderSystem Mixin — Vulkan 设备句柄提取（零反射版 v3）
  *
- * <p>使用 {@link GpuDeviceAccessor} + {@link RenderSystemAccessor}（编译期生成的
- * Mixin @Accessor）替代 java.lang.reflect。
+ * <p>使用 {@link GpuDeviceAccessor}（Mixin @Accessor）安全提取 Vulkan 句柄。
+ * 不依赖 LWJGL Pointer.getParent() 反射（Java 25+ 模块系统禁止）。
  *
- * <h2>与 v1 的区别</h2>
+ * <h2>设计原则</h2>
  * <ul>
- *   <li>{@code GpuDevice.backend} → {@link GpuDeviceAccessor#getBackend()}（零反射）</li>
+ *   <li>只提取 VkDevice/VMA/Queue 这三个必须句柄</li>
+ *   <li>vkInstance/vkPhysicalDevice 通过 VulkanAPIRegistry 按需查询</li>
+ *   <li>队列句柄兼容 null（部分 GPU 无专用 compute queue）</li>
  *   <li>句柄提取失败 → {@link VulkanOperationGuard#markFailed}（不崩溃游戏）</li>
- *   <li>字段名变更 → 编译期报错（NoSuchFieldError）→ 改一行 @Accessor</li>
  * </ul>
  */
 @Mixin(RenderSystem.class)
@@ -55,55 +56,27 @@ public abstract class MixinRenderSystem {
         try {
             VulkanDevice vkDevice = (VulkanDevice) backendObj;
 
-            // 存储 Mojang VulkanDevice 对象引用（供 LWJGL VkDevice 获取使用）
             VulkanDeviceHolder.getInstance().setVulkanDeviceObj(vkDevice);
 
             long vkDeviceHandle = vkDevice.vkDevice().address();
             long vmaAllocator   = vkDevice.vma();
-            long gQueue = vkDevice.graphicsQueue().vkQueue().address();
-            long cQueue = vkDevice.computeQueue().vkQueue().address();
+
+            // 部分 GPU 无独立 compute queue — null 安全处理
+            var gQueueObj = vkDevice.graphicsQueue();
+            long gQueue = gQueueObj != null ? gQueueObj.vkQueue().address() : 0L;
+            var cQueueObj = vkDevice.computeQueue();
+            long cQueue = cQueueObj != null ? cQueueObj.vkQueue().address() : 0L;
 
             VulkanDeviceHolder.getInstance().set(vkDeviceHandle, vmaAllocator, gQueue, cQueue);
 
-            // 通过 LWJGL Pointer.parent 反射链获取 vkPhysicalDevice / vkInstance 真实句柄
-            long vkPhysicalDeviceHandle;
-            long vkInstanceHandle;
-            try {
-                Object lwjglDevice = vkDevice.vkDevice();
-                Class<?> pointerClass = Class.forName("org.lwjgl.system.Pointer");
-                java.lang.reflect.Method getParent = pointerClass.getDeclaredMethod("getParent");
-                getParent.setAccessible(true);
-                java.lang.reflect.Method addressMethod = pointerClass.getMethod("address");
+            // vkInstance/vkPhysicalDevice 通过 VulkanAPIRegistry 按需查询，
+            // 不在 Mixin 中反射提取（Java 25+ 禁止 LWJGL 内部字段反射）。
+            // 这里只设 0L，下游代码在需要时通过 vkGetInstanceProcAddr 获取。
+            VulkanDeviceHolder.getInstance().setVkInstance(0L);
 
-                Object physDev = getParent.invoke(lwjglDevice);
-                if (physDev != null) {
-                    vkPhysicalDeviceHandle = (long) addressMethod.invoke(physDev);
-                    Object instance = getParent.invoke(physDev);
-                    vkInstanceHandle = instance != null
-                        ? (long) addressMethod.invoke(instance)
-                        : 0L;
-                } else {
-                    vkPhysicalDeviceHandle = 0L;
-                    vkInstanceHandle = 0L;
-                }
-
-                if (vkInstanceHandle == 0L || vkPhysicalDeviceHandle == 0L) {
-                    LOGGER.warning("LWJGL Pointer.getParent() 返回 null，"
-                        + "vkInstance/vkPhysicalDevice 句柄不可用（Streamline 部分功能可能受限）");
-                    vkPhysicalDeviceHandle = vkDeviceHandle;
-                    vkInstanceHandle = vkDeviceHandle;
-                }
-            } catch (Exception e) {
-                LOGGER.warning("无法通过 Pointer.parent 反射获取 vkInstance/vkPhysicalDevice: "
-                    + e.getMessage());
-                vkPhysicalDeviceHandle = vkDeviceHandle;
-                vkInstanceHandle = vkDeviceHandle;
-            }
-
-            VulkanDeviceHolder.getInstance().setVkInstance(vkInstanceHandle);
             LOGGER.info(String.format(
-                "Renderium: Vulkan 句柄提取成功 [device=0x%X, physDev=0x%X, instance=0x%X, vma=0x%X, gQ=0x%X, compQ=0x%X]",
-                vkDeviceHandle, vkPhysicalDeviceHandle, vkInstanceHandle, vmaAllocator, gQueue, cQueue));
+                "Renderium: Vulkan 句柄提取成功 [device=0x%X, vma=0x%X, gQ=0x%X, compQ=0x%X]",
+                vkDeviceHandle, vmaAllocator, gQueue, cQueue));
 
         } catch (GpuDeviceLossException e) {
             LOGGER.log(Level.SEVERE, "Vulkan 设备丢失", e);

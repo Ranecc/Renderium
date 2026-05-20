@@ -30,7 +30,7 @@ public abstract class MixinLevelRenderer {
      *
      * @param ci Mixin 回调信息
      */
-    @Inject(method = "render", at = @At("HEAD"))
+    @Inject(method = "renderLevel", at = @At("HEAD"))
     private void onWorldBegin(CallbackInfo ci) {
         LifecycleManager lifecycle = HookDispatcher.getLifecycleManager();
         if (lifecycle != null) lifecycle.onBeforeGlobalUniform();
@@ -43,7 +43,7 @@ public abstract class MixinLevelRenderer {
      *
      * @param ci Mixin 回调信息
      */
-    @Inject(method = "render", at = @At("TAIL"))
+    @Inject(method = "renderLevel", at = @At("TAIL"))
     private void onWorldEnd(CallbackInfo ci) {
         LifecycleManager lifecycle = HookDispatcher.getLifecycleManager();
         if (lifecycle != null) lifecycle.onAfterGlobalUniform();

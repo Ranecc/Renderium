@@ -442,11 +442,21 @@ OperationResult createSharedMemory(
     
     // 查找或分配槽位
     i32 slot = -1;
+    // 第一遍：查找已存在的同名区域（复用已有槽位）
     for (u32 i = 0; i < MAX_REGIONS; ++i) {
-        if (g_regions[i].region.address == nullptr ||
+        if (g_regions[i].region.address != nullptr &&
             g_regions[i].region.name == name) {
             slot = static_cast<i32>(i);
             break;
+        }
+    }
+    // 第二遍：未找到匹配区域，分配空闲槽位
+    if (slot < 0) {
+        for (u32 i = 0; i < MAX_REGIONS; ++i) {
+            if (g_regions[i].region.address == nullptr) {
+                slot = static_cast<i32>(i);
+                break;
+            }
         }
     }
     

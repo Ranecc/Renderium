@@ -53,6 +53,22 @@ public abstract class MixinFrameGraph {
     private static final Logger LOGGER = Logger.getLogger("Renderium|MixinFrameGraph");
 
     /**
+     * 在 FrameGraphBuilder.reset() 头部注入 — 重置 Pass 注入状态
+     * <p>
+     * 当 FrameGraphBuilder 重建时（如分辨率变化/资源重分配），
+     * 需要重置 {@link RenderiumPassInjector} 的注入状态，
+     * 以便在下次 execute() 时重新注入自定义 Pass。
+     * </p>
+     *
+     * @param ci CallbackInfo - Mixin 回调信息
+     */
+    @Inject(method = "reset", at = @At("HEAD"))
+    private void onReset(CallbackInfo ci) {
+        RenderiumPassInjector.getInstance().reset();
+        LOGGER.fine("Renderium: FrameGraph Reset — Pass 注入状态已重置");
+    }
+
+    /**
      * 在 FrameGraphBuilder.execute() 头部注入 Renderium 自定义 Pass
      * <p>
      * 此方法在 Mojang 原生的 Pass 注册逻辑执行之前被调用，
@@ -89,8 +105,8 @@ public abstract class MixinFrameGraph {
             FrameGraphBuilder.Inspector inspector,
             CallbackInfo ci) {
 
-        // 前置条件：VulkanDevice 必须已初始化
-        if (!VulkanDeviceHolder.getInstance().isInitialized()) {
+        // 前置条件：VulkanDevice 必须可用（已初始化且未降级）
+        if (!VulkanDeviceHolder.isAvailable()) {
             return;  // 静默跳过，不注入任何 Pass
         }
 

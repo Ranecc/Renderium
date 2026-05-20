@@ -21,8 +21,6 @@ namespace accel {
 static std::atomic<bool> g_initialized{false};
 static i32 g_logLevel = 0;
 
-static constexpr u32 MAX_CONTEXTS = 64;
-static void* g_contexts[MAX_CONTEXTS] = {};
 static std::atomic<u32> g_contextCount{0};
 
 #define ACCEL_LOG(level, fmt, ...) \
@@ -70,7 +68,6 @@ ACCEL_API int ACCEL_CALL accel_initialize(int32_t logLevel) {
         hasAVX2 ? 'Y' : 'N',
         hasSSE42 ? 'Y' : 'N');
     
-    std::memset(g_contexts, 0, sizeof(g_contexts));
     g_contextCount.store(0, std::memory_order_relaxed);
     
     g_initialized.store(true, std::memory_order_release);
@@ -93,7 +90,6 @@ ACCEL_API int ACCEL_CALL accel_shutdown() {
         ACCEL_LOG(2, "Warning: %u contexts still alive at shutdown", remaining);
     }
     
-    std::memset(g_contexts, 0, sizeof(g_contexts));
     g_contextCount.store(0, std::memory_order_relaxed);
     
     g_initialized.store(false, std::memory_order_release);

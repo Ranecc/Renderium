@@ -38,7 +38,9 @@ public abstract class MixinGameRenderer {
     @Inject(method = "render", at = @At("HEAD"))
     private void onFrameBegin(DeltaTracker deltaTracker, boolean advanceGameTime, CallbackInfo ci) {
         FrameContext ctx = FrameContext.get();
-        ctx.deltaTime = deltaTracker.getGameTimeDeltaPartialTick(true);
+        ctx.beginFrame(deltaTracker.getGameTimeDeltaPartialTick(true));
+        // 同步热路径缓存，确保获取到最新的生命周期管理器实例
+        HookDispatcher.syncCache();
         LifecycleManager lifecycle = HookDispatcher.getLifecycleManager();
         if (lifecycle != null) lifecycle.beginFrame();
     }

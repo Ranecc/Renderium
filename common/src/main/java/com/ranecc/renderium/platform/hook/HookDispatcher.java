@@ -869,14 +869,26 @@ public final class HookDispatcher {
     }
 
     /**
-     * GPU 缓冲区创建通知 - 由 MixinGpuDevice.createBuffer() HEAD 调用
+     * GPU 缓冲区创建通知 - 由 MixinGpuDevice.createBuffer() HEAD 调用（无大小信息）
      * <p>
-     * 触发 GpuDeviceBufferHook 回调。
+     * 触发 GpuDeviceBufferHook 回调。无需缓冲区大小信息时使用此重载。
      *
      * @return 是否应拦截/修改该操作
      */
     public static boolean dispatchGpuDeviceBuffer() {
         return onGpuDeviceBuffer(0, 0);
+    }
+
+    /**
+     * GPU 缓冲区创建通知（带缓冲区大小） - 由 MixinGpuDevice.createBuffer() HEAD 调用
+     * <p>
+     * 触发 GpuDeviceBufferHook 回调，并传递实际缓冲区大小供内存优化使用。
+     *
+     * @param size 缓冲区大小（字节），来自 GpuDevice.createBuffer() 的参数
+     * @return 是否应拦截/修改该操作
+     */
+    public static boolean dispatchGpuDeviceBuffer(long size) {
+        return onGpuDeviceBuffer(0, size);
     }
 
     /**

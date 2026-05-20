@@ -30,6 +30,8 @@ public abstract class MixinChunkManagerACL {
      */
     @Inject(method = "unload", at = @At("HEAD"))
     private void onChunkUnload(LevelChunk chunk, CallbackInfo ci) {
+        // 防御性 null 检查：chunk 可能在某些边缘情况下为 null
+        if (chunk == null) return;
         RenderiumACL acl = RenderiumACL.getInstance();
         if (!acl.isReady()) return;
         acl.onChunkRemoved(chunk.getPos().x(), 0, chunk.getPos().z()); // chunkY=0: MC 1.18+ 区块为2D(x,z), 无y分量
