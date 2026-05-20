@@ -1,0 +1,65 @@
+#version 450
+#extension GL_EXT_shader_explicit_arithmetic_types : require
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) readonly buffer AABBData {
+    float aabb[];
+};
+
+layout(std430, binding = 1) readonly buffer GridHash {
+    int hash[];
+};
+
+layout(std430, binding = 2) buffer CollisionPairs {
+    int pairs[];
+};
+
+layout(std430, binding = 3) buffer CollisionCount {
+    int count;
+};
+
+layout(push_constant) uniform PC {
+    int entityCount;
+    float gridCellSize;
+    int _pad0;
+    int _pad1;
+} params;
+
+bool testAABB(int a, int b) {
+    float aMinX = aabb[a * 6 + 0];
+    float aMinY = aabb[a * 6 + 1];
+    float aMinZ = aabb[a * 6 + 2];
+    float aMaxX = aabb[a * 6 + 3];
+    float aMaxY = aabb[a * 6 + 4];
+    float aMaxZ = aabb[a * 6 + 5];
+    float bMinX = aabb[b * 6 + 0];
+    float bMinY = aabb[b * 6 + 1];
+    float bMinZ = aabb[b * 6 + 2];
+    float bMaxX = aabb[b * 6 + 3];
+    float bMaxY = aabb[b * 6 + 4];
+    float bMaxZ = aabb[b * 6 + 5];
+    return aMinX < bMaxX && aMaxX > bMinX &&
+           aMinY < bMaxY && aMaxY > bMinY &&
+           aMinZ < bMaxZ && aMaxZ > bMinZ;
+}
+
+void main() {
+    int eid = int(gl_GlobalInvocationID.x);
+    if (eid >= params.entityCount) return;
+
+    int myHash = hash[eid];
+    int written = 0;
+
+    for (int other = eid + 1; other < params.entityCount; other++) {
+        if (hash[other] != myHash) continue;
+        if (!testAABB(eid, other)) continue;
+
+        int idx = atomicAdd(count, 1);
+        if (idx + 1 < 262144) {
+            pairs[idx * 2 + 0] = eid;
+            pairs[idx * 2 + 1] = other;
+        }
+        written++;
+    }
+}

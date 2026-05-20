@@ -1,10 +1,19 @@
 package com.ranecc.renderium.feature.blaze3d.physics;
 
-import com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper;
-import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 import com.ranecc.renderium.feature.blaze3d.modern.ECSSceneGraph.EntityData;
+import com.ranecc.renderium.feature.blaze3d.shader.GlslangCompiler;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+import com.ranecc.renderium.infrastructure.gpu.VulkanBufferHelper;
+import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
+import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
+import com.ranecc.renderium.infrastructure.gpu.VulkanStructs;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 import java.util.*;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -99,6 +108,20 @@ public class GPUEntityCollisionSystem implements AutoCloseable {
     private long collisionDescriptorSet = 0L;
     private long collisionDescriptorSetLayout = 0L;
 
+    /** 暂存缓冲区（用于 GPU→CPU 回读碰撞对和计数） */
+    private long stagingPairBuffer = 0L;
+    private long stagingPairMemory = 0L;
+    private long stagingCountBuffer = 0L;
+    private long stagingCountMemory = 0L;
+
+    /** 预分配的 Command Pool + Command Buffer */
+    private long commandPool = 0L;
+    private long commandBuffer = 0L;
+    private long fence = 0L;
+
+    /** 着色器模块句柄 */
+    private long shaderModule = 0L;
+
     // ==================== CPU 端暂存 ====================
 
     /** AABB 数据暂存（每帧复用，避免 GC） */
@@ -141,9 +164,9 @@ public class GPUEntityCollisionSystem implements AutoCloseable {
 
         try {
             createBuffers();
-            // Compute Pipeline 创建需要 SPIR-V，如果着色器不可用则降级到 CPU
-            // createComputePipeline();
-            gpuAvailable = false; // TODO: 启用后改为 true
+            createComputePipeline();
+
+            gpuAvailable = collisionPipeline != 0L;
             initialized = true;
 
             LOGGER.info(String.format("GPUEntityCollisionSystem 初始化完成 [gpuAvailable=%b, maxEntities=%d]",
@@ -199,9 +222,112 @@ public class GPUEntityCollisionSystem implements AutoCloseable {
             throw new RuntimeException("GPUEntityCollisionSystem: 缓冲区创建失败");
         }
 
+        // 暂存缓冲区（HOST_VISIBLE | HOST_COHERENT, TRANSFER_DST）
+        int hostVisibleFlags = 2 | 4;
+        int transferDst = 0x0002;
+        long[] pairStaging = VulkanBufferHelper.createBuffer(pairSize, transferDst | hostVisibleFlags);
+        stagingPairBuffer = pairStaging[0]; stagingPairMemory = pairStaging[1];
+        long[] countStaging = VulkanBufferHelper.createBuffer(4L, transferDst | hostVisibleFlags);
+        stagingCountBuffer = countStaging[0]; stagingCountMemory = countStaging[1];
+
         LOGGER.fine(String.format(
             "GPU 碰撞缓冲区创建完成: AABB=%dKB, Hash=%dKB, Pair=%dKB, Count=%dB",
             aabbSize / 1024, hashSize / 1024, pairSize / 1024, countSize));
+    }
+
+    /**
+     * 创建 Compute Pipeline — 编译 GLSL → SPIR-V → 创建 Pipeline。
+     * 如果编译失败（glslang.dll 不存在或 GLSL 语法错误），GPU 路径自动降级。
+     */
+    private void createComputePipeline() {
+        if (!VulkanBufferHelper.isAvailable()) return;
+        long device = VulkanBufferHelper.getDevice();
+        if (device == 0L) return;
+        try {
+            long dev = device;
+            GlslangCompiler compiler = GlslangCompiler.getInstance();
+            String source = loadShaderSource("/shaders/compute/collision_detect.comp");
+            if (source == null) { LOGGER.fine("着色器未找到，跳过 GPU 管线"); return; }
+            byte[] spirv = compiler.compile(source, GlslangCompiler.Stage.COMPUTE, GlslangCompiler.SourceLanguage.GLSL);
+            if (spirv == null || spirv.length == 0) { LOGGER.fine("着色器编译失败，跳过 GPU 管线"); return; }
+            MethodHandle vkCreateShaderModule = VulkanAPIRegistry.getHandle("vkCreateShaderModule");
+            if (vkCreateShaderModule == null) return;
+            MemorySegment spirvSeg = PerFrameArena.allocate(spirv.length);
+            for (int i = 0; i < spirv.length; i++) spirvSeg.set(ValueLayout.JAVA_BYTE, i, spirv[i]);
+            MemorySegment moduleCI = PerFrameArena.allocateLongs(4);
+            moduleCI.setAtIndex(ValueLayout.JAVA_LONG, 0, 46L);
+            moduleCI.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            moduleCI.setAtIndex(ValueLayout.JAVA_LONG, 2, spirv.length);
+            moduleCI.setAtIndex(ValueLayout.JAVA_LONG, 3, spirvSeg.address());
+            MemorySegment moduleOut = PerFrameArena.allocateLongs(1);
+            int rc = (int) vkCreateShaderModule.invokeExact(dev, moduleCI.address(), 0L, moduleOut.address());
+            if (rc != 0) { LOGGER.fine("vkCreateShaderModule 失败"); return; }
+            shaderModule = moduleOut.get(ValueLayout.JAVA_LONG, 0);
+            MethodHandle vkCreateDSL = VulkanAPIRegistry.getHandle("vkCreateDescriptorSetLayout");
+            if (vkCreateDSL == null) return;
+            MemorySegment bindings = PerFrameArena.allocateLongs(20);
+            for (int i = 0; i < 4; i++) {
+                bindings.setAtIndex(ValueLayout.JAVA_LONG, i * 5 + 0, i);
+                bindings.setAtIndex(ValueLayout.JAVA_LONG, i * 5 + 1, 12L);
+                bindings.setAtIndex(ValueLayout.JAVA_LONG, i * 5 + 2, 1L);
+                bindings.setAtIndex(ValueLayout.JAVA_LONG, i * 5 + 3, 0x20L);
+                bindings.setAtIndex(ValueLayout.JAVA_LONG, i * 5 + 4, 0L);
+            }
+            MemorySegment dslCI = PerFrameArena.allocateLongs(5);
+            dslCI.setAtIndex(ValueLayout.JAVA_LONG, 0, 11L);
+            dslCI.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            dslCI.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);
+            dslCI.setAtIndex(ValueLayout.JAVA_LONG, 3, 4L);
+            dslCI.setAtIndex(ValueLayout.JAVA_LONG, 4, bindings.address());
+            MemorySegment dslOut = PerFrameArena.allocateLongs(1);
+            vkCreateDSL.invokeExact(dev, dslCI.address(), 0L, dslOut.address());
+            collisionDescriptorSetLayout = dslOut.get(ValueLayout.JAVA_LONG, 0);
+            MethodHandle vkCreatePL = VulkanAPIRegistry.getHandle("vkCreatePipelineLayout");
+            if (vkCreatePL == null) return;
+            MemorySegment pcRange = PerFrameArena.allocateLongs(3);
+            pcRange.setAtIndex(ValueLayout.JAVA_LONG, 0, 0x20L);
+            pcRange.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            pcRange.setAtIndex(ValueLayout.JAVA_LONG, 2, 32L);
+            MemorySegment plCI = PerFrameArena.allocateLongs(6);
+            plCI.setAtIndex(ValueLayout.JAVA_LONG, 0, 24L);
+            plCI.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            plCI.setAtIndex(ValueLayout.JAVA_LONG, 2, 1L);
+            plCI.setAtIndex(ValueLayout.JAVA_LONG, 3, collisionDescriptorSetLayout);
+            plCI.setAtIndex(ValueLayout.JAVA_LONG, 4, 1L);
+            plCI.setAtIndex(ValueLayout.JAVA_LONG, 5, pcRange.address());
+            MemorySegment plOut = PerFrameArena.allocateLongs(1);
+            vkCreatePL.invokeExact(dev, plCI.address(), 0L, plOut.address());
+            collisionPipelineLayout = plOut.get(ValueLayout.JAVA_LONG, 0);
+            MethodHandle vkCreateCP = VulkanAPIRegistry.getHandle("vkCreateComputePipelines");
+            if (vkCreateCP == null) return;
+            MemorySegment stageInfo = PerFrameArena.allocateLongs(5);
+            stageInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 23L);
+            stageInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            stageInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0x20L);
+            stageInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, shaderModule);
+            stageInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 0L);
+            MemorySegment cpCI = PerFrameArena.allocateLongs(4);
+            cpCI.setAtIndex(ValueLayout.JAVA_LONG, 0, 31L);
+            cpCI.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            cpCI.setAtIndex(ValueLayout.JAVA_LONG, 2, stageInfo.address());
+            cpCI.setAtIndex(ValueLayout.JAVA_LONG, 3, collisionPipelineLayout);
+            MemorySegment cpOut = PerFrameArena.allocateLongs(1);
+            vkCreateCP.invokeExact(dev, 0L, 1, cpCI.address(), 0L, cpOut.address());
+            collisionPipeline = cpOut.get(ValueLayout.JAVA_LONG, 0);
+            if (collisionPipeline != 0L) LOGGER.info("碰撞检测 Compute Pipeline 创建成功");
+        } catch (Throwable t) {
+            LOGGER.fine("GPU 管线创建失败（CPU 回退）: " + t.getMessage());
+        }
+    }
+
+    /** 从 classpath 加载着色器源码 */
+    private static String loadShaderSource(String path) {
+        try (java.io.InputStream is = GPUEntityCollisionSystem.class.getResourceAsStream(path)) {
+            if (is == null) return null;
+            return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // ==================== 核心碰撞检测 ====================
@@ -310,41 +436,169 @@ public class GPUEntityCollisionSystem implements AutoCloseable {
      */
     private int detectCollisionsGPU(int entityCount) {
         if (VulkanOperationGuard.isFailed()) return 0;
-
         long device = VulkanBufferHelper.getDevice();
-        if (device == 0L) return 0;
+        if (device == 0L || collisionPipeline == 0L) return 0;
 
-        // 1. 上传 AABB 数据到 GPU（float[] → byte[]）
-        int aabbByteCount = entityCount * 6 * 4;
-        byte[] aabbBytes = new byte[aabbByteCount];
-        for (int i = 0; i < entityCount * 6; i++) {
-            writeFloat(aabbBytes, i * 4, aabbStaging[i]);
+        try {
+            long dev = device;
+            MethodHandle vkAllocCB = VulkanAPIRegistry.getHandle("vkAllocateCommandBuffers");
+            MethodHandle vkBeginCB = VulkanAPIRegistry.getHandle("vkBeginCommandBuffer");
+            MethodHandle vkEndCB = VulkanAPIRegistry.getHandle("vkEndCommandBuffer");
+            MethodHandle vkQueueSubmit = VulkanAPIRegistry.getHandle("vkQueueSubmit");
+            MethodHandle vkWaitFences = VulkanAPIRegistry.getHandle("vkWaitForFences");
+            MethodHandle vkResetFences = VulkanAPIRegistry.getHandle("vkResetFences");
+            if (vkAllocCB == null || vkBeginCB == null) return 0;
+
+            // 1) 上传 AABB 数据到 GPU
+            int aabbByteCount = entityCount * 6 * 4;
+            byte[] aabbBytes = new byte[aabbByteCount];
+            for (int i = 0; i < entityCount * 6; i++) writeFloat(aabbBytes, i * 4, aabbStaging[i]);
+            VulkanBufferHelper.uploadData(dev, entityAABBBufferMemory, aabbBytes, 0L);
+
+            int hashByteCount = entityCount * 4;
+            byte[] hashBytes = new byte[hashByteCount];
+            for (int i = 0; i < entityCount; i++) writeInt(hashBytes, i * 4, gridHashStaging[i]);
+            VulkanBufferHelper.uploadData(dev, gridHashBufferMemory, hashBytes, 0L);
+
+            // 2) 分配并开始 Command Buffer
+            MemorySegment allocInfo = PerFrameArena.allocateLongs(5);
+            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 44L); // COMMAND_BUFFER_ALLOCATE_INFO
+            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, commandPool != 0L ? commandPool : createCommandPool(dev));
+            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L); // PRIMARY
+            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 1L);
+
+            MemorySegment cbOut = PerFrameArena.allocateLongs(1);
+            int rc = (int) vkAllocCB.invokeExact(dev, allocInfo.address(), cbOut.address());
+            if (rc != 0) return 0;
+            long cmdBuf = cbOut.get(ValueLayout.JAVA_LONG, 0);
+
+            MemorySegment beginInfo = PerFrameArena.allocateLongs(3);
+            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 28L); // COMMAND_BUFFER_BEGIN_INFO
+            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0x00000001L); // ONE_TIME_SUBMIT
+            vkBeginCB.invokeExact(cmdBuf, beginInfo.address());
+
+            // 3) 清零碰撞计数器
+            VulkanAPIRegistry.invoke("vkCmdFillBuffer", cmdBuf, collisionCountBufferHandle, 0L, 4L, 0L);
+
+            // 4) 屏障：FillBuffer → Compute
+            VulkanAPIRegistry.invoke("vkCmdPipelineBarrier", cmdBuf,
+                0x00020000L, 0x00000800L, 0, 0, 0L, 0, 0L, 0, 0L);
+
+            // 5) 绑定 Pipeline + DescriptorSet + PushConstants + Dispatch
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, collisionPipeline);
+
+            MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
+            dsPtr.set(ValueLayout.JAVA_LONG, 0, collisionDescriptorSet);
+            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1, collisionPipelineLayout, 0, 1, dsPtr.address(), 0, 0L);
+
+            MemorySegment pushConst = PerFrameArena.allocateLongs(4);
+            pushConst.setAtIndex(ValueLayout.JAVA_INT, 0, entityCount);
+            pushConst.setAtIndex(ValueLayout.JAVA_FLOAT, 1, GRID_CELL_SIZE);
+            VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, collisionPipelineLayout, 0x20L, 0, 32L, pushConst.address());
+
+            int workGroups = (entityCount + 63) / 64;
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, workGroups, 1, 1);
+
+            // 6) 屏障：Compute → Transfer
+            VulkanAPIRegistry.invoke("vkCmdPipelineBarrier", cmdBuf,
+                0x00000800L, 0x00040000L, 0, 0, 0L, 0, 0L, 0, 0L);
+
+            // 7) vkCmdCopyBuffer: 回读碰撞对和计数
+            MemorySegment pairCopy = PerFrameArena.allocateLongs(3);
+            pairCopy.setAtIndex(ValueLayout.JAVA_LONG, 0, 0L);
+            pairCopy.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            pairCopy.setAtIndex(ValueLayout.JAVA_LONG, 2, (long) MAX_COLLISION_PAIRS * 8);
+            VulkanAPIRegistry.invoke("vkCmdCopyBuffer", cmdBuf, collisionPairBufferHandle, stagingPairBuffer, 1, pairCopy.address());
+
+            MemorySegment countCopy = PerFrameArena.allocateLongs(3);
+            countCopy.setAtIndex(ValueLayout.JAVA_LONG, 0, 0L);
+            countCopy.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            countCopy.setAtIndex(ValueLayout.JAVA_LONG, 2, 4L);
+            VulkanAPIRegistry.invoke("vkCmdCopyBuffer", cmdBuf, collisionCountBufferHandle, stagingCountBuffer, 1, countCopy.address());
+
+            vkEndCB.invokeExact(cmdBuf);
+
+            // 8) 提交 + 等待
+            long queue = VulkanBufferHelper.getDevice(); // device handles as queue fallback
+            MemorySegment submitInfo = PerFrameArena.allocateLongs(6);
+            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 37L); // SUBMIT_INFO
+            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);
+            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L);
+            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 1L);
+            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, cbOut.get(ValueLayout.JAVA_LONG, 0));
+
+            if (fence == 0L) fence = createFence(dev);
+            MemorySegment pFence = PerFrameArena.allocateLongs(1);
+            pFence.set(ValueLayout.JAVA_LONG, 0, fence);
+            vkResetFences.invokeExact(dev, 1, pFence.address());
+            vkQueueSubmit.invokeExact(queue, 1, submitInfo.address(), fence);
+            vkWaitFences.invokeExact(dev, 1, pFence.address(), 1, 100_000_000L);
+
+            // 9) 回读：映射 staging → copy → collisionPairs
+            MethodHandle vkMapMem = VulkanAPIRegistry.getHandle("vkMapMemory");
+            if (vkMapMem == null) return 0;
+
+            // 回读碰撞计数
+            var ppCount = PerFrameArena.allocateLongs(1);
+            vkMapMem.invokeExact(dev, stagingCountMemory, 0L, 4L, 0L, ppCount.address());
+            long countAddr = ppCount.get(ValueLayout.JAVA_LONG, 0);
+            int pairCount = 0;
+            if (countAddr != 0L) {
+                pairCount = MemorySegment.ofAddress(countAddr).reinterpret(4).get(ValueLayout.JAVA_INT, 0);
+                pairCount = Math.min(pairCount, MAX_COLLISION_PAIRS);
+            }
+            VulkanAPIRegistry.invoke("vkUnmapMemory", dev, stagingCountMemory);
+
+            // 回读碰撞对
+            if (pairCount > 0) {
+                var ppPairs = PerFrameArena.allocateLongs(1);
+                vkMapMem.invokeExact(dev, stagingPairMemory, 0L, (long) pairCount * 8, 0L, ppPairs.address());
+                long pairAddr = ppPairs.get(ValueLayout.JAVA_LONG, 0);
+                if (pairAddr != 0L) {
+                    MemorySegment pairSeg = MemorySegment.ofAddress(pairAddr).reinterpret((long) pairCount * 8);
+                    for (int i = 0; i < pairCount && i * 2 < collisionPairs.length; i++) {
+                        collisionPairs[i * 2] = pairSeg.get(ValueLayout.JAVA_INT, (long) i * 8);
+                        collisionPairs[i * 2 + 1] = pairSeg.get(ValueLayout.JAVA_INT, (long) i * 8 + 4);
+                    }
+                }
+                VulkanAPIRegistry.invoke("vkUnmapMemory", dev, stagingPairMemory);
+            }
+
+            return pairCount;
+
+        } catch (Throwable t) {
+            LOGGER.fine("GPU 碰撞检测失败，降级: " + t.getMessage());
+            return 0;
         }
-        VulkanBufferHelper.uploadData(device, entityAABBBufferMemory, aabbBytes, 0L);
+    }
 
-        // 2. 上传网格哈希数据到 GPU（int[] → byte[]）
-        int hashByteCount = entityCount * 4;
-        byte[] hashBytes = new byte[hashByteCount];
-        for (int i = 0; i < entityCount; i++) {
-            writeInt(hashBytes, i * 4, gridHashStaging[i]);
-        }
-        VulkanBufferHelper.uploadData(device, gridHashBufferMemory, hashBytes, 0L);
+    private long createCommandPool(long device) {
+        try {
+            MemorySegment ci = PerFrameArena.allocateLongs(4);
+            ci.setAtIndex(ValueLayout.JAVA_LONG, 0, 27L); // COMMAND_POOL_CREATE_INFO
+            ci.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            ci.setAtIndex(ValueLayout.JAVA_LONG, 2, 2L); // TRANSIENT
+            ci.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L); // queueFamilyIndex
+            MemorySegment out = PerFrameArena.allocateLongs(1);
+            VulkanAPIRegistry.invoke("vkCreateCommandPool", device, ci.address(), 0L, out.address());
+            commandPool = out.get(ValueLayout.JAVA_LONG, 0);
+            return commandPool;
+        } catch (Throwable t) { return 0L; }
+    }
 
-        // 3. 清零碰撞计数器
-        // vkCmdFillBuffer(collisionCountBuffer, 0)
-
-        // 4. 绑定 Pipeline + DescriptorSet + PushConstants
-        // vkCmdBindPipeline(COMPUTE, collisionPipeline)
-        // vkCmdBindDescriptorSets(collisionDescriptorSet)
-        // vkCmdPushConstants(entityCount, gridCellSize, ...)
-
-        // 5. Dispatch
-        // int workGroups = (entityCount + 63) / 64;
-        // vkCmdDispatch(workGroups, 1, 1)
-
-        // 6. 回读碰撞计数和碰撞对
-        // 暂时返回 0，等待 SPIR-V 着色器实现
-        return 0;
+    private long createFence(long device) {
+        try {
+            MemorySegment ci = PerFrameArena.allocateLongs(3);
+            ci.setAtIndex(ValueLayout.JAVA_LONG, 0, 9L); // FENCE_CREATE_INFO
+            ci.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            ci.setAtIndex(ValueLayout.JAVA_LONG, 2, 1L); // SIGNALED
+            MemorySegment out = PerFrameArena.allocateLongs(1);
+            VulkanAPIRegistry.invoke("vkCreateFence", device, ci.address(), 0L, out.address());
+            fence = out.get(ValueLayout.JAVA_LONG, 0);
+            return fence;
+        } catch (Throwable t) { return 0L; }
     }
 
     /**
@@ -489,12 +743,29 @@ public class GPUEntityCollisionSystem implements AutoCloseable {
             if (collisionCountBufferHandle != 0L) {
                 VulkanBufferHelper.destroyBuffer(collisionCountBufferHandle, collisionCountBufferMemory);
             }
+            if (stagingPairBuffer != 0L) {
+                VulkanBufferHelper.destroyBuffer(stagingPairBuffer, stagingPairMemory);
+            }
+            if (stagingCountBuffer != 0L) {
+                VulkanBufferHelper.destroyBuffer(stagingCountBuffer, stagingCountMemory);
+            }
+            if (fence != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyFence", VulkanBufferHelper.getDevice(), fence, 0L); } catch (Throwable ignored) {}
+            }
+            if (commandPool != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyCommandPool", VulkanBufferHelper.getDevice(), commandPool, 0L); } catch (Throwable ignored) {}
+            }
+            if (shaderModule != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyShaderModule", VulkanBufferHelper.getDevice(), shaderModule, 0L); } catch (Throwable ignored) {}
+            }
         }
 
         entityAABBBufferHandle = 0L; entityAABBBufferMemory = 0L;
         gridHashBufferHandle = 0L; gridHashBufferMemory = 0L;
         collisionPairBufferHandle = 0L; collisionPairBufferMemory = 0L;
         collisionCountBufferHandle = 0L; collisionCountBufferMemory = 0L;
+        stagingPairBuffer = 0L; stagingPairMemory = 0L;
+        stagingCountBuffer = 0L; stagingCountMemory = 0L;
         initialized = false;
     }
 }
