@@ -21,7 +21,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 @Mixin(LevelRenderer.class)
 public abstract class MixinLevelRendererACL {
 
-    @Inject(method = "renderLevel", at = @At("HEAD"))
+    @Inject(method = "renderLevel", at = @At("HEAD"), require = 0)
     private void onRenderFrame(PoseStack poseStack, float tickDelta,
                                 long limitTime, boolean renderBlockOutline,
                                 Camera camera, CallbackInfo ci) {

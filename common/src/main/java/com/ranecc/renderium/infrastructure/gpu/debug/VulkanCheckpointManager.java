@@ -1,40 +1,33 @@
-// Renderium - Vulkan Checkpoint 调试管理器
-// 包装 s7 的 CheckpointExtension，在关键渲染 Pass 处插入 GPU 调试标记
+// Renderium - Vulkan Checkpoint 调试管理器（snapshot-3 兼容版）
+//
+// s7 迁移说明：
+// 1. 取消 import CheckpointExtension 的注释
+// 2. 恢复 recordCheckpoint/retrieveCheckpoints/rotate 的 s7 实现
+// 3. 删除本 Noop 降级代码块
 
 package com.ranecc.renderium.infrastructure.gpu.debug;
 
 import com.mojang.blaze3d.vulkan.VulkanDevice;
-import com.mojang.blaze3d.vulkan.checkpoints.CheckpointExtension;
+// s7: import com.mojang.blaze3d.vulkan.checkpoints.CheckpointExtension;
 import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
-import org.lwjgl.vulkan.VkCommandBuffer;
-import org.lwjgl.vulkan.VkDevice;
 
 import java.util.List;
 import java.util.logging.Logger;
 
 /**
  * Vulkan Checkpoint 调试管理器
- * <p>
- * 包装 s7 的 {@link CheckpointExtension}，提供 GPU 命令调试检查点功能。
- * 在关键渲染 Pass（HiZ 构建、LOD 剔除、超分辨率等）处插入调试标记，
- * 在 GPU 崩溃或设备丢失时可通过 {@link #retrieveCheckpoints(boolean)} 获取最后执行的命令位置。
- * </p>
  *
- * <h3>使用示例：</h3>
- * <pre>{@code
- * if (VulkanCheckpointManager.isSupported()) {
- *     VulkanCheckpointManager.get().recordCheckpoint("Renderium:HiZCompute");
- * }
- * }</pre>
+ * <p><b>当前实现：Noop 占位（snapshot-3 兼容）</b>
+ * <br>CheckpointExtension 是 s7 新增的 Blaze3D Vulkan 调试 API，snapshot-3 不存在此类。
+ * 所有方法为 Noop 空操作，仅确保编译通过且安全降级。</p>
  *
- * <h3>支持的 GPU：</h3>
- * <ul>
- *   <li>NVIDIA — {@code NvidiaCheckpointExtension} (VK_NV_device_diagnostic_checkpoints)</li>
- *   <li>AMD — {@code AmdCheckpointExtension} (using VK_AMD_buffer_marker)</li>
- *   <li>其他 — {@code NoopCheckpointExtension} (空操作，安全降级)</li>
- * </ul>
+ * <p><b>s7 迁移后需：</b>
+ * <ol>
+ *   <li>取消 import CheckpointExtension 的注释</li>
+ *   <li>恢复非 Noop 的字段/构造器/方法体</li>
+ *   <li>删除本段 Javadoc 注释</li>
+ * </ol></p>
  *
- * @see CheckpointExtension
  * @see com.mojang.blaze3d.GpuDeviceLossException
  * @since 6.0.0
  */
@@ -43,128 +36,84 @@ public final class VulkanCheckpointManager {
     private static final Logger LOGGER = Logger.getLogger(VulkanCheckpointManager.class.getName());
 
     private static volatile VulkanCheckpointManager instance;
+    private final boolean noop = true;
+    private boolean initialized;
 
-    private final CheckpointExtension extension;
-    private final CheckpointExtension.CheckpointStorage storage;
-    private final VkDevice vkDevice;
-    private final boolean noop;
+    // s7: private final CheckpointExtension extension;
+    // s7: private final CheckpointExtension.CheckpointStorage storage;
+    // s7: private final VkDevice vkDevice;
+    // s7: private final boolean noop;
 
-    private VulkanCheckpointManager(CheckpointExtension extension,
-                                     CheckpointExtension.CheckpointStorage storage,
-                                     VkDevice vkDevice,
-                                     boolean noop) {
-        this.extension = extension;
-        this.storage = storage;
-        this.vkDevice = vkDevice;
-        this.noop = noop;
+    // s7: 恢复非 Noop 构造器
+    private VulkanCheckpointManager() {
+        this.initialized = false;
     }
 
-    /**
-     * 获取全局单例
-     *
-     * @return VulkanCheckpointManager 实例，未初始化返回 null
-     */
     public static VulkanCheckpointManager get() {
         return instance;
     }
 
-    /**
-     * Checkpoint 调试是否可用
-     *
-     * @return true 表示已初始化且非空操作（NVIDIA/AMD 实际实现）
-     */
     public static boolean isSupported() {
-        return instance != null && !instance.noop;
+        return false; // snapshot-3 不支持 Checkpoint 调试
     }
 
     /**
-     * 初始化 Checkpoint 管理器
-     * <p>
-     * 从 s7 VulkanDevice 获取 CheckpointExtension，为计算队列创建存储。
-     * 失败时不抛出异常，{@link #isSupported()} 返回 false。
+     * 初始化（Noop 降级 — s7 迁移后恢复 s7 实现）。
      *
-     * @param device s7 VulkanDevice 实例
+     * @param device s7 VulkanDevice 实例（snapshot-3 中仅用于方法签名兼容）
      */
     public static void initialize(VulkanDevice device) {
         if (instance != null) return;
+        LOGGER.fine("VulkanCheckpointManager: noop（snapshot-3 无 CheckpointExtension）");
+        instance = new VulkanCheckpointManager();
 
-        try {
-            CheckpointExtension ext = device.checkpointExtension();
-            if (ext == null) {
-                LOGGER.fine("VulkanCheckpointManager: 设备不支持 CheckpointExtension");
-                return;
-            }
-
-            CheckpointExtension.CheckpointStorage st = ext.createStorage(device, device.computeQueue(), 2);
-            boolean isNoop = ext.getClass().getName().contains("NoopCheckpointExtension");
-
-            instance = new VulkanCheckpointManager(ext, st, device.vkDevice(), isNoop);
-
-            LOGGER.info(String.format(
-                    "VulkanCheckpointManager: 已初始化 [type=%s, queue=compute]",
-                    isNoop ? "noop" : ext.getClass().getSimpleName()
-            ));
-        } catch (Exception e) {
-            VulkanOperationGuard.markFailed(e);
-            LOGGER.fine("VulkanCheckpointManager 初始化失败: " + e.getMessage());
-        }
+        // s7 迁移实现：
+        // try {
+        //     CheckpointExtension ext = device.checkpointExtension();
+        //     if (ext == null) {
+        //         LOGGER.fine("VulkanCheckpointManager: 设备不支持 CheckpointExtension");
+        //         return;
+        //     }
+        //     CheckpointExtension.CheckpointStorage st = ext.createStorage(device, device.computeQueue(), 2);
+        //     boolean isNoop = ext.getClass().getName().contains("NoopCheckpointExtension");
+        //     instance = new VulkanCheckpointManager(ext, st, device.vkDevice(), isNoop);
+        //     LOGGER.info(...);
+        // } catch (Exception e) {
+        //     VulkanOperationGuard.markFailed(e);
+        // }
     }
 
     /**
-     * 在指定的命令缓冲区上记录检查点
-     * <p>
-     * 此方法应插入到关键渲染 Pass 的 Command Buffer 录制期间。
-     * 非阻塞，零开销（空操作实现时无任何操作）。
+     * Noop — s7 迁移后恢复。
      *
-     * @param commandBuffer VkCommandBuffer 句柄 (long)
-     * @param label         检查点标签（如 "Renderium:HiZBuild"）
+     * @param commandBuffer VkCommandBuffer 句柄
+     * @param label         检查点标签
      */
     public void recordCheckpoint(long commandBuffer, String label) {
-        if (noop) return;
-        try {
-            storage.recordCheckpoint(
-                    new VkCommandBuffer(commandBuffer, vkDevice),
-                    CheckpointExtension.CheckpointType.BEGIN_RENDER_PASS,
-                    () -> label
-            );
-        } catch (Exception e) {
-            VulkanOperationGuard.markFailed(e);
-            LOGGER.finest("recordCheckpoint 失败: " + e.getMessage());
-        }
+        // s7 实现:
+        // if (noop) return;
+        // storage.recordCheckpoint(
+        //     new VkCommandBuffer(commandBuffer, vkDevice),
+        //     CheckpointExtension.CheckpointType.BEGIN_RENDER_PASS,
+        //     () -> label
+        // );
     }
 
     /**
-     * 获取当前所有队列的检查点状态
-     * <p>
-     * 在捕获到 {@link com.mojang.blaze3d.GpuDeviceLossException} 后调用，
-     * 用于定位 GPU 崩溃时的最后执行位置。
+     * Noop — s7 迁移后恢复。
      *
      * @param isDeviceLost 是否因设备丢失触发
-     * @return 检查点列表（可能为空）
+     * @return 空列表
      */
-    public List<CheckpointExtension.QueueCheckpoints> retrieveCheckpoints(boolean isDeviceLost) {
-        if (noop) return List.of();
-        try {
-            return extension.retrieveCheckpoints(isDeviceLost);
-        } catch (Exception e) {
-            VulkanOperationGuard.markFailed(e);
-            LOGGER.warning("retrieveCheckpoints 失败: " + e.getMessage());
-            return List.of();
-        }
+    public List<?> retrieveCheckpoints(boolean isDeviceLost) {
+        // s7 返回类型: List<CheckpointExtension.QueueCheckpoints>
+        return List.of();
     }
 
     /**
-     * 轮转检查点帧缓存
-     * <p>
-     * 每帧结束后调用，使检查点存储进入下一帧。
+     * Noop — s7 迁移后恢复。
      */
     public void rotate() {
-        if (noop) return;
-        try {
-            storage.rotate();
-        } catch (Exception e) {
-            VulkanOperationGuard.markFailed(e);
-            LOGGER.finest("rotate 失败: " + e.getMessage());
-        }
+        // s7 实现: storage.rotate();
     }
 }

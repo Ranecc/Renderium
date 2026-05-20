@@ -1,6 +1,7 @@
 package com.ranecc.renderium.platform.mixin;
 
-import com.mojang.blaze3d.GpuDeviceLossException;
+// s7: GpuDeviceLossException 在 snapshot-3 中不存在，捕获 RuntimeException 统一处理
+// s7: import com.mojang.blaze3d.GpuDeviceLossException;
 import com.mojang.blaze3d.systems.GpuDevice;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
@@ -78,10 +79,12 @@ public abstract class MixinRenderSystem {
                 "Renderium: Vulkan 句柄提取成功 [device=0x%X, vma=0x%X, gQ=0x%X, compQ=0x%X]",
                 vkDeviceHandle, vmaAllocator, gQueue, cQueue));
 
-        } catch (GpuDeviceLossException e) {
-            LOGGER.log(Level.SEVERE, "Vulkan 设备丢失", e);
-            VulkanOperationGuard.markFailed(e);
-        } catch (Exception e) {
+        } catch (/* s7: GpuDeviceLossException | */ Exception e) {
+            // s7: 恢复 GpuDeviceLossException 分支
+            // s7: } catch (GpuDeviceLossException e) {
+            // s7:     LOGGER.log(Level.SEVERE, "Vulkan 设备丢失", e);
+            // s7:     VulkanOperationGuard.markFailed(e);
+            // s7: } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "VulkanDevice 句柄提取失败", e);
             VulkanOperationGuard.markFailed(e);
         }

@@ -6,7 +6,9 @@ import com.mojang.blaze3d.systems.GpuDevice;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import java.util.function.Supplier;
 
 /**
  * GpuDevice Mixin - 防腐层标准实现 (MC 26.2)
@@ -28,17 +30,19 @@ public abstract class MixinGpuDevice {
     /**
      * Buffer 创建 - HEAD 注入
      * <p>
-     * 捕获 createBuffer(int, long) 的参数，将缓冲区大小传递给 HookDispatcher
-     * 用于 GPU 后端的 Buffer 分配优化和内存追踪。
+     * MC 26.2（含 snapshot-3 起）createBuffer 签名:
+     * createBuffer(Supplier label, int usage, long size) → GpuBuffer
+     * 捕获 size 参数传递给 HookDispatcher 用于 GPU 后端的 Buffer 分配优化。
      * <p>
-     * 方法签名: createBuffer(int usage, long size) → GpuBuffer
+     * 方法签名: createBuffer(Supplier<String> label, int usage, long size) → GpuBuffer
      *
-     * @param usage 缓冲区用途标志位（从 createBuffer 的第一个 int 参数捕获）
-     * @param size  缓冲区大小（字节，从 createBuffer 的第二个 long 参数捕获）
-     * @param ci    Mixin 回调信息
+     * @param label 缓冲区标签（Supplier<String>，lazy evaluation）
+     * @param usage 缓冲区用途标志位
+     * @param size  缓冲区大小（字节）
+     * @param cir   Mixin 回调信息（createBuffer 有返回值，使用 CallbackInfoReturnable）
      */
     @Inject(method = "createBuffer", at = @At("HEAD"))
-    private void onBufferCreate(int usage, long size, CallbackInfo ci) {
+    private void onBufferCreate(Supplier<?> label, int usage, long size, CallbackInfoReturnable<?> cir) {
         if (VulkanDeviceHolder.isAvailable()) {
             HookDispatcher.dispatchGpuDeviceBuffer(size);
         }

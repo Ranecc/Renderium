@@ -123,14 +123,14 @@ public class DebugSettingsTab extends Screen {
         currentLogLevelIndex = (currentLogLevelIndex + 1) % LOG_LEVELS.length;
         String levelName = LOG_LEVELS[currentLogLevelIndex];
 
-        var rootLogger = java.util.logging.Logger.getLogger("");
-        rootLogger.setLevel(java.util.logging.Level.parse(levelName));
+        java.util.logging.Logger.getLogger("com.ranecc.renderium")
+            .setLevel(java.util.logging.Level.parse(levelName));
 
         logLevelButton.setMessage(MCAbstract.text("Log Level: " + levelName));
     }
 
     private String getCurrentLogLevel() {
-        var level = java.util.logging.Logger.getLogger("").getLevel();
+        var level = java.util.logging.Logger.getLogger("com.ranecc.renderium").getLevel();
         return level != null ? level.getName() : "INHERITED";
     }
 
@@ -236,7 +236,7 @@ public class DebugSettingsTab extends Screen {
 
         // 4. Log Level
         sb.append("--- Log Level ---").append(br);
-        sb.append("  Root Logger Level: ").append(getCurrentLogLevel()).append(br);
+        sb.append("  Renderium Logger Level: ").append(getCurrentLogLevel()).append(br);
         sb.append("  JUL Level names available: ALL=ALL FINE=300 FINER=400 FINEST=500 WARNING=900 SEVERE=1000 OFF=2147483647").append(br);
         sb.append(br);
 

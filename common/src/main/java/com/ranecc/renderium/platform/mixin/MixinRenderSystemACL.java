@@ -23,7 +23,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(RenderSystem.class)
 public abstract class MixinRenderSystemACL {
 
-    @Inject(method = "draw", at = @At("HEAD"))
+    // require=0：MC 26.2-snapshot 中 RenderSystem.draw() 已改名/移除，
+    // 该注入为占位——精确的 draw call 追踪需要快照 API 配合，暂不阻塞启动
+    @Inject(method = "draw", at = @At("HEAD"), require = 0)
     private static void onDraw(CallbackInfo ci) {
         // Draw call 计数由 FrameBudgetAllocator 的 cullingBudget 隐式控制
         // RenderiumACL 内已集成了剔除分配的预算管理

@@ -6,9 +6,12 @@ val fabricLoaderVersion = rootProject.property("fabric.loader.version") as Strin
 val fabricApiVersion = rootProject.property("fabric.api.version") as String
 
 dependencies {
-    minecraft("com.mojang:minecraft:$minecraftVersion")
+    minecraft("com.mojang:minecraft:${minecraftVersion}")
     implementation("net.fabricmc:fabric-loader:$fabricLoaderVersion")
+
+    // fabric-api（snapshot-3 兼容：Ingredient 无 hashCode，无 @Overwrite 冲突）
     api("net.fabricmc.fabric-api:fabric-api:$fabricApiVersion")
+
     implementation(project(":common"))
     compileOnly("org.jetbrains:annotations:24.0.0")
 }
