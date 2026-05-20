@@ -28,7 +28,7 @@ public abstract class MixinChunkManagerACL {
      * 区块卸载 —— 通知 RenderiumACL。
      * ChunkPos 使用 getX()/getZ() 公开方法访问。
      */
-    @Inject(method = "unload", at = @At("HEAD"))
+    @Inject(method = "unload", at = @At("HEAD"), require = 0)
     private void onChunkUnload(LevelChunk chunk, CallbackInfo ci) {
         // 防御性 null 检查：chunk 可能在某些边缘情况下为 null
         if (chunk == null) return;

@@ -34,7 +34,7 @@ public abstract class MixinRenderSystem {
 
     private static final Logger LOGGER = Logger.getLogger("Renderium|MixinRenderSystem");
 
-    @Inject(method = "initRenderer", at = @At("TAIL"), cancellable = false)
+    @Inject(method = "initRenderer", at = @At("TAIL"), cancellable = false, require = 0)
     private static void onInitRendererTail(GpuDevice device, CallbackInfo ci) {
         Object backendObj;
         try {

@@ -36,7 +36,7 @@ public abstract class MixinGameRenderer {
      * @param advanceGameTime 是否推进游戏时间
      * @param ci             Mixin 回调信息
      */
-    @Inject(method = "render", at = @At("HEAD"))
+    @Inject(method = "render", at = @At("HEAD"), require = 0)
     private void onFrameBegin(DeltaTracker deltaTracker, boolean advanceGameTime, CallbackInfo ci) {
         PerFrameArena.beginFrame();
         FrameContext ctx = FrameContext.get();
@@ -53,8 +53,10 @@ public abstract class MixinGameRenderer {
      *
      * @param ci Mixin 回调信息
      */
-    @Inject(method = "render", at = @At("RETURN"))
+    @Inject(method = "render", at = @At("RETURN"), require = 0)
     private void onFrameEnd(CallbackInfo ci) {
+        FrameContext ctx = FrameContext.get();
+        if (ctx != null) ctx.endFrame();
         LifecycleManager lifecycle = HookDispatcher.getLifecycleManager();
         if (lifecycle != null) lifecycle.endFrame();
         PerFrameArena.endFrame();

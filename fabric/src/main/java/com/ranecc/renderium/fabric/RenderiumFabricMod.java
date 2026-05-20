@@ -1,6 +1,7 @@
 package com.ranecc.renderium.fabric;
 
 import com.ranecc.renderium.application.controller.RenderiumController;
+import com.ranecc.renderium.platform.bridge.video.VideoSettingsBridge;
 import net.fabricmc.api.ModInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,8 +46,13 @@ public class RenderiumFabricMod implements ModInitializer {
         LOGGER.info("╚══════════════════════════════════════╝");
 
         try {
+            // 1) 静态初始化（创建 Core + Controller 并执行完整初始化流程）
+            RenderiumController.initialize();
+            // 2) 获取已初始化的实例
             controller = RenderiumController.getInstance();
-            controller.initialize();
+
+            // 3) 初始化视频设置桥接（注册选项、检测环境）
+            VideoSettingsBridge.initialize();
 
             logSuccessState();
 
@@ -81,8 +87,12 @@ public class RenderiumFabricMod implements ModInitializer {
     private void logSuccessState() {
         LOGGER.info("[Renderium] ✓ Ready - DDD Architecture Loaded");
         if (controller != null) {
-            LOGGER.info("[Renderium]   State: {}", controller.getState());
-            LOGGER.info("[Renderium]   Mode: {}", controller.getCurrentMode());
+            try {
+                LOGGER.info("[Renderium]   State: {}", controller.getState());
+                LOGGER.info("[Renderium]   Mode: {}", controller.getCurrentMode());
+            } catch (Exception e) {
+                LOGGER.warn("[Renderium]   State query failed (degraded mode): {}", e.getMessage());
+            }
         }
     }
 }

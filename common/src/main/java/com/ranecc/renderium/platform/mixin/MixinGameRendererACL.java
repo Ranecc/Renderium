@@ -29,7 +29,7 @@ public abstract class MixinGameRendererACL {
      * 实际透明四边形提取需要 snapshot7 Blaze3D API 配合，
      * 当前仅做帧同步标记，具体排序逻辑在 RenderiumACL 内由 TranslucentSortEngine 执行。
      */
-    @Inject(method = "render", at = @At("TAIL"))
+    @Inject(method = "render", at = @At("TAIL"), require = 0)
     private void onRenderFrameEnd(CallbackInfo ci) {
         // 透明排序由 RenderiumACL.onRenderFrame() 内部的
         // RenderiumCullingScheduler 统一调度。此处不重复触发。

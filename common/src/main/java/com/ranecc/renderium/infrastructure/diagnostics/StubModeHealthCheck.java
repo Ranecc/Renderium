@@ -230,8 +230,9 @@ public final class StubModeHealthCheck {
             StubItem item = stubItems.get(i);
             String idx = String.valueOf(i + 1);
             LOGGER.warning("║  " + idx + ". [" + item.name + "]                          ║");
-            LOGGER.warning("║     功能: " + item.feature + "                       ".substring(
-                Math.min(item.feature.length(), 35)) + "║");
+            // 格式化对齐：功能名占 35 列，不足补空格，确保右边框对齐
+            String padded = String.format("%-35s", item.feature);
+            LOGGER.warning("║     功能: " + padded + "║");
             LOGGER.warning("║     原因: " + item.reason);
             LOGGER.warning("║     影响: " + item.impact);
             LOGGER.warning("║     建议: " + item.suggestion);

@@ -62,47 +62,31 @@ public abstract class MixinFrameGraph {
      *
      * @param ci CallbackInfo - Mixin 回调信息
      */
-    @Inject(method = "reset", at = @At("HEAD"))
+    @Inject(method = "reset", at = @At("HEAD"), require = 0)
     private void onReset(CallbackInfo ci) {
         RenderiumPassInjector.getInstance().reset();
         LOGGER.fine("Renderium: FrameGraph Reset — Pass 注入状态已重置");
     }
 
     /**
-     * 在 FrameGraphBuilder.execute() 头部注入 Renderium 自定义 Pass
+     * 在 FrameGraphBuilder.execute() 头部注入 Renderium 自定义 Pass (snapshot-3)
      * <p>
-     * 此方法在 Mojang 原生的 Pass 注册逻辑执行之前被调用，
-     * 通过 {@link RenderiumPassInjector} 向 FrameGraphBuilder 添加自定义 Pass。
+     * snapshot-3 签名: execute(GraphicsResourceAllocator) 
+     * snapshot-7+: execute(GraphicsResourceAllocator, Inspector)
+     * 当前适配 snapshot-3。
      * </p>
      *
-     * 【方法参数】
-     * @param resourceAllocator GraphicsResourceAllocator - 图形资源分配器（由 Blaze3D 提供）
-     * @param inspector          FrameGraphBuilder  - 帧图检查器（用于调试）
-     * @param ci                 CallbackInfo         - Mixin 回调信息
-     *
-     * 【返回值】void
-     *
-     * 【实现要点】
-     * 1. 检查 VulkanDeviceHolder.isInitialized()
-     *    - false → 直接返回，不注入任何 Pass
-     *    - true → 继续注入流程
-     * 2. 获取当前 FrameGraphBuilder 实例（通过 this 引用）
-     * 3. 调用 RenderiumPassInjector.injectPasses() 执行实际注入
-     * 4. 记录注入结果日志（成功/失败/跳过）
-     *
-     * 【异常处理】
-     * - VulkanDeviceHolder 未初始化：静默跳过（INFO 日志）
-     * - 注入过程异常：记录 SEVERE 日志但不中断原始 execute
-     * - 不影响 Mojang 原生 Pass 的注册和执行
+     * @param resourceAllocator GraphicsResourceAllocator - 图形资源分配器
+     * @param ci                 CallbackInfo
      */
     @Inject(
             method = "execute",
             at = @At("HEAD"),
-            cancellable = false  // 不取消原始 execute，仅预注入 Pass
+            cancellable = false,
+            require = 0
     )
     private void onExecuteHead(
             GraphicsResourceAllocator resourceAllocator,
-            FrameGraphBuilder.Inspector inspector,
             CallbackInfo ci) {
 
         // 前置条件：VulkanDevice 必须可用（已初始化且未降级）
