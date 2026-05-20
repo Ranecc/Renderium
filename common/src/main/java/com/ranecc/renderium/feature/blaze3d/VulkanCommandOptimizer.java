@@ -477,11 +477,11 @@ public class VulkanCommandOptimizer implements AutoCloseable {
     public void endPass(long passId) {
         if (!enabled || !initialized) return;
 
-        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
-        if (device != 0L) {
+        long queue = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getVkQueue();
+        if (queue != 0L) {
             try {
                 com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkQueueSubmit()
-                    .invoke(device, 1, 0L, 0L);
+                    .invoke(queue, 1, 0L, 0L);
                 totalSubmittedBatches.incrementAndGet();
             } catch (Throwable ignored) {}
         }

@@ -650,16 +650,17 @@ public class AsyncChunkUploader implements AutoCloseable {
         // ========== 步骤 1: 检查上一帧上传是否完成 ==========
         long fenceHandle = uploadFence instanceof Long l ? l : 0L;
         if (fenceHandle != 0L && device != 0L) {
-            try {
+            try (var arena = java.lang.foreign.Arena.ofConfined()) {
+                var pFences = arena.allocate(java.lang.foreign.ValueLayout.JAVA_LONG, fenceHandle);
                 long status = (long) com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding.getVkWaitForFences()
-                    .invoke(device, 1, fenceHandle, 0, 0L);
-                    if (status != 0) {
-                        LOGGER.fine("上一帧上传尚未完成，跳过本帧上传");
-                        return;
-                    }
-                } catch (Throwable t) {
+                    .invoke(device, 1, pFences.address(), 0, 0L);
+                if (status != 0) {
+                    LOGGER.fine("上一帧上传尚未完成，跳过本帧上传");
                     return;
                 }
+            } catch (Throwable t) {
+                return;
+            }
         }
 
         // ========== 步骤 2: 开始新的上传编码 ==========

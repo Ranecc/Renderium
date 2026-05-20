@@ -106,7 +106,7 @@ public class GeneralSettingsTab extends Screen {
      * @param newMode 新的运行模式
      */
     private void onModeChanged(RenderiumMode newMode) {
-        // modeManager.setMode(newMode) // TODO: implement;
+        modeManager.setMode(newMode);
         config.setMode(newMode);
         // 更新按钮文本显示新模式
         if (modeButton != null) {

@@ -6,6 +6,7 @@ package com.ranecc.renderium.presentation.ui;
 import com.ranecc.renderium.application.core.RenderiumCore;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 import com.ranecc.renderium.presentation.ui.tabs.CullingSettingsTab;
+import com.ranecc.renderium.presentation.ui.tabs.DebugSettingsTab;
 import com.ranecc.renderium.presentation.ui.tabs.FrameGenerationSettingsTab;
 import com.ranecc.renderium.presentation.ui.tabs.GeneralSettingsTab;
 import com.ranecc.renderium.presentation.ui.tabs.InterceptionSettingsTab;
@@ -108,6 +109,7 @@ public class RenderiumSettingsScreen extends Screen {
         tabs.add(new TabInfo("renderium.config.category.culling", this::createCullingTab));
         tabs.add(new TabInfo("renderium.config.category.interception", this::createInterceptionTab));  // Phase 7 新增
         tabs.add(new TabInfo("renderium.config.category.performance", this::createPerformanceTab));
+        tabs.add(new TabInfo("renderium.config.category.debug", this::createDebugTab));
     }
 
     @Override
@@ -347,6 +349,26 @@ public class RenderiumSettingsScreen extends Screen {
      */
     private Screen createPerformanceTab() {
         return new PerformanceSettingsTab(this, config);
+    }
+
+    /**
+     * 创建设置标签页
+     *
+     * <p>提供以下开发期工具：
+     * <ul>
+     *   <li>FFM 调试开关（VulkanFFMDebugger.DEBUG_ENABLED）</li>
+     *   <li>日志输出级别控制（ALL ~ OFF）</li>
+     *   <li>FFM 慢调用阈值调节（1ms ~ 100ms）</li>
+     *   <li>FFM 调试统计报告输出</li>
+     *   <li>Vulkan FFM 运行时信息</li>
+     *   <li>调试计数器重置</li>
+     * </ul>
+     *
+     * @return 调试设置界面
+     * @since 5.6.0
+     */
+    private Screen createDebugTab() {
+        return new DebugSettingsTab(this, config);
     }
 
     // ==================== 配置操作方法 ====================
