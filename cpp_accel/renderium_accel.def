@@ -40,3 +40,9 @@ EXPORTS
     accel_convergence_getState
     accel_convergence_reset
     accel_convergence_destroyContext
+    
+    ; L2: 计算调度 (线程池 + 崩溃隔离)
+    accel_compute_submit
+    accel_compute_poll
+    accel_heartbeat
+    accel_is_degraded

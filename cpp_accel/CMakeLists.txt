@@ -116,6 +116,7 @@ set(PLATFORM_SOURCES
     src/platform/timer.cpp
     src/platform/cpu_info.cpp
     src/platform/atomic_ops.cpp
+    src/platform/thread_pool.cpp
 )
 
 # L1: 数学基础库
@@ -141,6 +142,7 @@ set(FFI_SOURCES
     src/ffi/lod_ffi.cpp
     src/ffi/kahan_ffi.cpp
     src/ffi/convergence_ffi.cpp
+    src/ffi/compute_ffi.cpp
 )
 
 # 合并所有源文件
