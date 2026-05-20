@@ -198,30 +198,20 @@ public class ProcessFrameUseCase {
         int visibleCount = snapshot.getVisibleSectionCount();
         int totalCount = snapshot.getTotalSectionCount();
 
-        // 条件1：世界完全未加载
-        if (totalCount == 0) {
-            LOGGER.finest("World not loaded (totalSectionCount=0), skipping render algorithms");
+        // 世界未加载或无可视区块 → 统一走连续空帧计数
+        if (totalCount == 0 || visibleCount <= 0) {
             consecutiveEmptyFrames++;
-            return true;
-        }
-
-        // 条件2：无可见区块
-        if (visibleCount <= 0) {
-            consecutiveEmptyFrames++;
-            // 条件3：连续空帧 >= 3，持续空场景使用更激进的跳过策略
             if (consecutiveEmptyFrames >= 3) {
                 LOGGER.finest("Sustained empty scene (" + consecutiveEmptyFrames
                     + " consecutive frames), aggressive skip");
-                return true;
             }
-            LOGGER.finest("Empty world detected (visibleSectionCount=0), skipping render algorithms");
             return true;
         }
 
         // 非空帧，重置连续空帧计数
         consecutiveEmptyFrames = 0;
 
-        // 条件4：帧数据未变化——通过哈希比较相机位置、旋转和区块可见性
+        // 帧数据未变化——通过哈希比较相机位置、旋转和区块可见性
         int currentHash = computeFrameDataHash(snapshot);
         if (currentHash == lastFrameDataHash && visibleCount == lastVisibleSectionCount) {
             LOGGER.finest("Frame data unchanged from previous frame, skipping render algorithms");

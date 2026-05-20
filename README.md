@@ -22,7 +22,7 @@
 ## 环境要求
 
 - Java 25+
-- Minecraft 26.2-snapshot-7+
+- Minecraft 26.2-snapshot-3
 - Fabric Loader 0.18.5+
 - Vulkan 兼容 GPU 和驱动程序
 - NVIDIA RTX / AMD RDNA2+ / Intel Arc GPU（用于超分辨率功能，需 Streamline SDK）

@@ -10,6 +10,7 @@ import com.ranecc.renderium.domain.model.ChunkRenderData;
 
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -208,6 +209,31 @@ public class ECSSceneGraph implements AutoCloseable {
      */
     private volatile float[] renderDistances;
 
+    // ==================== 方块实体 SoA Component 数组 ====================
+
+    /** 方块实体位置（世界坐标） */
+    private volatile float[] blockEntityPosX;
+    private volatile float[] blockEntityPosY;
+    private volatile float[] blockEntityPosZ;
+
+    /** 方块实体类型索引（用于模型/纹理查找） */
+    private volatile int[] blockEntityTypes;
+
+    /** 方块实体纹理索引 */
+    private volatile int[] blockEntityTextureIndices;
+
+    /** 方块实体可见性标志 */
+    private volatile boolean[] blockEntityVisibility;
+
+    /** 方块实体数量 */
+    private volatile int blockEntityCount;
+
+    /** 方块实体容量 */
+    private volatile int blockEntityCapacity;
+
+    /** 最大方块实体数量 */
+    public static final int DEFAULT_MAX_BLOCK_ENTITIES = 32768;
+
     // ==================== 元数据和状态 ====================
 
     /** 当前已注册的实体数量 */
@@ -230,6 +256,9 @@ public class ECSSceneGraph implements AutoCloseable {
 
     /** 实体批量渲染器（按模型类型+纹理分组，减少 Draw Call） */
     private final EntityBatchRenderer batchRenderer = new EntityBatchRenderer();
+
+    /** 方块实体批量渲染器（按类型+纹理分组，减少 Draw Call） */
+    private final BlockEntityBatchRenderer blockEntityBatchRenderer = new BlockEntityBatchRenderer();
 
     // ==================== 构造函数和初始化 ====================
 
@@ -342,6 +371,15 @@ public class ECSSceneGraph implements AutoCloseable {
             modelTypes = null;
             renderDistances = null;
 
+            blockEntityPosX = null;
+            blockEntityPosY = null;
+            blockEntityPosZ = null;
+            blockEntityTypes = null;
+            blockEntityTextureIndices = null;
+            blockEntityVisibility = null;
+            blockEntityCount = 0;
+            blockEntityCapacity = 0;
+
             entityCount = 0;
             capacity = 0;
             sceneBuilt = false;
@@ -423,12 +461,26 @@ public class ECSSceneGraph implements AutoCloseable {
             if (!VulkanDeviceHolder.isAvailable()) return 0;
             LOGGER.fine("ECSSceneGraph: 遍历 MC Level 构建 ECS 场景");
 
-            // ========== 步骤 3: 遍历 Block Entities（可选）==========
-            //
-            // TODO: 如果需要单独渲染方块实体（如箱子、告示牌等）
-            // for (BlockEntity blockEntity : clientLevel.blockEntities) {
-            //     // 类似上面的提取逻辑...
-            // }
+            // ========== 步骤 3: 遍历 Block Entities ==========
+            try {
+                Object blockEntities = invokeMethod(level, "getBlockEntityInfos", null, null);
+                if (blockEntities instanceof Iterable<?> iterable) {
+                    for (Object be : iterable) {
+                        try {
+                            double bx = (Double) invokeMethod(be, "getX", null, null);
+                            double by = (Double) invokeMethod(be, "getY", null, null);
+                            double bz = (Double) invokeMethod(be, "getZ", null, null);
+                            int beType = be.getClass().getName().hashCode() & 0xFFFF;
+                            int texIdx = beType; // 简化：类型即纹理索引
+                            addBlockEntity((float) bx, (float) by, (float) bz, beType, texIdx);
+                        } catch (Exception ignored) {
+                            // 单个方块实体提取失败不影响整体
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.fine("Block Entity 遍历不可用: " + e.getMessage());
+            }
 
             // ========== 步骤 4: 标记构建完成 ==========
             sceneBuilt = true;
@@ -436,8 +488,9 @@ public class ECSSceneGraph implements AutoCloseable {
             long elapsed = System.nanoTime() - startTime;
 
             LOGGER.info(String.format(
-                    "ECS 场景图构建完成 (MR5): %d 个实体, 耗时 %.2f ms, 容量=%d/%d",
+                    "ECS 场景图构建完成 (MR5): %d 个实体, %d 个方块实体, 耗时 %.2f ms, 容量=%d/%d",
                     entityCount,
+                    blockEntityCount,
                     elapsed / 1_000_000.0,
                     capacity,
                     maxEntities
@@ -575,7 +628,43 @@ public class ECSSceneGraph implements AutoCloseable {
         }
     }
 
-    // ==================== 核心方法：获取 Chunk 渲染数据数组 ====================
+    // ==================== 核心方法：方块实体可见性查询 ====================
+
+    /**
+     * 查询视锥体内的可见方块实体
+     * <p>
+     * 对所有已注册的方块实体执行视锥体剔除测试，
+     * 返回通过测试的方块实体列表。方块实体使用 1x1x1 AABB 进行碰撞检测。
+     * 查询完成后自动构建渲染批次。
+     *
+     * @param frustum 视锥体对象（不能为 null）
+     *
+     * @return 可见方块实体列表（不为 null，但可能为空列表）
+     */
+    public List<BlockEntityData> queryVisibleBlockEntities(Object frustum) {
+        if (!initialized.get() || !sceneBuilt || blockEntityCount == 0) {
+            return new ArrayList<>();
+        }
+
+        List<BlockEntityData> visible = new ArrayList<>();
+        float[][] planes = extractFrustumPlanes(frustum);
+
+        for (int i = 0; i < blockEntityCount; i++) {
+            float x = blockEntityPosX[i];
+            float y = blockEntityPosY[i];
+            float z = blockEntityPosZ[i];
+            // 方块实体 AABB：1x1x1 方块
+            boolean visibleFlag = testAABBvsFrustum(x, y, z, x + 1, y + 1, z + 1, planes);
+            blockEntityVisibility[i] = visibleFlag;
+
+            if (visibleFlag) {
+                visible.add(new BlockEntityData(i, x, y, z, blockEntityTypes[i], blockEntityTextureIndices[i]));
+            }
+        }
+
+        blockEntityBatchRenderer.buildBatches(visible);
+        return visible;
+    }
 
     /**
      * 获取 Chunk 渲染数据的连续数组（GPU-Ready）
@@ -715,6 +804,32 @@ public class ECSSceneGraph implements AutoCloseable {
         renderDistances[idx] = distance;
     }
 
+    // ==================== 内部方法：添加方块实体 ====================
+
+    /**
+     * 向 SoA 数组添加一个新方块实体
+     * <p>
+     * 将方块实体的各 Component 数据写入对应的平行数组末尾。
+     * 如果当前容量不足，自动触发扩容。
+     *
+     * @param x             方块实体世界坐标 X
+     * @param y             方块实体世界坐标 Y
+     * @param z             方块实体世界坐标 Z
+     * @param type          方块实体类型索引
+     * @param textureIndex  方块实体纹理索引
+     */
+    private void addBlockEntity(float x, float y, float z, int type, int textureIndex) {
+        ensureBlockEntityCapacity(blockEntityCount + 1);
+        int i = blockEntityCount;
+        blockEntityPosX[i] = x;
+        blockEntityPosY[i] = y;
+        blockEntityPosZ[i] = z;
+        blockEntityTypes[i] = type;
+        blockEntityTextureIndices[i] = textureIndex;
+        blockEntityVisibility[i] = false;
+        blockEntityCount++;
+    }
+
     // ==================== 内部方法：内存管理 ====================
 
     /**
@@ -747,6 +862,27 @@ public class ECSSceneGraph implements AutoCloseable {
                 "ECSSceneGraph 扩容: %d → %d (entityCount=%d)",
                 capacity, newCapacity, entityCount
         ));
+    }
+
+    /**
+     * 确保方块实体数组容量足够容纳指定数量
+     * <p>
+     * 如果当前容量不足，按 GROWTH_FACTOR 扩容，
+     * 上限为 {@link #DEFAULT_MAX_BLOCK_ENTITIES}。
+     *
+     * @param needed 需要的最小容量
+     */
+    private void ensureBlockEntityCapacity(int needed) {
+        if (needed <= blockEntityCapacity) return;
+        int newCap = Math.max(needed, (int) (blockEntityCapacity * GROWTH_FACTOR));
+        newCap = Math.min(newCap, DEFAULT_MAX_BLOCK_ENTITIES);
+        blockEntityPosX = Arrays.copyOf(blockEntityPosX, newCap);
+        blockEntityPosY = Arrays.copyOf(blockEntityPosY, newCap);
+        blockEntityPosZ = Arrays.copyOf(blockEntityPosZ, newCap);
+        blockEntityTypes = Arrays.copyOf(blockEntityTypes, newCap);
+        blockEntityTextureIndices = Arrays.copyOf(blockEntityTextureIndices, newCap);
+        blockEntityVisibility = Arrays.copyOf(blockEntityVisibility, newCap);
+        blockEntityCapacity = newCap;
     }
 
     /**
@@ -791,6 +927,19 @@ public class ECSSceneGraph implements AutoCloseable {
         modelTypes = new int[newCapacity];
         renderDistances = new float[newCapacity];
 
+        // 初始化方块实体数组（如果尚未分配）
+        if (blockEntityPosX == null) {
+            int beCap = INITIAL_CAPACITY;
+            blockEntityPosX = new float[beCap];
+            blockEntityPosY = new float[beCap];
+            blockEntityPosZ = new float[beCap];
+            blockEntityTypes = new int[beCap];
+            blockEntityTextureIndices = new int[beCap];
+            blockEntityVisibility = new boolean[beCap];
+            blockEntityCapacity = beCap;
+            blockEntityCount = 0;
+        }
+
         // 复制旧数据（如果有）
         if (oldPosX != null && copyLength > 0) {
             System.arraycopy(oldPosX, 0, positionX, 0, copyLength);
@@ -819,6 +968,7 @@ public class ECSSceneGraph implements AutoCloseable {
      */
     private void resetScene() {
         entityCount = 0;
+        blockEntityCount = 0;
         sceneBuilt = false;
         // 注意: 不释放数组内存（保留 capacity 以便复用）
     }
@@ -845,6 +995,9 @@ public class ECSSceneGraph implements AutoCloseable {
 
     /** 获取实体批量渲染器 */
     public EntityBatchRenderer getBatchRenderer() { return batchRenderer; }
+
+    /** 获取方块实体批量渲染器 */
+    public BlockEntityBatchRenderer getBlockEntityBatchRenderer() { return blockEntityBatchRenderer; }
 
     // ==================== 统计和监控 API ====================
 
@@ -966,6 +1119,30 @@ public class ECSSceneGraph implements AutoCloseable {
         return (float) Math.sqrt(x * x + y * y + z * z);
     }
 
+    /**
+     * 反射调用辅助方法 — 安全地调用对象的方法
+     * <p>
+     * 用于在编译时无法确定类型的情况下（如 MC Level 对象），
+     * 通过反射调用方法获取数据。
+     *
+     * @param target    目标对象
+     * @param methodName 方法名
+     * @param paramTypes 参数类型数组（可为 null 表示无参）
+     * @param args       参数值数组（可为 null 表示无参）
+     * @return 方法返回值，调用失败时抛出异常
+     *
+     * @throws Exception 反射调用失败时抛出
+     */
+    private static Object invokeMethod(Object target, String methodName,
+                                        Class<?>[] paramTypes, Object[] args) throws Exception {
+        if (paramTypes != null) {
+            var method = target.getClass().getMethod(methodName, paramTypes);
+            return method.invoke(target, args);
+        }
+        var method = target.getClass().getMethod(methodName);
+        return method.invoke(target);
+    }
+
     // ==================== 内部数据结构 ====================
 
     /**
@@ -1084,6 +1261,83 @@ public class ECSSceneGraph implements AutoCloseable {
     }
 
     /**
+     * 方块实体批量渲染器 — 将相同类型的方块实体合并为 Instanced Draw Call
+     * <p>
+     * 大型模组场景中 1000+ 方块实体（箱子、告示牌、机器等）从 1000+ Draw Call 降至 ~5-10 个。
+     * 方块实体的合并率通常比普通实体更高，因为同类型方块实体（如大量箱子）非常常见。
+     */
+    public static class BlockEntityBatchRenderer {
+
+        /** 批次键：方块实体类型 + 纹理索引 */
+        private static final record BatchKey(int blockEntityType, int textureIndex) {}
+
+        /** 批次数据：每个批次键对应的方块实体列表 */
+        private final Map<BatchKey, List<BlockEntityData>> batches = new HashMap<>();
+
+        /** 预分配矩阵缓冲区（避免每帧 GC 压力） */
+        private float[] matrixBuffer = new float[16 * 256];
+
+        /** 当前帧的总实例数 */
+        private int instanceCount = 0;
+
+        /**
+         * 从可见方块实体列表构建渲染批次
+         *
+         * @param visibleBlockEntities 视锥体剔除后的可见方块实体列表
+         */
+        public void buildBatches(List<BlockEntityData> visibleBlockEntities) {
+            batches.clear();
+            instanceCount = 0;
+
+            for (BlockEntityData be : visibleBlockEntities) {
+                BatchKey key = new BatchKey(be.blockEntityType, be.textureIndex);
+                batches.computeIfAbsent(key, k -> new ArrayList<>()).add(be);
+                instanceCount++;
+
+                // 动态扩展矩阵缓冲区
+                if (instanceCount * 16 >= matrixBuffer.length) {
+                    matrixBuffer = new float[matrixBuffer.length * 2];
+                }
+            }
+        }
+
+        /** 获取批次数量（= Instanced Draw Call 数量） */
+        public int getBatchCount() { return batches.size(); }
+
+        /** 获取总实例数 */
+        public int getInstanceCount() { return instanceCount; }
+
+        /**
+         * 获取合并率（0.0~1.0，1.0 = 完美合并）
+         * <p>
+         * 合并率 = 1 - (批次数 / 实例数)
+         */
+        public float getMergeRate() {
+            if (instanceCount <= 1) return 1.0f;
+            return 1.0f - (float) batches.size() / instanceCount;
+        }
+
+        /**
+         * 将所有批次的变换矩阵打包到一个连续缓冲区
+         *
+         * @param target 目标缓冲区
+         * @param offset 起始偏移量（float 索引）
+         * @return 写入的 float 数量
+         */
+        public int packInstanceMatrices(float[] target, int offset) {
+            int pos = offset;
+            for (var entry : batches.entrySet()) {
+                for (BlockEntityData be : entry.getValue()) {
+                    float[] matrix = be.getTransformMatrix();
+                    System.arraycopy(matrix, 0, target, pos, 16);
+                    pos += 16;
+                }
+            }
+            return pos - offset;
+        }
+    }
+
+    /**
      * 实体数据（用于可见性查询结果）
      * <p>
      * 轻量级的数据传输对象，包含渲染所需的核心信息。
@@ -1162,6 +1416,65 @@ public class ECSSceneGraph implements AutoCloseable {
                     "EntityData{idx=%d, pos=(%.1f,%.1f,%.1f), texIdx=%d, modelType=%d, chunkId=%d, dist=%.1f}",
                     entityIndex, x, y, z, textureIndex, modelType, chunkId, distanceFromCamera
             );
+        }
+    }
+
+    /**
+     * 方块实体数据 DTO
+     * <p>
+     * 轻量级数据传输对象，用于将方块实体信息从 SoA 数组传递到渲染管线。
+     * 包含位置、类型和纹理信息，用于 Instanced Draw Call 批量渲染。
+     */
+    public static class BlockEntityData {
+        /** 方块实体在 SoA 数组中的索引 */
+        public final int index;
+
+        /** 世界坐标位置 */
+        public final float x, y, z;
+
+        /** 方块实体类型索引（用于模型/纹理查找） */
+        public final int blockEntityType;
+
+        /** 纹理索引 */
+        public final int textureIndex;
+
+        /**
+         * 创建方块实体数据
+         *
+         * @param index           SoA 数组索引
+         * @param x               世界坐标 X
+         * @param y               世界坐标 Y
+         * @param z               世界坐标 Z
+         * @param blockEntityType 方块实体类型索引
+         * @param textureIndex    纹理索引
+         */
+        public BlockEntityData(int index, float x, float y, float z, int blockEntityType, int textureIndex) {
+            this.index = index;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.blockEntityType = blockEntityType;
+            this.textureIndex = textureIndex;
+        }
+
+        /**
+         * 获取变换矩阵（4x4 平移矩阵，行主序）
+         * <p>
+         * 矩阵布局:
+         * <pre>
+         * | 1  0  0  tx |
+         * | 0  1  0  ty |
+         * | 0  0  1  tz |
+         * | 0  0  0  1  |
+         * </pre>
+         *
+         * @return 16 个 float 的变换矩阵数组
+         */
+        public float[] getTransformMatrix() {
+            float[] m = new float[16];
+            m[0] = 1.0f; m[5] = 1.0f; m[10] = 1.0f; m[15] = 1.0f;
+            m[12] = x; m[13] = y; m[14] = z;
+            return m;
         }
     }
 }

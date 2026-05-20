@@ -22,7 +22,7 @@ Modern Minecraft rendering extension with Vulkan, DLSS, and advanced optimizatio
 ## Requirements
 
 - Java 25+
-- Minecraft 26.2-snapshot-7+
+- Minecraft 26.2-snapshot-3
 - Fabric Loader 0.18.5+
 - Vulkan-compatible GPU and drivers
 - NVIDIA RTX / AMD RDNA2+ / Intel Arc GPU (for super resolution features, requires Streamline SDK)

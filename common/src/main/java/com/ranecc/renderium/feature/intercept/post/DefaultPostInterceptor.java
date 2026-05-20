@@ -118,8 +118,10 @@ public final class DefaultPostInterceptor implements PostBlaze3DInterceptor {
     /** 超分辨率管理器实例引用（懒加载） */
     private volatile Object superResolutionManager;
 
-    /** 帧生成管理器实例引用（懒加载） */
+    /** 帧生成管理器实例（反射获取，缓存） */
     private volatile Object frameGeneratorManager;
+    /** 帧生成管理器的 generateFrames 方法（反射缓存） */
+    private volatile java.lang.reflect.Method frameGeneratorMethod;
 
     // ==================== 私有构造函数 ====================
 
@@ -289,7 +291,12 @@ public final class DefaultPostInterceptor implements PostBlaze3DInterceptor {
             // 检查帧生成上下文是否有效
             if (!context.isValid()) return false;
 
-            return true;
+            // 实际调用帧生成
+            if (frameGeneratorMethod != null) {
+                Object output = frameGeneratorMethod.invoke(manager, context);
+                return output != null;
+            }
+            return false;
         } catch (Exception e) {
             LOGGER.fine("FrameGeneration 不可用: " + e.getMessage());
             return false;
@@ -545,6 +552,9 @@ public final class DefaultPostInterceptor implements PostBlaze3DInterceptor {
             Class<?> clazz = Class.forName("com.ranecc.renderium.tech.framegen.FrameGeneratorManager");
             java.lang.reflect.Method getInstance = clazz.getMethod("getInstance");
             frameGeneratorManager = getInstance.invoke(null);
+            // 同时缓存 generateFrames 方法
+            frameGeneratorMethod = clazz.getMethod("generateFrames",
+                Class.forName("com.ranecc.renderium.feature.intercept.post.FrameGenContext"));
             return frameGeneratorManager;
         } catch (Exception e) {
             return null;
