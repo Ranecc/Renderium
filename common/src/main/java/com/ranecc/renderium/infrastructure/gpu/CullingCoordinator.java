@@ -35,6 +35,23 @@ public final class CullingCoordinator {
     private static volatile boolean initialized = false;
     private static volatile boolean gpuCullingEnabled = false;
 
+    // ==================== 3 槽无锁环形缓冲区（Hi-Z 遮挡异步回读）====================
+
+    private static final int RING_SIZE = 3;
+
+    /** 每个槽的 fence（由 submitAsync 写入，checkFence 轮询） */
+    private static final long[] slotFences = new long[RING_SIZE];
+
+    /** 每个槽回读的可见性结果（Phase 1 写入，execute 读取） */
+    private static final BitSet[] slotResults = new BitSet[RING_SIZE];
+
+    /** head = 下一帧 GPU 写入的槽，tail = 最旧待读的槽 */
+    private static int head = 0;
+    private static int tail = 0;
+
+    /** 缓存的最新可用结果（任一槽读完即更新） */
+    private static volatile BitSet cachedHiZResult = null;
+
     /** 最近一次剔除结果统计 */
     private static final AtomicLong totalCulled = new AtomicLong(0);
     private static volatile long lastCullTimeNanos = 0L;
@@ -174,33 +191,60 @@ public final class CullingCoordinator {
      * Stage 3: Hi-Z 遮挡剔除 — GPU 优先，CPU 降级。
      */
     private static BitSet applyHiZOcclusion(float[] cameraPos, int candidateCount, BitSet input) {
-        if (VulkanOperationGuard.isFailed()) return input;
+        if (VulkanOperationGuard.isFailed() || !gpuCullingEnabled) return input;
 
-        // GPU 路径: 使用 LodCullingComputePass
-        if (gpuCullingEnabled) {
-            try {
-                long device = VulkanDeviceHolder.getInstance().getDevice();
-                long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
-                if (cmdBuf != 0L) {
-                    LodCullingComputePass.beginCommandBuffer(cmdBuf);
-                    LodCullingComputePass.bindAndDispatchHiZBuild(cmdBuf, VulkanDeviceHolder.getInstance());
-                    LodCullingComputePass.insertMemoryBarrier(cmdBuf);
-                    LodCullingComputePass.bindAndDispatchOcclusionQuery(cmdBuf, VulkanDeviceHolder.getInstance());
-                    LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-                    long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                    if (queue != 0L) {
-                        VulkanSyncManager.submitAndWait(queue, cmdBuf);
-                    }
-                }
-            } catch (Throwable t) {
-                LOGGER.fine("GPU HiZ 剔除失败, 降级 CPU: " + t.getMessage());
-                gpuCullingEnabled = false;
+        // ========== Phase 1: 消费 — 回读所有已就绪的槽 ==========
+        while (tail != head) {
+            long fence = slotFences[tail];
+            if (fence != 0L && VulkanSyncManager.checkFence(fence)) {
+                BitSet result = LodCullingComputePass.readbackVisibilityBitSet(candidateCount, tail);
+                slotResults[tail] = result;
+                cachedHiZResult = result;
+                VulkanSyncManager.releaseFence(fence);
+                slotFences[tail] = 0L;
+                tail = (tail + 1) % RING_SIZE;
+            } else {
+                break; // GPU 尚未完成此槽，保持等待
             }
         }
 
-        // CPU 路径: 保留全部通过前两阶段的候选（保守策略）
-        return input;
+        // ========== Phase 2: 生产 — 提交当前帧 Hi-Z（仅当有空槽）==========
+        int nextHead = (head + 1) % RING_SIZE;
+        if (nextHead != tail) { // 环形缓冲区不满
+            try {
+                long device = VulkanDeviceHolder.getInstance().getDevice();
+                long cmdBuf = LodCullingComputePass.getOrCreateCachedCmdBuf(device);
+                if (cmdBuf == 0L) return cachedHiZResult != null ? cachedHiZResult : input;
+
+                LodCullingComputePass.beginCachedCommandBuffer(cmdBuf);
+                LodCullingComputePass.bindAndDispatchHiZBuild(cmdBuf, VulkanDeviceHolder.getInstance());
+                LodCullingComputePass.insertMemoryBarrier(cmdBuf);
+                LodCullingComputePass.bindAndDispatchOcclusionQuery(cmdBuf, VulkanDeviceHolder.getInstance());
+                LodCullingComputePass.recordVisibilityReadback(cmdBuf, head);
+                LodCullingComputePass.endCommandBuffer(cmdBuf);
+
+                long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+                if (queue != 0L) {
+                    long fence = VulkanSyncManager.acquireFence();
+                    if (VulkanSyncManager.submitAsync(queue, cmdBuf, fence)) {
+                        // 释放该槽旧的 fence（如果有）
+                        if (slotFences[head] != 0L) VulkanSyncManager.releaseFence(slotFences[head]);
+                        slotFences[head] = fence;
+                        head = nextHead;
+                    } else {
+                        VulkanSyncManager.releaseFence(fence);
+                    }
+                }
+            } catch (Throwable t) {
+                LOGGER.fine("GPU HiZ 提交失败: " + t.getMessage());
+                gpuCullingEnabled = false;
+            }
+        } else {
+            LOGGER.finest("Ring buffer full, skipping Hi-Z submit");
+        }
+
+        // 返回最新可用结果
+        return cachedHiZResult != null ? cachedHiZResult : input;
     }
 
     /**

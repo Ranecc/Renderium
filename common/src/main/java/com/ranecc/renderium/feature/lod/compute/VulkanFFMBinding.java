@@ -68,6 +68,9 @@ public final class VulkanFFMBinding {
     /** vkEndCommandBuffer: 结束命令缓冲区录制 */
     private static volatile MethodHandle VK_END_COMMAND_BUFFER;
 
+    /** vkResetCommandBuffer: 重置命令缓冲区（复用时避免重新分配） */
+    private static volatile MethodHandle VK_RESET_COMMAND_BUFFER;
+
     /** vkCmdBindPipeline: 绑定管线 */
     private static volatile MethodHandle VK_CMD_BIND_PIPELINE;
 
@@ -321,6 +324,7 @@ public final class VulkanFFMBinding {
     public static MethodHandle getVkAllocateCommandBuffers() { ensureLoaded(); return VK_ALLOCATE_COMMAND_BUFFERS; }
     public static MethodHandle getVkBeginCommandBuffer() { ensureLoaded(); return VK_BEGIN_COMMAND_BUFFER; }
     public static MethodHandle getVkEndCommandBuffer() { ensureLoaded(); return VK_END_COMMAND_BUFFER; }
+    public static MethodHandle getVkResetCommandBuffer() { ensureLoaded(); return VK_RESET_COMMAND_BUFFER; }
     public static MethodHandle getVkCmdBindPipeline() { ensureLoaded(); return VK_CMD_BIND_PIPELINE; }
     public static MethodHandle getVkCmdBindDescriptorSets() { ensureLoaded(); return VK_CMD_BIND_DESCRIPTOR_SETS; }
     public static MethodHandle getVkCmdDispatch() { ensureLoaded(); return VK_CMD_DISPATCH; }
@@ -484,6 +488,16 @@ public final class VulkanFFMBinding {
                     FunctionDescriptor.of(
                             ValueLayout.JAVA_INT,           // return: VkResult
                             ValueLayout.JAVA_LONG           // commandBuffer
+                    )
+            );
+
+            // vkResetCommandBuffer(commandBuffer, flags)
+            VK_RESET_COMMAND_BUFFER = linker.downcallHandle(
+                    vulkanLookup.find("vkResetCommandBuffer").orElseThrow(),
+                    FunctionDescriptor.of(
+                            ValueLayout.JAVA_INT,           // return: VkResult
+                            ValueLayout.JAVA_LONG,          // commandBuffer
+                            ValueLayout.JAVA_INT            // flags
                     )
             );
 
@@ -1091,6 +1105,7 @@ public final class VulkanFFMBinding {
             java.util.Map.entry("vkAllocateCommandBuffers", VK_ALLOCATE_COMMAND_BUFFERS),
             java.util.Map.entry("vkBeginCommandBuffer", VK_BEGIN_COMMAND_BUFFER),
             java.util.Map.entry("vkEndCommandBuffer", VK_END_COMMAND_BUFFER),
+            java.util.Map.entry("vkResetCommandBuffer", VK_RESET_COMMAND_BUFFER),
             java.util.Map.entry("vkCmdBindPipeline", VK_CMD_BIND_PIPELINE),
             java.util.Map.entry("vkCmdBindDescriptorSets", VK_CMD_BIND_DESCRIPTOR_SETS),
             java.util.Map.entry("vkCmdDispatch", VK_CMD_DISPATCH),

@@ -95,6 +95,25 @@ public class RenderiumCullingScheduler {
     /** L2 执行间隔（帧数） */
     private static final long L2_INTERVAL_FRAMES = 3;
 
+    // ==================== 惰性遍历缓存 ====================
+
+    /** 上次 L1 重新计算的相机位置（惰性判断用） */
+    private double lastCamX, lastCamY, lastCamZ;
+    /** L1 双缓冲集 A（预分配容量，避免扩容） */
+    private final HashSet<Long> l1SetA = new HashSet<>(256);
+    /** L1 双缓冲集 B（初始为空，首帧后交替使用） */
+    private final HashSet<Long> l1SetB = new HashSet<>(0);
+    /** 上次 L1 可见集缓存（指向 l1SetA 或 l1SetB，双缓冲交替） */
+    private Set<Long> lastL1Result = l1SetB;
+    /** 上次 L1 执行时的 Section 版本号 */
+    private int lastSectionVersion = 0;
+
+    /** L2 可复用结果集（避免每次调用分配新 HashSet） */
+    private final HashSet<Long> reusableL2Set = new HashSet<>(64);
+
+    /** 惰性阈值：相机移动超过此值才重算 L1（平方距离，方块单位） */
+    private static final double LAZY_MOVE_THRESHOLD_SQ = 4.0;
+
     // ==================== 统计 ====================
 
     private final AtomicLong currentFrame;
@@ -118,8 +137,9 @@ public class RenderiumCullingScheduler {
         this.buildPipeline = buildPipeline;
         this.sortEngine = new TranslucentSortEngine();
 
-        this.bufferA = new HashSet<>();
-        this.bufferB = new HashSet<>();
+        // 首帧 onFrame() 会立即覆盖，此处用不可变空集避免无用分配
+        this.bufferA = Collections.emptySet();
+        this.bufferB = Collections.emptySet();
         this.lastL2Frame = new AtomicLong(-1);
         this.currentFrame = new AtomicLong(0);
         this.totalFramesProceed = new AtomicLong(0);
@@ -205,7 +225,8 @@ public class RenderiumCullingScheduler {
                 lastL2Frame.set(frame);
             }
         } else if (skipL2) {
-            this.bufferB = Collections.emptySet(); // 急转：丢弃陈旧 L2 数据
+            reusableL2Set.clear();
+            this.bufferB = reusableL2Set; // 急转：清空 L2 数据，复用集合避免分配
         }
 
         // ========== Phase 5: Culling L3 (保守合并) ==========
@@ -248,15 +269,24 @@ public class RenderiumCullingScheduler {
      * 每帧执行，0.05ms 预算。
      */
     private Set<Long> executeCullingL1() {
-        Set<Long> visible = new HashSet<>(256);
-        float[] vp = buildViewProjectionMatrix();
-        float[] camPos = new float[]{
-            (float) detector.getCameraX(),
-            (float) detector.getCameraY(),
-            (float) detector.getCameraZ()
-        };
-        float[][] frustum = GPUCullingSystem.extractFrustumPlanes(vp);
+        // 惰性判断：相机未动 && Section 无变更时复用上一帧结果
+        double camX = detector.getCameraX();
+        double camY = detector.getCameraY();
+        double camZ = detector.getCameraZ();
+        double dx = camX - lastCamX, dy = camY - lastCamY, dz = camZ - lastCamZ;
+        int currentSectionVersion = sectionManager.getSections().hashCode(); // 轻量版本号
+        if (dx * dx + dy * dy + dz * dz < LAZY_MOVE_THRESHOLD_SQ
+                && currentSectionVersion == lastSectionVersion && !lastL1Result.isEmpty()) {
+            return lastL1Result;
+        }
 
+        // 双缓冲：选择非 lastL1Result 的集合作为工作集，避免每帧分配新 HashSet
+        // 不变量：工作集 != bufferA（上一帧赋值），因此清空工作集不会影响外部持有的引用
+        HashSet<Long> visible = (lastL1Result == l1SetA) ? l1SetB : l1SetA;
+        visible.clear();
+        float[] vp = buildViewProjectionMatrix();
+        float[] camPosF = new float[]{(float) camX, (float) camY, (float) camZ};
+        float[][] frustum = GPUCullingSystem.extractFrustumPlanes(vp);
         float maxDist = (float) detector.getVisibleDistMax();
 
         for (Map.Entry<Long, RenderSectionManager.SectionInfo> entry : sectionManager.getSections().entrySet()) {
@@ -264,10 +294,10 @@ public class RenderiumCullingScheduler {
             RenderSectionManager.SectionInfo info = entry.getValue();
 
             // Distance culling: 平方距离比较（JIT友好）
-            double dx = info.worldCenterX() - camPos[0];
-            double dy = info.worldCenterY() - camPos[1];
-            double dz = info.worldCenterZ() - camPos[2];
-            double distSq = dx * dx + dy * dy + dz * dz;
+            double dxSq = info.worldCenterX() - camPosF[0];
+            double dySq = info.worldCenterY() - camPosF[1];
+            double dzSq = info.worldCenterZ() - camPosF[2];
+            double distSq = dxSq * dxSq + dySq * dySq + dzSq * dzSq;
             if (distSq > maxDist * maxDist) continue;
 
             // Frustum culling: P-NA 法（6平面，单点测试/平面）
@@ -279,6 +309,11 @@ public class RenderiumCullingScheduler {
 
             visible.add(key);
         }
+
+        // 更新缓存
+        lastCamX = camX; lastCamY = camY; lastCamZ = camZ;
+        lastSectionVersion = currentSectionVersion;
+        lastL1Result = visible;
         return visible;
     }
 
@@ -290,12 +325,14 @@ public class RenderiumCullingScheduler {
      * @return 通过 Hi-Z 测试的 chunk 集合，null 表示不可用
      */
     private Set<Long> executeCullingL2() {
+        // 复用 reusableL2Set，避免每 3 帧分配新 HashSet
+        reusableL2Set.clear();
         // L2 Hi-Z 遮挡剔除由 GPU 端 CullingPipeline 执行
         // GPU 结果通过同步 fence + staging buffer 回读到 CPU
         // 当前：GPU 端 Buffer 已创建（Batch 2），DescriptorPool + 回读链路待后续补充
         // TODO: 实现 vkCmdCopyBuffer + fence wait + CPU readback 链路
         LOGGER.fine("L2 遮挡剔除: GPU readback 未实现，回退到空结果");
-        return new HashSet<>(); // 待 GPU readback 就绪后返回 bufferB 数据
+        return reusableL2Set; // 待 GPU readback 就绪后填充实际数据
     }
 
     /**

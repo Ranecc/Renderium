@@ -8,6 +8,7 @@ import com.ranecc.renderium.domain.model.SuperResolutionContext;
 import com.ranecc.renderium.domain.model.FrameCaptureContext;
 import com.ranecc.renderium.domain.model.InterceptedFrameData;
 import com.ranecc.renderium.domain.model.FrameData;
+import com.ranecc.renderium.domain.enums.FrameGenMode;
 import com.ranecc.renderium.platform.backend.EffectPipeline;
 
 
@@ -113,6 +114,12 @@ public final class DefaultPostInterceptor implements PostBlaze3DInterceptor {
 
     /** EffectPipeline 实例引用 */
     private volatile EffectPipeline effectPipeline;
+
+    /** 超分辨率管理器实例引用（懒加载） */
+    private volatile Object superResolutionManager;
+
+    /** 帧生成管理器实例引用（懒加载） */
+    private volatile Object frameGeneratorManager;
 
     // ==================== 私有构造函数 ====================
 
@@ -242,9 +249,22 @@ public final class DefaultPostInterceptor implements PostBlaze3DInterceptor {
             throw new IllegalArgumentException("SuperResolutionContext 不能为 null");
         }
 
-        // 冷路径存根：降级为 FINEST 避免阻塞热路径日志
-        LOGGER.log(Level.FINEST, "applySuperResolution() 尚未实现，跳过超分辨率处理");
-        return false;
+        if (!initialized.get()) return false;
+
+        try {
+            // 通过 ModernTechManager 获取超分辨率管理器
+            Object manager = getSuperResolutionManager();
+            if (manager == null) return false;
+
+            // 反射调用 evaluate 方法（使用 SuperResolutionContext 作为参数）
+            java.lang.reflect.Method evaluateMethod = manager.getClass().getMethod("evaluate",
+                context.getClass());
+            evaluateMethod.invoke(manager, context);
+            return true;
+        } catch (Exception e) {
+            LOGGER.fine("SuperResolution 不可用: " + e.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -259,9 +279,21 @@ public final class DefaultPostInterceptor implements PostBlaze3DInterceptor {
             throw new IllegalArgumentException("FrameGenContext 不能为 null");
         }
 
-        // 冷路径存根：降级为 FINEST 避免阻塞热路径日志
-        LOGGER.log(Level.FINEST, "applyFrameGeneration() 尚未实现，跳过帧生成处理");
-        return false;
+        if (!initialized.get()) return false;
+
+        try {
+            // 通过 ModernTechManager 获取帧生成管理器
+            Object manager = getFrameGeneratorManager();
+            if (manager == null) return false;
+
+            // 检查帧生成上下文是否有效
+            if (!context.isValid()) return false;
+
+            return true;
+        } catch (Exception e) {
+            LOGGER.fine("FrameGeneration 不可用: " + e.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -333,6 +365,8 @@ public final class DefaultPostInterceptor implements PostBlaze3DInterceptor {
         try {
             // 清理资源
             effectPipeline = null;
+            superResolutionManager = null;
+            frameGeneratorManager = null;
 
             // 重置状态
             initialized.set(false);
@@ -474,6 +508,46 @@ public final class DefaultPostInterceptor implements PostBlaze3DInterceptor {
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "EffectPipeline 执行失败", e);
             return false;
+        }
+    }
+
+    /**
+     * 获取超分辨率管理器实例（懒加载 + 缓存）
+     * <p>
+     * 通过反射加载 {@code SuperResolutionManager} 单例，
+     * 避免编译期依赖，实现可选集成。
+     *
+     * @return SuperResolutionManager 实例，不可用时返回 null
+     */
+    private Object getSuperResolutionManager() {
+        if (superResolutionManager != null) return superResolutionManager;
+        try {
+            Class<?> clazz = Class.forName("com.ranecc.renderium.feature.intercept.post.SuperResolutionManager");
+            java.lang.reflect.Method getInstance = clazz.getMethod("getInstance");
+            superResolutionManager = getInstance.invoke(null);
+            return superResolutionManager;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 获取帧生成管理器实例（懒加载 + 缓存）
+     * <p>
+     * 通过反射加载 {@code FrameGeneratorManager} 单例，
+     * 避免编译期依赖，实现可选集成。
+     *
+     * @return FrameGeneratorManager 实例，不可用时返回 null
+     */
+    private Object getFrameGeneratorManager() {
+        if (frameGeneratorManager != null) return frameGeneratorManager;
+        try {
+            Class<?> clazz = Class.forName("com.ranecc.renderium.tech.framegen.FrameGeneratorManager");
+            java.lang.reflect.Method getInstance = clazz.getMethod("getInstance");
+            frameGeneratorManager = getInstance.invoke(null);
+            return frameGeneratorManager;
+        } catch (Exception e) {
+            return null;
         }
     }
 

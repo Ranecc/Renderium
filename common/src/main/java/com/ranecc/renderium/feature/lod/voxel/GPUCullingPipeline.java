@@ -378,13 +378,17 @@ public class GPUCullingPipeline {
         }
 
         try {
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
-            if (cmdBuf == 0L) return executeCPUCulling(cameraPos, frustum, candidateCount);
+            long cmdBuf = LodCullingComputePass.getOrCreateCachedCmdBuf(device);
+            if (cmdBuf == 0L) {
+                LOGGER.fine("Cached CB unavailable, fallback to CPU");
+                return executeCPUCulling(cameraPos, frustum, candidateCount);
+            }
 
-            LodCullingComputePass.beginCommandBuffer(cmdBuf);
+            LodCullingComputePass.beginCachedCommandBuffer(cmdBuf);
             LodCullingComputePass.bindAndDispatchHiZBuild(cmdBuf, VulkanDeviceHolder.getInstance());
             LodCullingComputePass.insertMemoryBarrier(cmdBuf);
             LodCullingComputePass.bindAndDispatchOcclusionQuery(cmdBuf, VulkanDeviceHolder.getInstance());
+            LodCullingComputePass.recordVisibilityReadback(cmdBuf, 0);
             LodCullingComputePass.endCommandBuffer(cmdBuf);
 
             long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
@@ -392,8 +396,8 @@ public class GPUCullingPipeline {
 
             VulkanSyncManager.submitAndWait(queue, cmdBuf);
 
-            BitSet result = new BitSet(candidateCount);
-            result.set(0, candidateCount, true);
+            BitSet result = LodCullingComputePass.readbackVisibilityBitSet(candidateCount, 0);
+            LOGGER.fine(String.format("Hi-Z Occlusion: %d → %d visible (GPU)", candidateCount, result.cardinality()));
             return result;
 
         } catch (Throwable t) {

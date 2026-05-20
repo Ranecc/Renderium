@@ -169,11 +169,41 @@ public final class VulkanSyncManager {
     }
 
     /**
-     * 提交命令缓冲区到队列并等待完成。
+     * 异步提交命令缓冲区到队列（不等待 fence）。
+     * 调用方需保存返回的 fence，后续通过 waitForFence 或 checkFence 查询完成状态。
      *
      * @param queue   VkQueue 句柄
      * @param cmdBuf  VkCommandBuffer 句柄
+     * @param fence   VkFence 句柄（由 acquireFence 获取）
      * @return true 如果提交成功
+     */
+    public static boolean submitAsync(long queue, long cmdBuf, long fence) {
+        return submit(queue, cmdBuf, fence);
+    }
+
+    /**
+     * 检查 fence 是否已 signaled（非阻塞）。
+     *
+     * @param fence VkFence 句柄
+     * @return true 如果 fence 已 signal（GPU 工作完成）
+     */
+    public static boolean checkFence(long fence) {
+        if (fence == 0L) return false;
+        try {
+            MemorySegment pFence = PerFrameArena.allocateLongs(1);
+            pFence.set(ValueLayout.JAVA_LONG, 0, fence);
+            ensureMH();
+            int result = (int) mhWaitForFences.invokeWithArguments(
+                deviceHandle, 1, pFence.address(), 0, 0L);
+            return result == VK_SUCCESS;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * 提交命令缓冲区到队列并等待完成（同步阻塞）。
+     * 用于需要立即结果的路径（如 Hi-Z readback 在非双缓冲回读时）。
      */
     public static boolean submitAndWait(long queue, long cmdBuf) {
         if (queue == 0L || cmdBuf == 0L) return false;

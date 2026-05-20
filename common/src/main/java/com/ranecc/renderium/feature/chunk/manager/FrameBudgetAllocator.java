@@ -38,6 +38,17 @@ public class FrameBudgetAllocator {
     /** 爆炸场景临时膨胀倍数 */
     private static final double EXPLOSION_BUDGET_MULTIPLIER = 2.0;
 
+    // ==================== EMA 反馈循环 ====================
+
+    /** EMA 平滑因子：α=0.1 表示新观测占 10%，历史占 90% */
+    private static final double EMA_ALPHA = 0.1;
+
+    /** Chunk 构建实际耗时 EMA（纳秒），初始估计 400μs */
+    private double emaChunkTimeNs = 400_000.0;
+
+    /** 剔除实际耗时 EMA（纳秒），初始估计 200μs */
+    private double emaCullTimeNs = 200_000.0;
+
     /** 帧号缓存 (避免同帧重复算) */
     private long cachedFrame = -1;
 
@@ -49,6 +60,17 @@ public class FrameBudgetAllocator {
     private boolean cachedSkipL2;
 
     // ==================== 公共 API ====================
+
+    /**
+     * 记录本帧实际耗时，更新 EMA 估计值。
+     *
+     * @param chunkTimeNs Chunk 构建实际耗时（纳秒）
+     * @param cullTimeNs  剔除实际耗时（纳秒）
+     */
+    public void recordActualTimes(long chunkTimeNs, long cullTimeNs) {
+        emaChunkTimeNs = EMA_ALPHA * chunkTimeNs + (1 - EMA_ALPHA) * emaChunkTimeNs;
+        emaCullTimeNs = EMA_ALPHA * cullTimeNs + (1 - EMA_ALPHA) * emaCullTimeNs;
+    }
 
     /**
      * 按相机状态分配预算。
@@ -87,6 +109,19 @@ public class FrameBudgetAllocator {
             sort   = 100_000L;
             entity = 100_000L;
             skipL2 = false;
+        }
+
+        // EMA 反馈调整：根据历史实际耗时动态重新分配 chunk/cull 预算
+        if (emaCullTimeNs > cull * 1.3) {
+            // 剔除持续超支：从 chunk 预算中偷取 20% 给 cull
+            long steal = (long) (chunk * 0.2);
+            chunk -= steal;
+            cull += steal;
+        } else if (emaCullTimeNs < cull * 0.5) {
+            // 剔除持续节余：将 cull 预算的 10% 还给 chunk
+            long giveback = (long) (cull * 0.1);
+            cull -= giveback;
+            chunk += giveback;
         }
 
         // 缓存

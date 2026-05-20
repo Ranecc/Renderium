@@ -5,7 +5,10 @@ import com.ranecc.renderium.domain.model.FrameDataSnapshot;
 import com.ranecc.renderium.domain.service.scheduling.AdaptivePathSelector;
 import com.ranecc.renderium.platform.hook.HookManager;
 
+import java.util.Arrays;
 import java.util.logging.Logger;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 
 /**
  * 帧处理用例（Application Layer - Use Case）
@@ -35,6 +38,18 @@ import java.util.logging.Logger;
 public class ProcessFrameUseCase {
 
     private static final Logger LOGGER = Logger.getLogger(ProcessFrameUseCase.class.getName());
+
+    /** 帧预算上限（纳秒）：590μs，参考 performance-tuning 文档 7.1 节 */
+    private static final long FRAME_BUDGET_NS = 590_000L;
+
+    /** 连续空帧计数器：跟踪连续出现 0 可见区块的帧数 */
+    private int consecutiveEmptyFrames;
+
+    /** 上一帧的可见区块数：用于检测可见性是否发生变化 */
+    private int lastVisibleSectionCount = -1;
+
+    /** 上一帧数据哈希：用于检测帧数据是否完全相同（避免重复计算） */
+    private int lastFrameDataHash;
 
     /** 帧数据快照（复用对象以减少 GC 压力） */
     private FrameDataSnapshot frameDataSnapshot;
@@ -90,9 +105,21 @@ public class ProcessFrameUseCase {
                 return;
             }
 
+            // 预算保护：空场景早退——无区块或仅天空盒时跳过剔除/渲染算法
+            if (shouldSkipFrame(frameDataSnapshot)) {
+                return;
+            }
+
             long collectTime = System.nanoTime() - frameStartTime;
             if (collectTime > 1_000_000L) { // > 1ms
                 LOGGER.warning("Frame data collection took " + (collectTime / 1_000_000.0) + "ms");
+            }
+
+            // 预算执行：Phase 1 消耗超过帧预算的 50% 时，跳过重量级算法走轻量路径
+            if (collectTime > FRAME_BUDGET_NS * 0.5) {
+                LOGGER.fine("Phase 1 overran budget (" + (collectTime / 1000) + "μs), using lightweight path");
+                dispatchToPlatform(frameDataSnapshot);
+                return;
             }
 
             // Phase 2: 运行算法
@@ -107,6 +134,13 @@ public class ProcessFrameUseCase {
 
             if (algoTime > 10_000_000L) { // > 10ms
                 LOGGER.warning("Algorithm execution took " + (algoTime / 1_000_000.0) + "ms");
+            }
+
+            // 预算执行：Phase 2 结束后总耗时超过帧预算时，跳过 Phase 3 分发
+            long totalElapsed = System.nanoTime() - frameStartTime;
+            if (totalElapsed > FRAME_BUDGET_NS) {
+                LOGGER.fine("Frame budget exceeded after Phase 2 (" + (totalElapsed / 1000) + "μs), skipping dispatch");
+                return;
             }
 
             // Phase 3: 分发结果到平台
@@ -141,6 +175,91 @@ public class ProcessFrameUseCase {
     }
 
     // ==================== 私有处理阶段 ====================
+
+    /**
+     * 判断当前帧是否应跳过算法执行
+     *
+     * <p>综合多种条件进行早退判断，避免对空场景或无变化帧执行不必要的计算：
+     * <ol>
+     *   <li>世界未加载（totalSectionCount == 0）</li>
+     *   <li>无可见区块（visibleSectionCount == 0）</li>
+     *   <li>连续空帧 >= 3（持续空场景，更激进地跳过）</li>
+     *   <li>帧数据与上一帧完全相同（相机和区块均未变化）</li>
+     * </ol>
+     *
+     * @param snapshot 当前帧数据快照
+     * @return true 如果应跳过此帧的算法执行
+     */
+    private boolean shouldSkipFrame(FrameDataSnapshot snapshot) {
+        if (snapshot == null) {
+            return true;
+        }
+
+        int visibleCount = snapshot.getVisibleSectionCount();
+        int totalCount = snapshot.getTotalSectionCount();
+
+        // 条件1：世界完全未加载
+        if (totalCount == 0) {
+            LOGGER.finest("World not loaded (totalSectionCount=0), skipping render algorithms");
+            consecutiveEmptyFrames++;
+            return true;
+        }
+
+        // 条件2：无可见区块
+        if (visibleCount <= 0) {
+            consecutiveEmptyFrames++;
+            // 条件3：连续空帧 >= 3，持续空场景使用更激进的跳过策略
+            if (consecutiveEmptyFrames >= 3) {
+                LOGGER.finest("Sustained empty scene (" + consecutiveEmptyFrames
+                    + " consecutive frames), aggressive skip");
+                return true;
+            }
+            LOGGER.finest("Empty world detected (visibleSectionCount=0), skipping render algorithms");
+            return true;
+        }
+
+        // 非空帧，重置连续空帧计数
+        consecutiveEmptyFrames = 0;
+
+        // 条件4：帧数据未变化——通过哈希比较相机位置、旋转和区块可见性
+        int currentHash = computeFrameDataHash(snapshot);
+        if (currentHash == lastFrameDataHash && visibleCount == lastVisibleSectionCount) {
+            LOGGER.finest("Frame data unchanged from previous frame, skipping render algorithms");
+            return true;
+        }
+
+        lastFrameDataHash = currentHash;
+        lastVisibleSectionCount = visibleCount;
+        return false;
+    }
+
+    /**
+     * 计算帧数据哈希值，用于检测帧间数据是否相同
+     *
+     * <p>基于以下数据计算哈希：
+     * <ul>
+     *   <li>相机位置（X/Y/Z）和旋转（Yaw/Pitch）</li>
+     *   <li>视图矩阵（16 个 float）</li>
+     *   <li>可见区块数和总区块数</li>
+     *   <li>视口区域是否变化标志</li>
+     * </ul>
+     *
+     * @param snapshot 帧数据快照
+     * @return 哈希值
+     */
+    private int computeFrameDataHash(FrameDataSnapshot snapshot) {
+        int hash = 1;
+        hash = 31 * hash + Float.floatToIntBits(snapshot.getCameraX());
+        hash = 31 * hash + Float.floatToIntBits(snapshot.getCameraY());
+        hash = 31 * hash + Float.floatToIntBits(snapshot.getCameraZ());
+        hash = 31 * hash + Float.floatToIntBits(snapshot.getYaw());
+        hash = 31 * hash + Float.floatToIntBits(snapshot.getPitch());
+        hash = 31 * hash + Arrays.hashCode(snapshot.getViewMatrix());
+        hash = 31 * hash + snapshot.getVisibleSectionCount();
+        hash = 31 * hash + snapshot.getTotalSectionCount();
+        hash = 31 * hash + (snapshot.isViewAreaChanged() ? 1 : 0);
+        return hash;
+    }
 
     /**
      * Phase 1: 收集帧数据
@@ -256,13 +375,67 @@ public class ProcessFrameUseCase {
 
     // ==================== 数据收集辅助方法 ====================
 
-    /**
-     * 获取 MCRenderBridge 实例
-     *
-     * <p>使用延迟查找避免硬编码依赖。
-     *
-     * @return Bridge 实例（Object 类型），未找到返回 null
-     */
+    // ==================== MethodHandle 缓存（替代每帧反射 getMethod） ====================
+
+    private static volatile MethodHandle MH_getCurrentFrameData;
+    private static volatile MethodHandle MH_getCameraX, MH_getCameraY, MH_getCameraZ;
+    private static volatile MethodHandle MH_getYaw, MH_getPitch;
+    private static volatile MethodHandle MH_getFov, MH_getNearPlane, MH_getFarPlane;
+    private static volatile MethodHandle MH_getProjectionMatrix, MH_getViewMatrix, MH_getInvViewMatrix;
+    private static volatile MethodHandle MH_getVisibleSectionCount, MH_getTotalSectionCount;
+    private static volatile MethodHandle MH_getOpaqueDrawCallCount, MH_getTranslucentDrawCallCount;
+    private static volatile MethodHandle MH_isViewAreaChanged;
+    private static volatile MethodHandle MH_getFogColor, MH_getFogStart, MH_getFogEnd, MH_getFogDensity, MH_getFogType, MH_isFogEnabled;
+    private static volatile MethodHandle MH_getWindowWidth, MH_getWindowHeight, MH_getGameTick;
+    private static volatile boolean mhInitialized = false;
+
+    /** 初始化一次 MethodHandle 缓存 */
+    private static void ensureSnapshotMH() {
+        if (mhInitialized) return;
+        try {
+            Class<?> bridgeClass = Class.forName("com.ranecc.renderium.platform.bridge.mc.MCRenderBridge");
+            MH_getCurrentFrameData = MethodHandles.publicLookup().unreflect(
+                bridgeClass.getMethod("getCurrentFrameData"));
+
+            Class<?> snapClass = Class.forName("com.ranecc.renderium.platform.bridge.mc.FrameDataSnapshot");
+            MH_getCameraX = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getCameraX"));
+            MH_getCameraY = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getCameraY"));
+            MH_getCameraZ = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getCameraZ"));
+            MH_getYaw = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getYaw"));
+            MH_getPitch = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getPitch"));
+            MH_getFov = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getFov"));
+            MH_getNearPlane = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getNearPlane"));
+            MH_getFarPlane = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getFarPlane"));
+            MH_getProjectionMatrix = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getProjectionMatrix"));
+            MH_getViewMatrix = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getViewMatrix"));
+            MH_getInvViewMatrix = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getInvViewMatrix"));
+            MH_getVisibleSectionCount = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getVisibleSectionCount"));
+            MH_getTotalSectionCount = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getTotalSectionCount"));
+            MH_getOpaqueDrawCallCount = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getOpaqueDrawCallCount"));
+            MH_getTranslucentDrawCallCount = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getTranslucentDrawCallCount"));
+            MH_isViewAreaChanged = MethodHandles.publicLookup().unreflect(snapClass.getMethod("isViewAreaChanged"));
+            MH_getFogColor = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getFogColor"));
+            MH_getFogStart = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getFogStart"));
+            MH_getFogEnd = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getFogEnd"));
+            MH_getFogDensity = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getFogDensity"));
+            MH_getFogType = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getFogType"));
+            MH_isFogEnabled = MethodHandles.publicLookup().unreflect(snapClass.getMethod("isFogEnabled"));
+            MH_getWindowWidth = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getWindowWidth"));
+            MH_getWindowHeight = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getWindowHeight"));
+            MH_getGameTick = MethodHandles.publicLookup().unreflect(snapClass.getMethod("getGameTick"));
+            mhInitialized = true;
+        } catch (Exception e) {
+            LOGGER.warning("MethodHandle 缓存初始化失败（将回退到反射）: " + e.getMessage());
+        }
+    }
+
+    /** 安全的 MethodHandle invoke，返回 null 时降级 */
+    private static Object invokeMH(MethodHandle mh, Object target) {
+        if (mh == null) return null;
+        try { return mh.invoke(target); }
+        catch (Throwable t) { return null; }
+    }
+
     private Object getMCRenderBridgeInstance() {
         try {
             Class<?> bridgeClass = Class.forName("com.ranecc.renderium.platform.bridge.mc.MCRenderBridge");
@@ -278,26 +451,25 @@ public class ProcessFrameUseCase {
     }
 
     /**
-     * 收集相机数据
-     *
-     * @param bridge MCRenderBridge 实例
+     * 收集相机数据 — 使用 MethodHandle 缓存替代每帧 getMethod().
      */
     private void collectCameraData(Object bridge) {
         try {
-            Object snapshot = bridge.getClass().getMethod("getCurrentFrameData").invoke(bridge);
+            ensureSnapshotMH();
+            Object snapshot = invokeMH(MH_getCurrentFrameData, bridge);
             if (snapshot == null) return;
             frameDataSnapshot.setCameraPosition(
-                (float) snapshot.getClass().getMethod("getCameraX").invoke(snapshot),
-                (float) snapshot.getClass().getMethod("getCameraY").invoke(snapshot),
-                (float) snapshot.getClass().getMethod("getCameraZ").invoke(snapshot)
+                (float) (float) invokeMH(MH_getCameraX, snapshot),
+                (float) (float) invokeMH(MH_getCameraY, snapshot),
+                (float) (float) invokeMH(MH_getCameraZ, snapshot)
             );
             frameDataSnapshot.setCameraRotation(
-                (float) snapshot.getClass().getMethod("getYaw").invoke(snapshot),
-                (float) snapshot.getClass().getMethod("getPitch").invoke(snapshot)
+                (float) (float) invokeMH(MH_getYaw, snapshot),
+                (float) (float) invokeMH(MH_getPitch, snapshot)
             );
-            frameDataSnapshot.setFov((float) snapshot.getClass().getMethod("getFov").invoke(snapshot));
-            frameDataSnapshot.setNearPlane((float) snapshot.getClass().getMethod("getNearPlane").invoke(snapshot));
-            frameDataSnapshot.setFarPlane((float) snapshot.getClass().getMethod("getFarPlane").invoke(snapshot));
+            frameDataSnapshot.setFov((float) (float) invokeMH(MH_getFov, snapshot));
+            frameDataSnapshot.setNearPlane((float) (float) invokeMH(MH_getNearPlane, snapshot));
+            frameDataSnapshot.setFarPlane((float) (float) invokeMH(MH_getFarPlane, snapshot));
         } catch (Exception e) {
             LOGGER.warning("collectCameraData failed: " + e.getMessage());
         }
@@ -305,14 +477,15 @@ public class ProcessFrameUseCase {
 
     private void collectMatrixData(Object bridge) {
         try {
-            Object snapshot = bridge.getClass().getMethod("getCurrentFrameData").invoke(bridge);
+            ensureSnapshotMH();
+            Object snapshot = invokeMH(MH_getCurrentFrameData, bridge);
             if (snapshot == null) return;
             frameDataSnapshot.setProjectionMatrix(
-                (float[]) snapshot.getClass().getMethod("getProjectionMatrix").invoke(snapshot));
+                (float[]) invokeMH(MH_getProjectionMatrix, snapshot));
             frameDataSnapshot.setViewMatrix(
-                (float[]) snapshot.getClass().getMethod("getViewMatrix").invoke(snapshot));
+                (float[]) invokeMH(MH_getViewMatrix, snapshot));
             frameDataSnapshot.setInvViewMatrix(
-                (float[]) snapshot.getClass().getMethod("getInvViewMatrix").invoke(snapshot));
+                (float[]) invokeMH(MH_getInvViewMatrix, snapshot));
             frameDataSnapshot.recomputeVPMatrix();
         } catch (Exception e) {
             LOGGER.warning("collectMatrixData failed: " + e.getMessage());
@@ -321,14 +494,15 @@ public class ProcessFrameUseCase {
 
     private void collectVisibilityData(Object bridge) {
         try {
-            Object snapshot = bridge.getClass().getMethod("getCurrentFrameData").invoke(bridge);
+            ensureSnapshotMH();
+            Object snapshot = invokeMH(MH_getCurrentFrameData, bridge);
             if (snapshot == null) return;
             frameDataSnapshot.setChunkVisibility(
-                (int) snapshot.getClass().getMethod("getVisibleSectionCount").invoke(snapshot),
-                (int) snapshot.getClass().getMethod("getTotalSectionCount").invoke(snapshot),
-                (int) snapshot.getClass().getMethod("getOpaqueDrawCallCount").invoke(snapshot),
-                (int) snapshot.getClass().getMethod("getTranslucentDrawCallCount").invoke(snapshot),
-                (boolean) snapshot.getClass().getMethod("isViewAreaChanged").invoke(snapshot)
+                (int) (int) invokeMH(MH_getVisibleSectionCount, snapshot),
+                (int) (int) invokeMH(MH_getTotalSectionCount, snapshot),
+                (int) (int) invokeMH(MH_getOpaqueDrawCallCount, snapshot),
+                (int) (int) invokeMH(MH_getTranslucentDrawCallCount, snapshot),
+                (boolean) (boolean) invokeMH(MH_isViewAreaChanged, snapshot)
             );
         } catch (Exception e) {
             LOGGER.warning("collectVisibilityData failed: " + e.getMessage());
@@ -337,16 +511,17 @@ public class ProcessFrameUseCase {
 
     private void collectFogData(Object bridge) {
         try {
-            Object snapshot = bridge.getClass().getMethod("getCurrentFrameData").invoke(bridge);
+            ensureSnapshotMH();
+            Object snapshot = invokeMH(MH_getCurrentFrameData, bridge);
             if (snapshot == null) return;
-            float[] fogColor = (float[]) snapshot.getClass().getMethod("getFogColor").invoke(snapshot);
+            float[] fogColor = (float[]) invokeMH(MH_getFogColor, snapshot);
             frameDataSnapshot.setFogData(
                 fogColor[0], fogColor[1], fogColor[2], fogColor.length > 3 ? fogColor[3] : 1.0f,
-                (float) snapshot.getClass().getMethod("getFogStart").invoke(snapshot),
-                (float) snapshot.getClass().getMethod("getFogEnd").invoke(snapshot),
-                (float) snapshot.getClass().getMethod("getFogDensity").invoke(snapshot),
-                (int) snapshot.getClass().getMethod("getFogType").invoke(snapshot),
-                (boolean) snapshot.getClass().getMethod("isFogEnabled").invoke(snapshot)
+                (float) (float) invokeMH(MH_getFogStart, snapshot),
+                (float) (float) invokeMH(MH_getFogEnd, snapshot),
+                (float) (float) invokeMH(MH_getFogDensity, snapshot),
+                (int) (int) invokeMH(MH_getFogType, snapshot),
+                (boolean) (boolean) invokeMH(MH_isFogEnabled, snapshot)
             );
         } catch (Exception e) {
             LOGGER.warning("collectFogData failed: " + e.getMessage());
@@ -355,14 +530,15 @@ public class ProcessFrameUseCase {
 
     private void collectWindowData(Object bridge) {
         try {
-            Object snapshot = bridge.getClass().getMethod("getCurrentFrameData").invoke(bridge);
+            ensureSnapshotMH();
+            Object snapshot = invokeMH(MH_getCurrentFrameData, bridge);
             if (snapshot == null) return;
             frameDataSnapshot.setWindowSize(
-                (int) snapshot.getClass().getMethod("getWindowWidth").invoke(snapshot),
-                (int) snapshot.getClass().getMethod("getWindowHeight").invoke(snapshot)
+                (int) (int) invokeMH(MH_getWindowWidth, snapshot),
+                (int) (int) invokeMH(MH_getWindowHeight, snapshot)
             );
             frameDataSnapshot.setGameTick(
-                (long) snapshot.getClass().getMethod("getGameTick").invoke(snapshot));
+                (long) (long) invokeMH(MH_getGameTick, snapshot));
         } catch (Exception e) {
             LOGGER.warning("collectWindowData failed: " + e.getMessage());
         }

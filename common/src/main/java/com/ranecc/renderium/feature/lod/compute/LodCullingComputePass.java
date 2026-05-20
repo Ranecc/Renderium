@@ -14,12 +14,14 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.BitSet;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.GPULODDataManager;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
 import com.ranecc.renderium.infrastructure.gpu.VulkanStructs;
 import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 
@@ -177,6 +179,9 @@ public final class LodCullingComputePass {
     /** vkEndCommandBuffer: 结束命令缓冲区录制 */
     private static volatile MethodHandle VK_END_COMMAND_BUFFER;
 
+    /** vkResetCommandBuffer: 重置命令缓冲区（缓存复用） */
+    private static volatile MethodHandle VK_RESET_COMMAND_BUFFER;
+
     /** vkCmdBindPipeline: 绑定管线 */
     private static volatile MethodHandle VK_CMD_BIND_PIPELINE;
 
@@ -294,6 +299,44 @@ public final class LodCullingComputePass {
 
     /** Chunk AABB 数据 SSBO 句柄 (每 Chunk 32 bytes: 2×vec4) */
     private static volatile long chunkBoundsBuffer = 0L;
+
+    // ==================== 预分配 Command Buffer 缓存（复用，避免每帧 vkAllocate） ====================
+
+    /** 预分配的 Command Buffer（每帧 reset + begin 复用，不重新分配） */
+    private static volatile long cachedCmdBuf = 0L;
+
+    // ==================== SSBO 回读缓存（Hi-Z 遮挡结果 → CPU BitSet）= ====================
+
+    /** 环形缓冲区槽数（3 槽，CPU 与 GPU 之间无锁抗抖动） */
+    public static final int RING_SLOT_COUNT = 3;
+
+    // ==================== 3-slot 异步回读状态 ====================
+    /** 每个槽对应的 Fence 句柄（0L 表示该槽空闲） */
+    private static final long[] slotFences = new long[RING_SLOT_COUNT];
+    /** 每个槽回读后的可见性结果缓存 */
+    private static final BitSet[] slotResults = new BitSet[RING_SLOT_COUNT];
+    /** 环形缓冲区生产者指针（下一个待提交的槽） */
+    private static int ringHead = 0;
+    /** 环形缓冲区消费者指针（下一个待消费的槽） */
+    private static int ringTail = 0;
+    /** 最新的可见性结果缓存（供外部查询，volatile 保证可见性） */
+    private static volatile BitSet cachedVisibilityResult = null;
+
+    /** 每个槽的暂存缓冲区句柄（Host-Visible，GPU→CPU 回读） */
+    private static final long[] stagingBuffers = new long[RING_SLOT_COUNT];
+    private static final long[] stagingMemories = new long[RING_SLOT_COUNT];
+    private static final MemorySegment[] stagingMappeds = new MemorySegment[RING_SLOT_COUNT];
+    /** 回读 SSBO（Occlusion binding=3 输出，TRANSFER_SRC 用于拷贝到 staging） */
+    private static volatile long readbackSSBO = 0L;
+    private static volatile long readbackSSBOMemory = 0L;
+    /** SSBO 大小（字节），按 8 bytes/chunk × maxCandidates 计算 */
+    private static volatile int readbackBufferSize = 0;
+
+    // ==================== 相机惰性更新缓存 ====================
+
+    /** 上一帧相机位置（用于惰性遍历判断） */
+    private static volatile long lastCameraXBits = 0L, lastCameraYBits = 0L, lastCameraZBits = 0L;
+    private static final long CAMERA_MOVE_THRESHOLD_SQ = 4L; // 2² blocks
 
     /** Visibility Output SSBO 句柄 (每 Chunk 8 bytes: uint visible + uint lodLevel) */
     private static volatile long visibilityOutputBuffer = 0L;
@@ -452,6 +495,16 @@ public final class LodCullingComputePass {
                     FunctionDescriptor.of(
                             ValueLayout.JAVA_INT,           // return: VkResult
                             ValueLayout.JAVA_LONG           // commandBuffer
+                    )
+            );
+
+            // vkResetCommandBuffer(commandBuffer, flags)
+            VK_RESET_COMMAND_BUFFER = linker.downcallHandle(
+                    vulkanLookup.find("vkResetCommandBuffer").orElseThrow(),
+                    FunctionDescriptor.of(
+                            ValueLayout.JAVA_INT,           // return: VkResult
+                            ValueLayout.JAVA_LONG,          // commandBuffer
+                            ValueLayout.JAVA_INT            // flags
                     )
             );
 
@@ -652,24 +705,19 @@ public final class LodCullingComputePass {
      */
     public static void execute(VulkanDeviceHolder holder) {
         if (holder == null || !holder.isInitialized()) {
-            LOGGER.fine("[LodCulling] VulkanDeviceHolder 未初始化，跳过 LOD Culling Compute Pass");
+            LOGGER.fine("[LodCulling] VulkanDeviceHolder 未初始化，跳过");
             return;
         }
 
         long startTime = System.nanoTime();
-
-        // 获取原生句柄（仅在 holder 有效时执行）
         long deviceHandle = holder.getVkDeviceHandle();
         long queueHandle = holder.getComputeQueue();
 
-        // 句柄有效性校验（未初始化时句柄为 0L）
         if (deviceHandle == 0L || queueHandle == 0L) {
-            LOGGER.warning("[LodCulling] Vulkan 句柄无效 (device=0x" + Long.toHexString(deviceHandle) +
-                    ", queue=0x" + Long.toHexString(queueHandle) + ")，跳过执行");
+            LOGGER.warning("[LodCulling] Vulkan 句柄无效，跳过执行");
             return;
         }
 
-        // Step 1: 初始化（仅首次，带双重检查锁定）
         ensureInitialized(holder);
         if (!initialized) {
             LOGGER.warning("[LodCulling] 初始化失败，使用 CPU 回退模式");
@@ -677,52 +725,77 @@ public final class LodCullingComputePass {
             return;
         }
 
-        // Step 2: 创建命令缓冲区
-        long cmdBuf = allocateCommandBuffer(deviceHandle);
-        if (cmdBuf == 0L) {
-            LOGGER.severe("[LodCulling] 无法分配命令缓冲区，跳过执行");
-            return;
+        // ========== Phase 1: 消费 — 回读所有已就绪的槽 ==========
+        while (ringTail != ringHead) {
+            long fence = slotFences[ringTail];
+            if (fence != 0L && VulkanSyncManager.checkFence(fence)) {
+                int candidateCount = lodDataManager.getCurrentChunkCount();
+                BitSet result = readbackVisibilityBitSet(candidateCount, ringTail);
+                slotResults[ringTail] = result;
+                cachedVisibilityResult = result;
+                VulkanSyncManager.releaseFence(fence);
+                slotFences[ringTail] = 0L;
+                ringTail = (ringTail + 1) % RING_SLOT_COUNT;
+            } else {
+                break;
+            }
         }
 
-        try {
-            // Step 3: 开始录制命令缓冲区
-            beginCommandBuffer(cmdBuf);
+        // ========== Phase 2: 生产 — 提交当前帧（仅当有空槽）==========
+        int nextHead = (ringHead + 1) % RING_SLOT_COUNT;
+        if (nextHead != ringTail) {
+            try {
+                long cmdBuf = getOrCreateCachedCmdBuf(deviceHandle);
+                if (cmdBuf == 0L) return;
 
-            // Step 4: 绑定 Hi-Z Build Pipeline 并分发
-            bindAndDispatchHiZBuild(cmdBuf, holder);
+                beginCachedCommandBuffer(cmdBuf);
+                bindAndDispatchHiZBuild(cmdBuf, holder);
+                insertMemoryBarrier(cmdBuf);
+                bindAndDispatchOcclusionQuery(cmdBuf, holder);
+                insertMemoryBarrier(cmdBuf);
+                dispatchLODCompute(cmdBuf);
+                insertMemoryBarrier(cmdBuf);
+                // 使用当前 ringHead 槽位录制回读命令
+                recordVisibilityReadback(cmdBuf, ringHead);
+                endCommandBuffer(cmdBuf);
 
-            // Step 5: 屏障同步（确保 Hi-Z 写入完成后再读取）
-            insertMemoryBarrier(cmdBuf);
-
-            // Step 6: 绑定 Occlusion Query Pipeline 并分发
-            bindAndDispatchOcclusionQuery(cmdBuf, holder);
-
-            // Step 7: 屏障同步（Occlusion → LOD，确保遮挡查询写入完成后再读取）
-            insertMemoryBarrier(cmdBuf);
-
-            // Step 8: 绑定 LOD Compute Pipeline 并分发（LOD 级别计算）
-            dispatchLODCompute(cmdBuf);
-
-            // Step 9: 屏障同步（LOD → Readback，确保 LOD 计算完成后再回读）
-            insertMemoryBarrier(cmdBuf);
-
-            // Step 10: 结束录制
-            endCommandBuffer(cmdBuf);
-
-            // Step 11: 提交到计算队列并等待完成
-            submitAndWait(cmdBuf, queueHandle, deviceHandle);
-
-            // Step 12: 更新性能统计
-            long elapsed = System.nanoTime() - startTime;
-            updatePerformanceStats(elapsed);
-
-            LOGGER.fine(String.format("[LodCulling] ✓ 执行完成 (%.3f ms)", elapsed / 1_000_000.0));
-
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "[LodCulling] 执行过程中发生异常: " + e.getMessage(), e);
-        } finally {
-            // 释放命令缓冲区（实际由 Command Pool 管理，这里不需要手动释放）
+                long fence = VulkanSyncManager.acquireFence();
+                if (VulkanSyncManager.submitAsync(queueHandle, cmdBuf, fence)) {
+                    // 释放该槽位上残留的旧 fence（理论上不应存在，防御性处理）
+                    if (slotFences[ringHead] != 0L) VulkanSyncManager.releaseFence(slotFences[ringHead]);
+                    slotFences[ringHead] = fence;
+                    ringHead = nextHead;
+                } else {
+                    VulkanSyncManager.releaseFence(fence);
+                }
+            } catch (Exception e) {
+                LOGGER.warning("[LodCulling] GPU 提交失败: " + e.getMessage());
+            }
         }
+
+        long elapsed = System.nanoTime() - startTime;
+        updatePerformanceStats(elapsed);
+        LOGGER.fine(String.format("[LodCulling] ✓ 异步提交完成 (%.3f ms)", elapsed / 1_000_000.0));
+    }
+
+    // ==================== 异步回读结果查询 ====================
+
+    /**
+     * 获取最新的缓存可见性结果（供外部消费方查询）
+     * <p>
+     * 如果尚无 GPU 回读结果（首帧或 GPU 尚未完成），返回全可见的 BitSet 作为安全默认值。
+     *
+     * @param candidateCount 当前候选 Chunk 数量，用于构造默认全可见 BitSet
+     * @return 最新的可见性 BitSet，不会返回 null
+     */
+    public static BitSet getCachedVisibilityResult(int candidateCount) {
+        BitSet result = cachedVisibilityResult;
+        if (result == null) {
+            // 尚无 GPU 结果，默认全部可见（保守策略，避免误剔除）
+            result = new BitSet(candidateCount);
+            result.set(0, candidateCount);
+        }
+        return result;
     }
 
     // ==================== 初始化逻辑 ====================
@@ -786,9 +859,16 @@ public final class LodCullingComputePass {
                 // 创建 Pipeline Layout
                 createPipelineLayout();
 
-                // 创建 Descriptor Pool + 分配 DescriptorSets
+                // 创建 Descriptor Pool + 分配 Descriptor Sets
                 createDescriptorPoolInternal();
                 allocateHiZDescriptorSets();
+
+                // 创建 SSBO + Staging，更新 Occlusion 描述符集的 binding 3 输出
+                try {
+                    initReadbackBuffers();
+                } catch (Throwable t) {
+                    LOGGER.warning("[LodCulling] 回读初始化失败（不影响主功能）: " + t.getMessage());
+                }
 
                 // 创建 Compute Pipelines
                 createComputePipelines();
@@ -798,6 +878,12 @@ public final class LodCullingComputePass {
 
                 // 创建 Command Pool 和 Fence
                 createSyncObjects();
+
+                // 预分配 Command Buffer 缓存（复用，避免每帧 vkAllocateCommandBuffers）
+                cachedCmdBuf = allocateCommandBuffer(vkDevice);
+                if (cachedCmdBuf != 0L) {
+                    LOGGER.fine("[LodCulling] ✓ 缓存 Command Buffer 已分配 | handle=0x" + Long.toHexString(cachedCmdBuf));
+                }
 
                 initialized = true;
                 LOGGER.info("[LodCulling] ✓ 初始化成功 | " +
@@ -1947,6 +2033,208 @@ public final class LodCullingComputePass {
         if (result != VK_SUCCESS) {
             throw new RuntimeException("vkEndCommandBuffer 失败: VkResult=" + result);
         }
+    }
+
+    // ==================== Command Buffer 缓存（复用，避免每帧 vkAllocate） ====================
+
+    /**
+     * 获取缓存 Command Buffer。首次调用时分配，后续复用。
+     * 返回缓存的 CB，避免每帧 vkAllocateCommandBuffers 的驱动锁竞争。
+     *
+     * @param device VkDevice 句柄
+     * @return 缓存的 VkCommandBuffer 句柄，失败返回 0L
+     */
+    public static long getOrCreateCachedCmdBuf(long device) {
+        if (cachedCmdBuf == 0L) {
+            cachedCmdBuf = allocateCommandBuffer(device);
+        }
+        return cachedCmdBuf;
+    }
+
+    /**
+     * 开始录制缓存的 Command Buffer（复用）。
+     * 内部调用 vkResetCommandBuffer + vkBeginCommandBuffer(无ONE_TIME_SUBMIT)。
+     * 相比 beginCommandBuffer + ONE_TIME_SUBMIT，节省一次 vkAllocateCommandBuffers。
+     *
+     * @param cmdBuf 缓存的 Command Buffer 句柄
+     * @throws RuntimeException 如果重置或开始失败
+     */
+    public static void beginCachedCommandBuffer(long cmdBuf) throws Exception {
+        if (!ffmLoaded || VK_RESET_COMMAND_BUFFER == null || VK_BEGIN_COMMAND_BUFFER == null) {
+            throw new IllegalStateException("FFM 方法句柄未加载");
+        }
+
+        // vkResetCommandBuffer(commandBuffer, 0) — 0 flags = VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT 不设置
+        int resetResult = VK_SUCCESS;
+        try {
+            resetResult = (int) VK_RESET_COMMAND_BUFFER.invokeExact(cmdBuf, 0);
+        } catch (Throwable t) {
+            throw new RuntimeException("vkResetCommandBuffer 调用失败", t);
+        }
+        if (resetResult != VK_SUCCESS) {
+            throw new RuntimeException("vkResetCommandBuffer 失败: VkResult=" + resetResult);
+        }
+
+        // vkBeginCommandBuffer(cmdBuf, pBeginInfo) — 无 ONE_TIME_SUBMIT（因为缓存复用）
+        MemorySegment beginInfo = PerFrameArena.allocateLongs(4);
+        beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, (long) VulkanStructs.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);  // sType
+        beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);  // flags = 0 (无 ONE_TIME_SUBMIT)
+        beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);  // pInheritanceInfo = null
+
+        int result = VK_SUCCESS;
+        try {
+            result = (int) VK_BEGIN_COMMAND_BUFFER.invokeExact(cmdBuf, beginInfo.address());
+        } catch (Throwable t) {
+            throw new RuntimeException("vkBeginCommandBuffer 调用失败", t);
+        }
+        if (result != VK_SUCCESS) {
+            throw new RuntimeException("vkBeginCommandBuffer 失败: VkResult=" + result);
+        }
+    }
+
+    // ==================== 环形缓冲区回读（3 槽，无锁抗抖动） ====================
+
+    /**
+     * 初始化 SSBO + 3 槽 Staging + 更新 Occlusion DescriptorSet binding 3。
+     * 在 Pipeline 创建前调用，确保 Dispatch 时描述符已就绪。
+     */
+    private static void initReadbackBuffers() throws Throwable {
+        long dev = vkDevice;
+        if (dev == 0L || hizOcclusionDescSet == 0L) {
+            LOGGER.warning("[LodCulling] 回读跳过：device=0 或 Occlusion DS 未分配");
+            return;
+        }
+
+        int maxCandidates = 8192;
+        readbackBufferSize = maxCandidates * 8;
+
+        // 1) 创建 SSBO (device-local, STORAGE + TRANSFER_SRC)
+        int usageSSBO = 0x0080 | 0x0001;
+        long[] ssboResult = VulkanMemoryAllocator.createBuffer(dev, readbackBufferSize, usageSSBO, 1);
+        readbackSSBO = ssboResult[0];
+        readbackSSBOMemory = ssboResult[1];
+
+        // 2) 创建 3 个 Staging (host-visible, host-coherent, TRANSFER_DST)
+        MethodHandle vkMapMemory = VulkanAPIRegistry.getHandle("vkMapMemory");
+        int usageStaging = 0x0002;
+        for (int i = 0; i < RING_SLOT_COUNT; i++) {
+            long[] result = VulkanMemoryAllocator.createBuffer(dev, readbackBufferSize, usageStaging, 6);
+            stagingBuffers[i] = result[0];
+            stagingMemories[i] = result[1];
+
+            // 持久映射
+            if (vkMapMemory != null && result[1] != 0L) {
+                var ppData = PerFrameArena.allocateLongs(1);
+                int rc = (int) vkMapMemory.invokeExact(dev, result[1], 0L, (long) readbackBufferSize, 0, ppData.address());
+                if (rc == 0) {
+                    long addr = ppData.get(ValueLayout.JAVA_LONG, 0);
+                    if (addr != 0L) {
+                        stagingMappeds[i] = MemorySegment.ofAddress(addr).reinterpret(readbackBufferSize);
+                    }
+                }
+            }
+        }
+
+        // 3) vkUpdateDescriptorSets: 绑定 readbackSSBO 到 hizOcclusionDescSet binding=3
+        MethodHandle vkUpdateDS = VulkanAPIRegistry.getHandle("vkUpdateDescriptorSets");
+        if (vkUpdateDS == null) {
+            LOGGER.warning("[LodCulling] vkUpdateDescriptorSets 未注册");
+            return;
+        }
+
+        MemorySegment bufInfo = PerFrameArena.allocateLongs(3);
+        bufInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, readbackSSBO);
+        bufInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+        bufInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0x7FFFFFFF);
+
+        MemorySegment writeDesc = PerFrameArena.allocate(64L);
+        writeDesc.set(ValueLayout.JAVA_LONG, 0, 18L);
+        writeDesc.set(ValueLayout.JAVA_LONG, 8, 0L);
+        writeDesc.set(ValueLayout.JAVA_LONG, 16, hizOcclusionDescSet);
+        writeDesc.set(ValueLayout.JAVA_INT, 24, 3);
+        writeDesc.set(ValueLayout.JAVA_INT, 28, 0);
+        writeDesc.set(ValueLayout.JAVA_INT, 32, 1);
+        writeDesc.set(ValueLayout.JAVA_INT, 36, 12);
+        writeDesc.set(ValueLayout.JAVA_LONG, 40, 0L);
+        writeDesc.set(ValueLayout.JAVA_LONG, 48, bufInfo.address());
+        writeDesc.set(ValueLayout.JAVA_LONG, 56, 0L);
+        vkUpdateDS.invokeExact(dev, 1, writeDesc.address(), 0, 0L);
+
+        LOGGER.info(String.format("[LodCulling] ✓ 环形缓冲区就绪 | SSBO=0x%s slots=%d x %dKB",
+            Long.toHexString(readbackSSBO), RING_SLOT_COUNT, readbackBufferSize / 1024));
+    }
+
+    /**
+     * 录制 vkCmdCopyBuffer(readbackSSBO → staging[slotIndex])。
+     * 必须在 endCommandBuffer 之前调用。
+     *
+     * @param cmdBuf    VkCommandBuffer 句柄
+     * @param slotIndex 目标槽索引 (0, 1, 2)
+     */
+    public static void recordVisibilityReadback(long cmdBuf, int slotIndex) throws Exception {
+        if (slotIndex < 0 || slotIndex >= RING_SLOT_COUNT) return;
+        long dstBuffer = stagingBuffers[slotIndex];
+        if (dstBuffer == 0L || readbackSSBO == 0L) return;
+        MethodHandle vkCmdCopy = VulkanAPIRegistry.getHandle("vkCmdCopyBuffer");
+        if (vkCmdCopy == null) return;
+
+        MemorySegment region = PerFrameArena.allocateLongs(3);
+        region.setAtIndex(ValueLayout.JAVA_LONG, 0, 0L);
+        region.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+        region.setAtIndex(ValueLayout.JAVA_LONG, 2, (long) readbackBufferSize);
+
+        try {
+            vkCmdCopy.invokeExact(cmdBuf, readbackSSBO, dstBuffer, 1, region.address());
+        } catch (Throwable t) {
+            LOGGER.warning("[LodCulling] vkCmdCopyBuffer 失败: " + t.getMessage());
+        }
+    }
+
+    /**
+     * 从指定槽的 staging 回读可见性数据。
+     * 调用方保证该槽的 fence 已 signal。
+     *
+     * @param candidateCount 候选 Chunk 数
+     * @param slotIndex      槽索引 (0, 1, 2)
+     * @return BitSet，bit[i]=true 表示第 i 个候选可见
+     */
+    public static BitSet readbackVisibilityBitSet(int candidateCount, int slotIndex) {
+        if (slotIndex < 0 || slotIndex >= RING_SLOT_COUNT) {
+            BitSet fallback = new BitSet(candidateCount);
+            fallback.set(0, candidateCount);
+            return fallback;
+        }
+        MemorySegment mapped = stagingMappeds[slotIndex];
+        if (mapped == null) {
+            BitSet fallback = new BitSet(candidateCount);
+            fallback.set(0, candidateCount);
+            return fallback;
+        }
+
+        BitSet result = new BitSet(candidateCount);
+        for (int i = 0; i < candidateCount && i * 8 < readbackBufferSize; i++) {
+            if (mapped.get(ValueLayout.JAVA_INT, (long) i * 8) != 0) {
+                result.set(i);
+            }
+        }
+        return result;
+    }
+
+    /** 销毁所有回读缓冲区（shutdown 时调用） */
+    private static void destroyReadbackBuffers() {
+        long dev = vkDevice;
+        if (dev == 0L) return;
+        for (int i = 0; i < RING_SLOT_COUNT; i++) {
+            if (stagingBuffers[i] != 0L) {
+                VulkanMemoryAllocator.destroyBuffer(dev, stagingBuffers[i], stagingMemories[i]);
+                stagingBuffers[i] = 0L;
+                stagingMemories[i] = 0L;
+                stagingMappeds[i] = null;
+            }
+        }
+        if (readbackSSBO != 0L) VulkanMemoryAllocator.destroyBuffer(dev, readbackSSBO, readbackSSBOMemory);
+        readbackSSBO = 0L; readbackSSBOMemory = 0L;
+        readbackBufferSize = 0;
     }
 
     // ==================== Pipeline 绑定与 Dispatch ====================

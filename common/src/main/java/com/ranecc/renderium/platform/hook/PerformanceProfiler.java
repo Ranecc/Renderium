@@ -252,6 +252,7 @@ public final class PerformanceProfiler {
         // 为每种 Hook 类型预创建计时区域（名称与 HookDispatcher.HOOK_NAMES 一致）
         for (int i = 0; i < HookDispatcher.HOOK_COUNT; i++) {
             String name = HookDispatcher.SET_PIPELINE == i ? "SetPipeline" : HookDispatcher.BIND_TEXTURE == i ? "BindTexture" : HookDispatcher.COMMAND_ENCODER_SUBMIT == i ? "CommandEncoderSubmit" : HookDispatcher.POST_CHAIN == i ? "PostChain" : HookDispatcher.FRAME_GRAPH_EXECUTE == i ? "FrameGraphExecute" : HookDispatcher.RENDER_PASS_CLOSE == i ? "RenderPassClose" : "GpuDeviceBuffer";
+            zones[i] = new Zone(name);
         }
         LOGGER.fine(() -> "PerformanceProfiler initialized with " + zones.length + " zones");
     }

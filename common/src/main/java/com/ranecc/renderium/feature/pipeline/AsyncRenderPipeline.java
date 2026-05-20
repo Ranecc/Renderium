@@ -23,6 +23,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.feature.pipeline.RenderExtension;
 import com.ranecc.renderium.feature.pipeline.BfsOcclusionEngine;
+import com.ranecc.renderium.feature.pipeline.strategy.AlgorithmStrategy;
+import com.ranecc.renderium.feature.pipeline.strategy.BfsInput;
 
 /**
  * 异步渲染管线调度器
@@ -82,8 +84,14 @@ public final class AsyncRenderPipeline {
     /** 单例实例 */
     private static volatile AsyncRenderPipeline instance;
 
-    /** BFS 遮挡剔除引擎 */
-    private final BfsOcclusionEngine occlusionEngine;
+    /** Java 回退引擎（当策略不可用时使用） */
+    private final BfsOcclusionEngine fallbackEngine;
+
+    /** BFS 遮挡剔除策略（volatile 保证跨线程可见性） */
+    private volatile AlgorithmStrategy<BfsInput, BfsOcclusionEngine.CullResult> bfsStrategy;
+
+    /** 自适应路径选择器（动态选择 Java/Native 实现） */
+    private final AdaptivePathSelector pathSelector;
 
     /** 帧任务队列（无锁环形缓冲区） */
     private final LockFreeRingBuffer<FrameTask> taskQueue;
@@ -206,12 +214,15 @@ public final class AsyncRenderPipeline {
     // ==================== 构造函数 ====================
 
     private AsyncRenderPipeline() {
-        this.occlusionEngine = new BfsOcclusionEngine();
+        this.fallbackEngine = new BfsOcclusionEngine();
+        this.pathSelector = new AdaptivePathSelector();
+        this.bfsStrategy = pathSelector.createBfsStrategy(0.0f, true, fallbackEngine, 10000);
         this.taskQueue = new LockFreeRingBuffer<>(TASK_QUEUE_CAPACITY);
         this.resultQueue = new LockFreeRingBuffer<>(RESULT_QUEUE_CAPACITY);
 
-        LOGGER.info(String.format("AsyncRenderPipeline 初始化 [buildThreads=%d, taskQueue=%d, resultQueue=%d]",
-                DEFAULT_BUILD_THREAD_COUNT, TASK_QUEUE_CAPACITY, RESULT_QUEUE_CAPACITY));
+        LOGGER.info(String.format("AsyncRenderPipeline 初始化 [buildThreads=%d, taskQueue=%d, resultQueue=%d, bfsStrategy=%s]",
+                DEFAULT_BUILD_THREAD_COUNT, TASK_QUEUE_CAPACITY, RESULT_QUEUE_CAPACITY,
+                bfsStrategy != null ? bfsStrategy.getImplementationType() : "null"));
     }
 
     // ==================== 单例访问 ====================
@@ -444,6 +455,30 @@ public final class AsyncRenderPipeline {
         }
     }
 
+    // ==================== 策略刷新 API ====================
+
+    /**
+     * 刷新 BFS 遮挡剔除策略
+     * <p>
+     * 当运行条件变化时（如 GPU 占用率波动、Native 加速器状态变更），
+     * 调用此方法重新选择最优策略。
+     * <p>
+     * 线程安全：使用 volatile 写更新 bfsStrategy 引用，
+     * 工作线程通过 volatile 读获取最新策略。
+     *
+     * @param gpuUsage     当前 GPU 占用率 (0.0-1.0)
+     * @param preferNative 是否优先使用 Native 路径
+     */
+    public void refreshStrategy(float gpuUsage, boolean preferNative) {
+        AlgorithmStrategy<BfsInput, BfsOcclusionEngine.CullResult> newStrategy =
+                pathSelector.createBfsStrategy(gpuUsage, preferNative, fallbackEngine, 10000);
+        if (newStrategy != null) {
+            this.bfsStrategy = newStrategy;
+            LOGGER.fine(String.format("BFS 策略已刷新 → %s (gpuUsage=%.2f%%)",
+                    newStrategy.getImplementationType(), gpuUsage * 100));
+        }
+    }
+
     // ==================== 工作线程处理 ====================
 
     /**
@@ -484,25 +519,46 @@ public final class AsyncRenderPipeline {
 
     /**
      * 处理遮挡剔除任务
+     * <p>
+     * 优先使用策略模式（可能走 Native C++ 加速路径），
+     * 策略不可用时回退到 Java 引擎直接调用。
      */
     private void processOcclusionCull(FrameTask task) {
         if (task.payload instanceof OcclusionCullPayload payload) {
-            BfsOcclusionEngine.CullResult cullResult = occlusionEngine.findVisibleSections(
-                    payload.rootSection,
-                    payload.cameraView,
-                    payload.useOcclusion,
-                    task.frameNumber
-            );
+            BfsOcclusionEngine.CullResult cullResult;
+
+            // 优先尝试策略路径（可能使用 Native C++ 加速）
+            AlgorithmStrategy<BfsInput, BfsOcclusionEngine.CullResult> currentStrategy = this.bfsStrategy;
+            if (currentStrategy != null && currentStrategy.isAvailable()) {
+                // 从 payload 构造 BfsInput（与 C++ 结构体内存布局对齐）
+                BfsInput input = new BfsInput(
+                        (int) (payload.cameraView.posX / 16),  // originChunkX
+                        (int) (payload.cameraView.posY / 16),  // originChunkY
+                        (int) (payload.cameraView.posZ / 16),  // originChunkZ
+                        payload.cameraView.posX,                // cameraX
+                        payload.cameraView.posY,                // cameraY
+                        payload.cameraView.posZ,                // cameraZ
+                        payload.rootSection.radius,             // renderDistance
+                        task.frameNumber,                       // frameNumber
+                        payload.useOcclusion,                   // useOcclusion
+                        payload.rootSection                     // rootSection
+                );
+                cullResult = currentStrategy.execute(input);
+            } else {
+                // 回退到 Java 引擎直接调用
+                cullResult = fallbackEngine.findVisibleSections(
+                        payload.rootSection, payload.cameraView,
+                        payload.useOcclusion, task.frameNumber
+                );
+            }
 
             totalVisibleSections.addAndGet(cullResult.visibleCount);
             totalCulledSections.addAndGet(cullResult.totalProcessed - cullResult.visibleCount);
             totalCullTimeNs.addAndGet(cullResult.traverseTimeNanos);
 
             resultQueue.enqueue(new RenderResult(
-                    task.frameNumber,
-                    RenderResult.ResultType.OCCLUSION_RESULT,
-                    cullResult,
-                    cullResult.traverseTimeNanos
+                    task.frameNumber, RenderResult.ResultType.OCCLUSION_RESULT,
+                    cullResult, cullResult.traverseTimeNanos
             ));
         }
     }
