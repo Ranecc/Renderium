@@ -161,6 +161,7 @@ public final class VulkanGPUResourceManager {
 
     /** 总创建 ImageView 数量 */
     private final AtomicLong totalViewsCreated = new AtomicLong(0);
+    private final AtomicLong totalViewsDestroyed = new AtomicLong(0);
 
     /** 总延迟释放请求数 */
     private final AtomicLong totalReleaseRequests = new AtomicLong(0);
@@ -590,6 +591,25 @@ public final class VulkanGPUResourceManager {
             VulkanOperationGuard.markFailed(e);
             LOGGER.severe(String.format("createView 异常: %s", e.getMessage()));
             return 0L;
+        }
+    }
+
+    /**
+     * 销毁 ImageView
+     * <p>
+     * ImageView 是纯 Vulkan 对象（无 VMA 分配），直接通过 vkDestroyImageView 释放。
+     * 必须在对应的 Image 销毁之前调用。
+     *
+     * @param imageView 要销毁的 ImageView 句柄
+     */
+    public void destroyView(long imageView) {
+        if (imageView == 0L) return;
+        try {
+            VulkanAPIRegistry.invoke("vkDestroyImageView", vkDevice, imageView, 0L);
+            totalViewsDestroyed.incrementAndGet();
+        } catch (Throwable t) {
+            VulkanOperationGuard.markFailed(t);
+            LOGGER.warning(String.format("destroyView[0x%X] 失败: %s", imageView, t.getMessage()));
         }
     }
 

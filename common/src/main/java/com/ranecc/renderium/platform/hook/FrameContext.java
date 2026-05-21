@@ -132,11 +132,17 @@ public final class FrameContext {
      *
      * <p>经过遮挡剔除、视锥剔除后剩余的可渲染区块数。
      * 用于评估剔除效果和 LOD 分配策略。
-     */
+   /** 当前帧可见的区块数量 */
     public int visibleSectionCount;
 
     /** 总区块数量（加载范围内的区块总数） */
     public int totalSectionCount;
+
+    /** 当前帧渲染实体数量（用于 LazyGuard 脏数据检测） */
+    public int entityCount;
+
+    /** 当前方块实体数量（用于 LazyGuard 脏数据检测） */
+    public int tileEntityCount;
 
     /**
      * 当前帧的 Draw Call 数量
@@ -187,6 +193,9 @@ public final class FrameContext {
 
     /** 帧开始时间（纳秒），用于计算本帧总耗时 */
     private long frameStartTimeNs;
+
+    /** LazyGuard 脏帧作用域（脏帧时非 null，endFrame 时自动关闭） */
+    private Object dirtyFrameScope;
 
     // ==================== 构造函数 ====================
 
@@ -285,6 +294,8 @@ public final class FrameContext {
         this.farPlane = 1000.0f; // 标准远平面
         this.visibleSectionCount = 0;
         this.totalSectionCount = 0;
+        this.entityCount = 0;
+        this.tileEntityCount = 0;
         this.drawCallCount = 0;
         this.windowWidth = 1920;   // 默认分辨率
         this.windowHeight = 1080;
@@ -381,6 +392,17 @@ public final class FrameContext {
     public void setVisibility(int visible, int total) {
         this.visibleSectionCount = visible;
         this.totalSectionCount = total;
+    }
+
+    /**
+     * 设置实体/方块实体统计（供 LazyGuard 脏数据检测使用）
+     *
+     * @param entities     当前渲染实体数量
+     * @param tileEntities 当前方块实体数量
+     */
+    public void setEntityData(int entities, int tileEntities) {
+        this.entityCount = entities;
+        this.tileEntityCount = tileEntities;
     }
 
     /**
@@ -503,4 +525,8 @@ public final class FrameContext {
     public boolean isOddFrame() {
         return (frameIndex & 1) != 0;
     }
+
+    public Object getDirtyFrameScope() { return dirtyFrameScope; }
+
+    public void setDirtyFrameScope(Object scope) { this.dirtyFrameScope = scope; }
 }

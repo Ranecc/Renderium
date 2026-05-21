@@ -16,10 +16,12 @@ package com.ranecc.renderium.feature.pipeline.node.builtin;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 
@@ -125,6 +127,13 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
     private volatile long pipelineLayout = 0L;
     private volatile long descriptorSet = 0L;
 
+    /** 输出 Image / ImageView（独立于输入，供 STORAGE_IMAGE binding=1 写入） */
+    private volatile long outputImage = 0L;
+    private volatile long outputImageView = 0L;
+    private volatile int lastOutputWidth = 0;
+    private volatile int lastOutputHeight = 0;
+    private volatile VulkanGPUResourceManager.GpuResource outputGpuResource = null;
+
     // ==================== 构造函数 ====================
 
     /**
@@ -198,10 +207,12 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
         float curCenterOffsetY = this.centerOffsetY;
 
         long colorTexture = inputResources[0];
-        long outputTexture = colorTexture; // 就地写入
 
         ensurePipeline();
         if (computePipeline == 0L) return passThrough(inputResources);
+
+        ensureOutputImage(context);
+        if (outputImageView == 0L) return passThrough(inputResources);
 
         try {
             long dev = VulkanDeviceHolder.getInstance().getDevice();
@@ -209,7 +220,7 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
 
             // 更新 image descriptors
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 0, colorTexture, 0L, 0L);
-            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputTexture, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputImageView, 0L);
 
             // 构建 PushConstants: float strength, int screenWidth, int screenHeight, float radial, float centerX, float centerY (32 bytes)
             MemorySegment params = PerFrameArena.allocate(32L);
@@ -250,7 +261,7 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
                 curStrength, curRadial, curCenterOffsetX, curCenterOffsetY, elapsedMicros
         ));
 
-        return outputTexture;
+        return outputImageView != 0L ? outputImageView : passThrough(inputResources);
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -280,6 +291,25 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
      */
     @Override
     protected void onDispose() {
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) {
+            if (computePipeline != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipeline", device, computePipeline, 0L); } catch (Throwable ignored) {}
+                computePipeline = 0L;
+            }
+            if (pipelineLayout != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", device, pipelineLayout, 0L); } catch (Throwable ignored) {}
+                pipelineLayout = 0L;
+            }
+            if (outputGpuResource != null) {
+                try { VulkanGPUResourceManager.getInstance().releaseResource(outputGpuResource); } catch (Throwable ignored) {}
+                outputGpuResource = null;
+                outputImage = 0L;
+                outputImageView = 0L;
+                lastOutputWidth = 0;
+                lastOutputHeight = 0;
+            }
+        }
         LOGGER.fine("[ChromaticAberration] 资源已释放");
     }
 
@@ -377,6 +407,32 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
                 }
             } catch (Exception e) {
                 LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
+            }
+        }
+    }
+
+    private void ensureOutputImage(RenderContext context) {
+        int w = context.getWidth();
+        int h = context.getHeight();
+        if (outputImage != 0L && lastOutputWidth == w && lastOutputHeight == h) return;
+        synchronized (this) {
+            if (outputImage != 0L && lastOutputWidth == w && lastOutputHeight == h) return;
+            VulkanGPUResourceManager mgr = VulkanGPUResourceManager.getInstance();
+            int format = 87;
+            int usageFlags = 0x20 | 0x10;
+            var res = mgr.createImage(w, h, format, usageFlags, VmaMemoryPools.PoolType.RENDER_TARGET);
+            if (res != null && res.isValid()) {
+                long newImage = res.handle;
+                long newView = mgr.createView(newImage, format, 1);
+                var oldRes = outputGpuResource;
+                outputImage = newImage;
+                outputImageView = newView;
+                outputGpuResource = res;
+                lastOutputWidth = w;
+                lastOutputHeight = h;
+                if (oldRes != null) {
+                    try { mgr.releaseResource(oldRes); } catch (Exception ignored) {}
+                }
             }
         }
     }

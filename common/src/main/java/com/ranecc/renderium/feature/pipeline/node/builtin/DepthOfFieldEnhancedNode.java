@@ -144,6 +144,18 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
     /** Pipeline 是否已创建 */
     private volatile boolean pipelineCreated = false;
 
+    /** 输出 Image 句柄（Compute Shader 写入目标） */
+    private volatile long outputImage = 0L;
+
+    /** 输出 ImageView 句柄（绑定到 STORAGE_IMAGE descriptor） */
+    private volatile long outputImageView = 0L;
+
+    /** 上次创建输出 Image 时的宽度（用于检测尺寸变化） */
+    private volatile int lastOutputWidth = 0;
+
+    /** 上次创建输出 Image 时的高度（用于检测尺寸变化） */
+    private volatile int lastOutputHeight = 0;
+
     // ==================== 构造函数 ====================
 
     /**
@@ -228,12 +240,16 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
         ensurePipeline();
         if (computePipeline == 0L) return passThrough(inputResources);
 
+        // 确保输出 Image 已创建（独立于输入纹理的写入目标）
+        ensureOutputImage(context);
+        if (outputImageView == 0L) return passThrough(inputResources);
+
         // 更新 DescriptorSet 绑定输入/输出纹理
         long dev = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
         if (dev != 0L && descriptorSet != 0L) {
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 0, inputResources[0], 0L, 0L);
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 1, inputResources[1], 0L, 0L);
-            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 2, inputResources[0], 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 2, outputImageView, 0L);
         }
 
         // 自包含 Compute Shader 调度（分配临时 CB → 录制 → 提交 → 等待）
@@ -265,8 +281,8 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
                 curFocalDist, curAperture, curSamples, curFocalLen, computePipeline, elapsedMicros
         ));
 
-        // 当前返回输入纹理（待 Vulkan 命令缓冲区集成后替换）
-        return inputResources[0];
+        // 返回 Compute Shader 写入的输出纹理
+        return outputImageView;
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -294,6 +310,30 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
      */
     @Override
     protected void onDispose() {
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) {
+            if (computePipeline != 0L) {
+                try { com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkDestroyPipeline", device, computePipeline, 0L); } catch (Throwable ignored) {}
+                computePipeline = 0L;
+            }
+            if (pipelineLayout != 0L) {
+                try { com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", device, pipelineLayout, 0L); } catch (Throwable ignored) {}
+                pipelineLayout = 0L;
+            }
+        }
+        if (outputImage != 0L || outputImageView != 0L) {
+            var mgr = com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.getInstance();
+            if (outputImage != 0L) {
+                var res = new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(
+                        outputImage, 0L, lastOutputWidth, lastOutputHeight, 87,
+                        com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.ResourceType.IMAGE);
+                mgr.releaseResource(res);
+                outputImage = 0L;
+            }
+            outputImageView = 0L;
+            lastOutputWidth = 0;
+            lastOutputHeight = 0;
+        }
         LOGGER.fine("[DOF] 资源已释放");
     }
 
@@ -405,6 +445,49 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
                 }
             } catch (Exception e) {
                 LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 确保输出 Image 已创建
+     * <p>
+     * 懒加载 + 尺寸变化检测：当 outputImage 未创建或屏幕尺寸变化时，
+     * 通过 VulkanGPUResourceManager 创建新的 VK_FORMAT_R8G8B8A8_UNORM Image 和 ImageView。
+     *
+     * 【方法参数】
+     * @param context RenderContext - 渲染上下文（获取屏幕宽高）
+     */
+    private void ensureOutputImage(RenderContext context) {
+        int w = context.getWidth();
+        int h = context.getHeight();
+        if (outputImage != 0L && w == lastOutputWidth && h == lastOutputHeight) {
+            return;
+        }
+        synchronized (this) {
+            if (outputImage != 0L && w == lastOutputWidth && h == lastOutputHeight) {
+                return;
+            }
+            var mgr = com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.getInstance();
+            int format = 87;
+            int usage = 0x20 | 0x10;
+            var res = mgr.createImage(w, h, format, usage,
+                    com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET);
+            if (res != null && res.handle != 0L) {
+                long newImage = res.handle;
+                long newView = mgr.createView(newImage, format,
+                        com.ranecc.renderium.domain.constant.VulkanConst.IMAGE_ASPECT_COLOR_BIT);
+                if (newView != 0L) {
+                    outputImage = newImage;
+                    outputImageView = newView;
+                    lastOutputWidth = w;
+                    lastOutputHeight = h;
+                    LOGGER.fine(String.format("[DOF] 输出 Image 创建成功: %dx%d image=0x%X view=0x%X", w, h, newImage, newView));
+                } else {
+                    LOGGER.warning("[DOF] createView 失败");
+                }
+            } else {
+                LOGGER.warning("[DOF] createImage 失败");
             }
         }
     }

@@ -19,19 +19,26 @@
 
 package com.ranecc.renderium.feature.shader.comp;
 
+import com.ranecc.renderium.feature.blaze3d.shader.GlslangCompiler;
+import com.ranecc.renderium.feature.intercept.base.RenderContext;
+import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
+import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.feature.shader.settings.ShaderGraphicsConfig;
+import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
+import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
+import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import java.io.IOException;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import com.ranecc.renderium.feature.intercept.base.RenderContext;
-import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
-import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
-import com.ranecc.renderium.feature.shader.settings.ShaderGraphicsConfig;
-import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
-import com.ranecc.renderium.platform.bridge.mc.CommandBatcher;
-import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
 /**
  * Compute Shader 管线节点
  * <p>
@@ -89,6 +96,19 @@ public class CompShaderNode extends AbstractPipelineNode {
     /** 缓存的分辨率（从 RenderContext 动态获取，避免硬编码） */
     private volatile int cachedWidth = 1920;
     private volatile int cachedHeight = 1080;
+
+    // ==================== Vulkan 管线句柄（Stage 3 真实 dispatch） ====================
+
+    /** Compute Pipeline 句柄，0 = 未创建 */
+    private volatile long computePipeline = 0L;
+    private volatile long pipelineLayout = 0L;
+    private volatile long descriptorSet = 0L;
+
+    /** 独立输出图像资源（GPU compute shader 实际写入目标） */
+    private volatile long outputImage = 0L;
+    private volatile long outputImageView = 0L;
+    private volatile int lastOutputWidth = 0;
+    private volatile int lastOutputHeight = 0;
 
     // ==================== 构造器 ====================
 
@@ -164,30 +184,38 @@ public class CompShaderNode extends AbstractPipelineNode {
      */
     public boolean load() {
         if (compSourcePath == null || !Files.exists(compSourcePath)) {
-            if (spirvBinary != null) return true;  // 已有预编译版本
+            if (spirvBinary != null) return true;
             LOGGER.warning("无法加载 .comp: " + compSourcePath);
             return false;
         }
 
         try {
             String source = Files.readString(compSourcePath);
-
-            // 记录修改时间用于热重载检测
             lastModifiedTime = Files.getLastModifiedTime(compSourcePath).toMillis();
 
             if (!com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard.isOk()) {
-                LOGGER.fine("Vulkan guard active, skipping glslc compilation");
+                LOGGER.fine("Vulkan guard active, skipping compilation");
                 return false;
             }
-            // Compile via Vulkan SDK glslc
-            // 实际实现需要:
-            // 1. 写入临时 .comp 文件
-            // 2. 执行 glslc --target-env=vulkan1.2 -o output.spv input.comp
-            // 3. 读取 output.spv 作为 spirvBinary
-            //
-            // 当前阶段: 标记为待编译，SPIR-V 将在 initialize() 时由后端填充
-            LOGGER.info("已加载 .comp 源码: " + compSourcePath
-                    + " (" + (source.length() / 1024) + " KB)");
+
+            // 使用 GlslangCompiler 编译 GLSL → SPIR-V
+            GlslangCompiler compiler = GlslangCompiler.getInstance();
+            byte[] compiled;
+            try {
+                compiled = compiler.compile(source,
+                    GlslangCompiler.Stage.COMPUTE, GlslangCompiler.SourceLanguage.GLSL);
+            } catch (Exception ce) {
+                LOGGER.warning("GLSL 编译异常: " + ce.getMessage());
+                return false;
+            }
+            if (compiled != null && compiled.length > 0) {
+                this.spirvBinary = compiled;
+                this.initialized = true;
+                LOGGER.info("GLSL 编译成功: " + compSourcePath + " (" + (compiled.length / 1024) + " KB SPIR-V)");
+            } else {
+                LOGGER.warning("GLSL 编译失败: " + compSourcePath);
+                return false;
+            }
 
             return true;
 
@@ -345,56 +373,194 @@ public class CompShaderNode extends AbstractPipelineNode {
 
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        if (!initialized || meta.getPushConstantLayout() == null) {
+        if (meta.getPushConstantLayout() == null) {
             return inputResources.length > 0 ? inputResources[0] : 0L;
         }
 
-        // 从 RenderContext 动态获取并缓存分辨率（修复 P1-01 硬编码问题）
+        // 从 RenderContext 动态获取并缓存分辨率
         int newWidth = context.getWidth();
         int newHeight = context.getHeight();
         if (newWidth > 0 && newHeight > 0 && (newWidth != cachedWidth || newHeight != cachedHeight)) {
             this.cachedWidth = newWidth;
             this.cachedHeight = newHeight;
-            LOGGER.fine("[CompShader] 分辨率更新: %dx%d".formatted(cachedWidth, cachedHeight));
         }
 
-        // 1. 获取当前配置快照
-        ShaderGraphicsConfig config = ShaderGraphicsConfig.getInstance();
-
-        // 2. 将配置写入 push_constant 缓冲区
-        writePushConstants(config);
-
-        // 3. 检查热重载
+        // 检查热重载
         checkHotReload();
 
-        // 4. 执行 dispatch（通过 VulkanGPUResourceManager + CommandBatcher）
-        try {
-            // 检查 GPU 资源管理器可用性
-            VulkanGPUResourceManager mgr = VulkanGPUResourceManager.getInstance();
-            if (mgr.isInitialized()) {
-                // 通过 CommandBatcher 提交 Compute Dispatch 命令
-                int wgX = meta.getWorkgroupX();
-                int wgY = meta.getWorkgroupY();
-                int wgZ = meta.getWorkgroupZ();
-
-                CommandBatcher batcher = MCRenderBridge.getCommandBatcher();
-                if (batcher != null) {
-                    batcher.enqueueComputeDispatch(
-                            0L,  // pipeline handle（由 Shader 系统在 initialize() 阶段创建并缓存）
-                            wgX, wgY, wgZ
-                    );
-                }
-
-                LOGGER.fine("Dispatch: %s, wg=(%d,%d,%d)".formatted(getName(), wgX, wgY, wgZ));
-            } else {
-                LOGGER.fine("Dispatch: %s, wg=(%d,%d,%d)".formatted(getName(), meta.getWorkgroupX(), meta.getWorkgroupY(), meta.getWorkgroupZ()));
-            }
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "[CompShader] dispatch %s 异常".formatted(getName()), e);
+        // 懒加载 Compute Pipeline
+        ensurePipeline();
+        if (computePipeline == 0L) {
+            return inputResources.length > 0 ? inputResources[0] : 0L;
         }
 
-        // 返回输出资源 handle（通常是最后一个 binding 的 image）
-        return inputResources.length > 0 ? inputResources[inputResources.length - 1] : 0L;
+        // 确保独立输出图像已创建
+        ensureOutputImage(context);
+        if (outputImageView == 0L) {
+            return inputResources.length > 0 ? inputResources[inputResources.length - 1] : 0L;
+        }
+
+        // 将参数写入 push_constant 缓冲区
+        ShaderGraphicsConfig config = ShaderGraphicsConfig.getInstance();
+        writePushConstants(config);
+
+        // 真实 Vulkan Compute dispatch
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L) return inputResources.length > 0 ? inputResources[0] : 0L;
+
+        try {
+            long cmdBuf = com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.allocateCommandBuffer(device);
+            if (cmdBuf == 0L) return inputResources.length > 0 ? inputResources[0] : 0L;
+
+            com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.beginCommandBuffer(cmdBuf);
+
+            // 更新 DescriptorSet 绑定输入/输出纹理
+            if (descriptorSet != 0L) {
+                int bindCount = Math.min(inputResources.length, meta.getBindings().size());
+                for (int i = 0; i < bindCount; i++) {
+                    if (i < bindCount - 1) {
+                        ComputePipelineHelper.updateImageDescriptor(device, descriptorSet, i,
+                            inputResources[i], 0L, 0L);
+                    } else {
+                        ComputePipelineHelper.updateStorageImageDescriptor(device, descriptorSet, i,
+                            outputImageView, 0L);
+                    }
+                }
+            }
+
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
+            if (pipelineLayout != 0L && descriptorSet != 0L) {
+                MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
+                dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
+                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1,
+                    pipelineLayout, 0, 1, dsPtr.address(), 0, 0L);
+            }
+
+            // push_constant
+            int pcSize = meta.getPushConstantLayout().getSizeBytes();
+            if (pcSize > 0 && pushConstantBuffer.length >= pcSize) {
+                MemorySegment pcSeg = PerFrameArena.allocate(pcSize);
+                for (int i = 0; i < pcSize; i++) {
+                    pcSeg.set(ValueLayout.JAVA_BYTE, i, pushConstantBuffer[i]);
+                }
+                VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf,
+                    pipelineLayout, 0x00000020L, 0, pcSize, pcSeg.address());
+            }
+
+            // Dispatch
+            int wgX = meta.getWorkgroupX();
+            int wgY = meta.getWorkgroupY();
+            int wgZ = meta.getWorkgroupZ();
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf,
+                (cachedWidth + wgX - 1) / wgX,
+                (cachedHeight + wgY - 1) / wgY, wgZ);
+
+            com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.endCommandBuffer(cmdBuf);
+
+            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+            if (queue != 0L) {
+                VulkanSyncManager.submitAndWait(queue, cmdBuf);
+            }
+        } catch (Throwable t) {
+            LOGGER.fine("CompShader dispatch %s 失败: %s".formatted(getName(), t.getMessage()));
+        }
+
+        return outputImageView != 0L ? outputImageView : (inputResources.length > 0 ? inputResources[inputResources.length - 1] : 0L);
+    }
+
+    /**
+     * 懒加载 Compute Pipeline（从 .comp.meta 的 binding 描述 + SPIR-V 创建）
+     */
+    private void ensurePipeline() {
+        if (computePipeline != 0L) return;
+        if (spirvBinary == null || spirvBinary.length == 0) return;
+
+        try {
+            var bindings = meta.getBindings();
+            ComputePipelineHelper.Binding[] bs = new ComputePipelineHelper.Binding[bindings.size()];
+            for (int i = 0; i < bindings.size(); i++) {
+                var b = bindings.get(i);
+                int descType = switch (b.getResourceType()) {
+                    case "storage_image" -> 10;  // VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
+                    case "storage_buffer" -> 12; // VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                    default -> 11;                // VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+                };
+                bs[i] = new ComputePipelineHelper.Binding(b.getBindingIndex(), descType);
+            }
+
+            int pcSize = meta.getPushConstantLayout() != null
+                ? meta.getPushConstantLayout().getSizeBytes() : 0;
+            var pc = new ComputePipelineHelper.PushConstant(0, pcSize,
+                ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
+
+            var resources = ComputePipelineHelper.createComputePipeline(spirvBinary, bs, pc);
+            if (resources != null) {
+                computePipeline = resources.pipeline();
+                pipelineLayout = resources.pipelineLayout();
+                descriptorSet = resources.descriptorSet();
+            }
+        } catch (Exception e) {
+            LOGGER.warning("CompShader Pipeline 创建失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 确保输出图像资源已创建（DCL 双重检查锁定）
+     *
+     * 【方法参数】
+     * @param context RenderContext - 渲染上下文（用于获取当前分辨率）
+     *
+     * 【方法说明】
+     * 当 outputImage 尚未创建或分辨率变化时，重建独立的输出 Image + ImageView。
+     * 使用 DCL (Double-Checked Locking) 模式保证线程安全且避免不必要的锁开销。
+     * 格式: VK_FORMAT_R8G8B8A8_UNORM (87), 用途: STORAGE | SAMPLED (0x30)
+     */
+    private void ensureOutputImage(RenderContext context) {
+        int w = context.getWidth();
+        int h = context.getHeight();
+        if (w <= 0 || h <= 0) return;
+
+        if (outputImage != 0L && lastOutputWidth == w && lastOutputHeight == h) {
+            return;
+        }
+
+        synchronized (this) {
+            if (outputImage != 0L && lastOutputWidth == w && lastOutputHeight == h) {
+                return;
+            }
+
+            VulkanGPUResourceManager resMgr = VulkanGPUResourceManager.getInstance();
+            var imgRes = resMgr.createImage(w, h, 87, 0x30, VmaMemoryPools.PoolType.RENDER_TARGET);
+            if (imgRes == null || !imgRes.isValid()) {
+                LOGGER.warning("CompShader 输出 Image 创建失败: w=" + w + " h=" + h);
+                return;
+            }
+            long newImage = imgRes.handle;
+            long newView = resMgr.createView(newImage, 87, 1);
+            if (newView == 0L) {
+                LOGGER.warning("CompShader 输出 ImageView 创建失败");
+                resMgr.releaseResource(imgRes);
+                return;
+            }
+
+            long oldImage = outputImage;
+            long oldView = outputImageView;
+            outputImage = newImage;
+            outputImageView = newView;
+            lastOutputWidth = w;
+            lastOutputHeight = h;
+
+            if (oldView != 0L) {
+                resMgr.destroyView(oldView);
+            }
+            if (oldImage != 0L) {
+                resMgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
+                        oldImage, 0L, lastOutputWidth, lastOutputHeight, 87,
+                        VulkanGPUResourceManager.ResourceType.IMAGE));
+            }
+
+            LOGGER.fine("CompShader 输出图像重建: " + w + "x" + h);
+        }
     }
 
     // ==================== 访问器 ====================
@@ -433,4 +599,21 @@ public class CompShaderNode extends AbstractPipelineNode {
 
     @Override
     public int hashCode() { return meta.getId().hashCode(); }
+
+    @Override
+    protected void onDispose() {
+        VulkanGPUResourceManager resMgr = VulkanGPUResourceManager.getInstance();
+        if (outputImageView != 0L) {
+            resMgr.destroyView(outputImageView);
+            outputImageView = 0L;
+        }
+        if (outputImage != 0L) {
+            resMgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
+                    outputImage, 0L, lastOutputWidth, lastOutputHeight, 87,
+                    VulkanGPUResourceManager.ResourceType.IMAGE));
+            outputImage = 0L;
+        }
+        lastOutputWidth = 0;
+        lastOutputHeight = 0;
+    }
 }

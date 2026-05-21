@@ -46,10 +46,9 @@ public final class RenderiumPassInjector {
     }
 
     private int doInject(FrameGraphBuilder builder, GraphicsResourceAllocator allocator) {
-        int count = 2;
-
-        LOGGER.fine("RenderiumPassInjector: injecting " + count + " passes into FrameGraph");
-        return count;
+        if (builder == null) return 0;
+        LOGGER.fine("RenderiumPassInjector: post-processing delegated to PipelineExecutor (LifecycleManager driver)");
+        return 0;
     }
 
     /**

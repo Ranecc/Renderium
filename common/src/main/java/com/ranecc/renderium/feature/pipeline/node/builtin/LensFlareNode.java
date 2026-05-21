@@ -16,6 +16,7 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
+import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
@@ -23,6 +24,7 @@ import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 
@@ -149,6 +151,12 @@ public class LensFlareNode extends AbstractPipelineNode {
     private volatile long pipelineLayout = 0L;
     private volatile long descriptorSet = 0L;
 
+    /** 输出 Image / ImageView（compute shader 写入目标） */
+    private volatile long outputImage = 0L;
+    private volatile long outputImageView = 0L;
+    private volatile int lastOutputWidth = 0;
+    private volatile int lastOutputHeight = 0;
+
     // ==================== 构造函数 ====================
 
     /**
@@ -221,10 +229,12 @@ public class LensFlareNode extends AbstractPipelineNode {
         float curThreshold = this.threshold;
 
         long colorTexture = inputResources[0];
-        long outputTexture = colorTexture; // 就地写入
 
         ensurePipeline();
         if (computePipeline == 0L) return passThrough(inputResources);
+
+        ensureOutputImage(context);
+        if (outputImageView == 0L) return passThrough(inputResources);
 
         try {
             long dev = VulkanDeviceHolder.getInstance().getDevice();
@@ -232,7 +242,7 @@ public class LensFlareNode extends AbstractPipelineNode {
 
             // 更新 image descriptors
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 0, colorTexture, 0L, 0L);
-            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputTexture, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputImageView, 0L);
 
             // 构建 PushConstants: vec2 screenCenter, int ghostCount, float strength, float threshold (32 bytes)
             MemorySegment params = PerFrameArena.allocate(32L);
@@ -273,7 +283,7 @@ public class LensFlareNode extends AbstractPipelineNode {
                 curIntensity, curGhostCount, curStreakLength, curThreshold, elapsedMicros
         ));
 
-        return outputTexture;
+        return (outputImageView != 0L) ? outputImageView : passThrough(inputResources);
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -303,6 +313,30 @@ public class LensFlareNode extends AbstractPipelineNode {
      */
     @Override
     protected void onDispose() {
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) {
+            if (computePipeline != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipeline", device, computePipeline, 0L); } catch (Throwable ignored) {}
+                computePipeline = 0L;
+            }
+            if (pipelineLayout != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", device, pipelineLayout, 0L); } catch (Throwable ignored) {}
+                pipelineLayout = 0L;
+            }
+        }
+        VulkanGPUResourceManager mgr = VulkanGPUResourceManager.getInstance();
+
+        if (outputImageView != 0L) {
+            mgr.destroyView(outputImageView);
+            outputImageView = 0L;
+        }
+        if (outputImage != 0L) {
+            mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0, lastOutputWidth, lastOutputHeight, 0, null));
+            outputImage = 0L;
+        }
+        lastOutputWidth = 0;
+        lastOutputHeight = 0;
+
         LOGGER.fine("[LensFlare] 资源已释放");
     }
 
@@ -405,6 +439,56 @@ public class LensFlareNode extends AbstractPipelineNode {
                 }
             } catch (Exception e) {
                 LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 【方法参数】
+     * @param context RenderContext - 渲染上下文（用于获取输出尺寸）
+     *
+     * 【方法签名】
+     * void ensureOutputImage(RenderContext context)
+     */
+    private void ensureOutputImage(RenderContext context) {
+        int w = context.getWidth();
+        int h = context.getHeight();
+
+        if (outputImage != 0L && w == lastOutputWidth && h == lastOutputHeight) return;
+
+        synchronized (this) {
+            if (outputImage != 0L && w == lastOutputWidth && h == lastOutputHeight) return;
+
+            VulkanGPUResourceManager mgr = VulkanGPUResourceManager.getInstance();
+            long dev = VulkanDeviceHolder.getInstance().getDevice();
+
+            if (outputImageView != 0L) {
+                mgr.destroyView(outputImageView);
+                outputImageView = 0L;
+            }
+            if (outputImage != 0L) {
+                mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0, lastOutputWidth, lastOutputHeight, 0, null));
+                outputImage = 0L;
+            }
+
+            int format = 87;
+            int usageFlags = 0x20 | 0x10;
+
+            try {
+                VulkanGPUResourceManager.GpuResource imgRes = mgr.createImage(w, h, format, usageFlags,
+                        VmaMemoryPools.PoolType.RENDER_TARGET);
+                if (imgRes != null && imgRes.handle != 0L) {
+                    outputImage = imgRes.handle;
+                    outputImageView = mgr.createView(outputImage, format, 1);
+                    lastOutputWidth = w;
+                    lastOutputHeight = h;
+                    LOGGER.fine(String.format("[LensFlare] 输出 Image 创建成功 [%dx%d] image=0x%X view=0x%X",
+                            w, h, outputImage, outputImageView));
+                } else {
+                    LOGGER.warning("[LensFlare] createImage 返回无效资源");
+                }
+            } catch (Exception e) {
+                LOGGER.warning("[LensFlare] ensureOutputImage 异常: " + e.getMessage());
             }
         }
     }

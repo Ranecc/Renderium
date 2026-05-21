@@ -11,9 +11,11 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 // 资源绑定:
 //   binding 0: 颜色纹理 (sampler2D, COMBINED_IMAGE_SAMPLER)
 //   binding 1: 输出存储图像 (writeonly, STORAGE_IMAGE) — 存储曝光后的颜色
+//   binding 2: 曝光输出 SSBO (std430) — 将计算出的 finalExposure 写回 CPU
 // ============================================================================
 layout(binding = 0, rgba16f) uniform readonly image2D uColorTexture;
 layout(binding = 1, rgba16f) uniform image2D          uOutputImage;
+layout(binding = 2, std430)  buffer  ExposureOut     { float exposure_out; };
 
 // ============================================================================
 // PushConstants (32 bytes)
@@ -32,7 +34,8 @@ layout(push_constant) uniform PushConstants {
 // ============================================================================
 // Shared memory: 256-bin 直方图（每个工作组独立）
 // ============================================================================
-shared uint histogram[256];
+shared uint  histogram[256];
+shared float sharedExposure;  // 用于在工作组内广播计算出的曝光值
 
 // ============================================================================
 // 亮度计算
@@ -103,7 +106,7 @@ void main() {
             }
         }
 
-        float avgLogLum = totalPixels > 0.0 ? totalLogLum / totalPixels : -6.0; // 默认 -6 ≈ 低亮度
+        float avgLogLum = totalPixels > 0.0 ? totalLogLum / totalPixels : -6.0;
         float newExposure = exp2(-avgLogLum) * pc.targetLuminance;
 
         // 4. EMA 平滑
@@ -112,16 +115,15 @@ void main() {
             adaptedExposure = pc.prevExposure + (newExposure - pc.prevExposure) * pc.speed;
         }
 
-        // 5. 钳制
+        // 5. 钳制并写入 SSBO + shared memory
         float finalExposure = clamp(adaptedExposure, pc.minExposure, pc.maxExposure);
+        exposure_out        = finalExposure;
+        sharedExposure      = finalExposure;
     }
     barrier();
 
-    // 6. 应用曝光到当前像素
-    // 注意: 在真实实现中 exposure 需要通过 SSBO 或 push constant 回读。
-    // 这里使用 prevExposure 作为近似，或通过额外 buffer 传递。
-    // 简化版: 使用推入的 prevExposure 值
-    float exposure = clamp(pc.prevExposure, pc.minExposure, pc.maxExposure);
+    // 6. 应用曝光到当前像素（使用 SSBO 回读值，而非 pc.prevExposure）
+    float exposure = sharedExposure;
     vec4 exposedColor = vec4(color * exposure, 1.0);
 
     imageStore(uOutputImage, pixel, exposedColor);

@@ -143,6 +143,18 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
     /** Pipeline 是否已创建 */
     private volatile boolean pipelineCreated = false;
 
+    /** 输出 Image 句柄（Compute Shader 写入目标） */
+    private volatile long outputImage = 0L;
+
+    /** 输出 ImageView 句柄（绑定到 STORAGE_IMAGE descriptor） */
+    private volatile long outputImageView = 0L;
+
+    /** 上次创建输出 Image 时的宽度（用于检测尺寸变化） */
+    private volatile int lastOutputWidth = 0;
+
+    /** 上次创建输出 Image 时的高度（用于检测尺寸变化） */
+    private volatile int lastOutputHeight = 0;
+
     // ==================== 构造函数 ====================
 
     /**
@@ -224,12 +236,16 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
         ensurePipeline();
         if (computePipeline == 0L) return passThrough(inputResources);
 
+        // 确保输出 Image 已创建（独立于输入纹理的写入目标）
+        ensureOutputImage(context);
+        if (outputImageView == 0L) return passThrough(inputResources);
+
         // 实际 Vulkan Compute Shader 调度
         // 1. 更新 descriptor set 绑定输入/输出纹理
         long dev = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
         if (dev != 0L && descriptorSet != 0L) {
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 0, inputResources[0], 0L, 0L);
-            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, inputResources[0], 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputImage, outputImageView);
         }
         try {
             long cmdBuf = com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.allocateCommandBuffer(dev);
@@ -259,8 +275,8 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
                 curIntensity, curSamples, curMaxVel, computePipeline, elapsedMicros
         ));
 
-        // 当前返回输入纹理（待 Vulkan 命令缓冲区集成后替换）
-        return inputResources[0];
+        // 返回 Compute Shader 写入的输出纹理（outputImageView）
+        return outputImageView != 0L ? outputImageView : passThrough(inputResources);
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -288,6 +304,25 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
      */
     @Override
     protected void onDispose() {
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) {
+            if (computePipeline != 0L) {
+                try { com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkDestroyPipeline", device, computePipeline, 0L); } catch (Throwable ignored) {}
+                computePipeline = 0L;
+            }
+            if (pipelineLayout != 0L) {
+                try { com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", device, pipelineLayout, 0L); } catch (Throwable ignored) {}
+                pipelineLayout = 0L;
+            }
+        }
+        if (outputImage != 0L || outputImageView != 0L) {
+            LOGGER.fine(String.format("[MotionBlur] 释放输出资源 image=0x%X view=0x%X",
+                    outputImage, outputImageView));
+            outputImage = 0L;
+            outputImageView = 0L;
+            lastOutputWidth = 0;
+            lastOutputHeight = 0;
+        }
         LOGGER.fine("[MotionBlur] 资源已释放");
     }
 
@@ -401,6 +436,61 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
             } catch (Exception e) {
                 LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
             }
+        }
+    }
+
+    /**
+     * 确保输出 Image 已创建且尺寸匹配
+     * <p>
+     * 当 outputImage 尚未创建或渲染尺寸发生变化时，
+     * 通过 VulkanGPUResourceManager 创建新的 VK_FORMAT_R8G8B8A8_UNORM 存储 Image，
+     * 并生成对应的 ImageView 绑定到 STORAGE_IMAGE descriptor。
+     *
+     * 【方法参数】
+     * @param context RenderContext - 当前帧渲染上下文（提供 width/height）
+     *
+     * 【副作用】
+     * - 若尺寸变化，旧资源由 VMA 延迟销毁队列管理
+     * - 更新 outputImage / outputImageView / lastOutputWidth / lastOutputHeight 字段
+     */
+    private void ensureOutputImage(RenderContext context) {
+        int w = context.getWidth();
+        int h = context.getHeight();
+
+        if (outputImage != 0L && w == lastOutputWidth && h == lastOutputHeight) {
+            return;
+        }
+
+        synchronized (this) {
+            if (outputImage != 0L && w == lastOutputWidth && h == lastOutputHeight) {
+                return;
+            }
+
+            com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager mgr =
+                    com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.getInstance();
+
+            int format = 87; // VK_FORMAT_R8G8B8A8_UNORM
+            int usageFlags = 0x20 | 0x10; // VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+
+            com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource resource =
+                    mgr.createImage(w, h, format, usageFlags,
+                            com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET);
+
+            if (resource == null || !resource.isValid() || resource.handle == 0L) {
+                LOGGER.warning("[MotionBlur] 输出 Image 创建失败 [" + w + "x" + h + "]");
+                return;
+            }
+
+            long view = mgr.createView(resource.handle, format,
+                    org.lwjgl.vulkan.VK10.VK_IMAGE_ASPECT_COLOR_BIT);
+
+            this.outputImage = resource.handle;
+            this.outputImageView = view;
+            this.lastOutputWidth = w;
+            this.lastOutputHeight = h;
+
+            LOGGER.fine(String.format("[MotionBlur] 输出 Image 已创建 [%dx%d] image=0x%X view=0x%X",
+                    w, h, resource.handle, view));
         }
     }
 

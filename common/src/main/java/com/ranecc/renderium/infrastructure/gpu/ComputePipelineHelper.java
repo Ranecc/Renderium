@@ -18,6 +18,7 @@ public final class ComputePipelineHelper {
     public static final long VK_SHADER_STAGE_COMPUTE_BIT = 0x00000020L;
     public static final long VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER = 11L;
     public static final long VK_DESCRIPTOR_TYPE_STORAGE_IMAGE = 10L;
+    public static final long VK_DESCRIPTOR_TYPE_STORAGE_BUFFER = 12L;
     public static final long VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER = 6L;
     public static final long VK_IMAGE_LAYOUT_GENERAL = 0L;
 
@@ -222,6 +223,46 @@ public final class ComputePipelineHelper {
             vkUpdateDS.invokeExact(device, 1, writeDesc.address(), 0, 0L);
         } catch (Throwable t) {
             LOGGER.fine("updateStorageImageDescriptor 失败: " + t.getMessage());
+        }
+    }
+
+    /**
+     * 更新 Storage Buffer 描述符 (binding via VkDescriptorBufferInfo)
+     * <p>
+     * 用于将 SSBO (Storage Buffer) 绑定到 descriptorSet 的指定 binding 槽位。
+     *
+     * @param device        VkDevice
+     * @param descriptorSet 目标 DescriptorSet 句柄
+     * @param binding       binding 索引（须与 shader 中 layout(binding=N) 一致）
+     * @param buffer        VkBuffer 句柄
+     * @param offset        缓冲区偏移（字节）
+     * @param range         缓冲区范围（字节）
+     */
+    public static void updateStorageBufferDescriptor(long device, long descriptorSet,
+            int binding, long buffer, long offset, long range) {
+        try {
+            MethodHandle vkUpdateDS = VulkanAPIRegistry.getHandle("vkUpdateDescriptorSets");
+            if (vkUpdateDS == null) return;
+
+            MemorySegment bufferInfo = PerFrameArena.allocateLongs(3);
+            bufferInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, buffer);
+            bufferInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, offset);
+            bufferInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, range);
+
+            MemorySegment writeDesc = PerFrameArena.allocate(64L);
+            writeDesc.set(ValueLayout.JAVA_LONG, 0, 18L); // sType
+            writeDesc.set(ValueLayout.JAVA_LONG, 8, 0L);  // pNext
+            writeDesc.set(ValueLayout.JAVA_LONG, 16, descriptorSet);
+            writeDesc.set(ValueLayout.JAVA_INT, 24, binding);
+            writeDesc.set(ValueLayout.JAVA_INT, 28, 0);
+            writeDesc.set(ValueLayout.JAVA_INT, 32, 1);
+            writeDesc.set(ValueLayout.JAVA_INT, 36, (int) VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+            writeDesc.set(ValueLayout.JAVA_LONG, 40, 0L); // pImageInfo = null
+            writeDesc.set(ValueLayout.JAVA_LONG, 48, 0L); // pTexelBufferView = null
+            writeDesc.set(ValueLayout.JAVA_LONG, 56, bufferInfo.address()); // pBufferInfo
+            vkUpdateDS.invokeExact(device, 1, writeDesc.address(), 0, 0L);
+        } catch (Throwable t) {
+            LOGGER.fine("updateStorageBufferDescriptor 失败: " + t.getMessage());
         }
     }
 }

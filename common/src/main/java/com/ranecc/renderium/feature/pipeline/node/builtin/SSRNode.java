@@ -25,8 +25,10 @@ import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
+import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -167,6 +169,12 @@ public class SSRNode extends AbstractPipelineNode {
     private volatile long pipelineLayout = 0L;
     private volatile long descriptorSet = 0L;
 
+    /** 输出图像资源 (STORAGE_IMAGE binding=3) */
+    private volatile long outputImage = 0L;
+    private volatile long outputImageView = 0L;
+    private volatile int lastOutputWidth = 0;
+    private volatile int lastOutputHeight = 0;
+
     // ==================== 构造函数 ====================
 
     /**
@@ -249,10 +257,12 @@ public class SSRNode extends AbstractPipelineNode {
         long colorTexture = inputResources[0];
         long depthTexture = inputResources[1];
         long normalTexture = inputResources[2];
-        long outputTexture = colorTexture; // 就地写入
 
         ensurePipeline();
         if (computePipeline == 0L) return passThrough(inputResources);
+
+        ensureOutputImage(context);
+        if (outputImageView == 0L) return passThrough(inputResources);
 
         try {
             long dev = VulkanDeviceHolder.getInstance().getDevice();
@@ -262,7 +272,7 @@ public class SSRNode extends AbstractPipelineNode {
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 0, colorTexture, 0L, 0L);
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 1, depthTexture, 0L, 0L);
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 2, normalTexture, 0L, 0L);
-            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 3, outputTexture, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 3, outputImageView, 0L);
 
             // 构建 PushConstants: vec4 projParams, int maxSteps, float thickness, float bias, int frameIdx (32 bytes)
             MemorySegment params = PerFrameArena.allocate(32L);
@@ -312,7 +322,7 @@ public class SSRNode extends AbstractPipelineNode {
                 curQuality, curMaxSteps, curThickness, curBruteForceBias, curHalfResolution, elapsedMicros
         ));
 
-        return outputTexture;
+        return outputImageView != 0L ? outputImageView : passThrough(inputResources);
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -342,7 +352,28 @@ public class SSRNode extends AbstractPipelineNode {
      */
     @Override
     protected void onDispose() {
+        long dev = VulkanDeviceHolder.getInstance().getDevice();
+        if (dev != 0L) {
+            if (computePipeline != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipeline", dev, computePipeline, 0L); } catch (Throwable ignored) {}
+                computePipeline = 0L;
+            }
+            if (pipelineLayout != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", dev, pipelineLayout, 0L); } catch (Throwable ignored) {}
+                pipelineLayout = 0L;
+            }
+            if (outputImageView != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyImageView", dev, outputImageView, 0L); } catch (Throwable ignored) {}
+                outputImageView = 0L;
+            }
+            if (outputImage != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyImage", dev, outputImage, 0L); } catch (Throwable ignored) {}
+                outputImage = 0L;
+            }
+        }
         this.frameIndex = 0;
+        this.lastOutputWidth = 0;
+        this.lastOutputHeight = 0;
         LOGGER.fine("[SSR] 资源已释放");
     }
 
@@ -463,6 +494,66 @@ public class SSRNode extends AbstractPipelineNode {
                 }
             } catch (Exception e) {
                 LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 确保输出 Image 已创建且尺寸匹配
+     * <p>
+     * DCL 双重检查锁定。当 outputImage 未创建或渲染尺寸变化时，
+     * 通过 VulkanGPUResourceManager 创建新的 STORAGE_IMAGE + ImageView。
+     *
+     * 【方法参数】
+     * @param context RenderContext - 渲染上下文（获取宽度/高度）
+     */
+    private void ensureOutputImage(RenderContext context) {
+        int w = context.getWidth();
+        int h = context.getHeight();
+
+        if (outputImage != 0L && lastOutputWidth == w && lastOutputHeight == h) return;
+
+        synchronized (this) {
+            if (outputImage != 0L && lastOutputWidth == w && lastOutputHeight == h) return;
+
+            long dev = VulkanDeviceHolder.getInstance().getDevice();
+            if (dev == 0L) return;
+
+            try {
+                int format = 87;
+                int usageFlags = 0x20 | 0x10;
+
+                var mgr = VulkanGPUResourceManager.getInstance();
+                var resource = mgr.createImage(w, h, format, usageFlags,
+                        VmaMemoryPools.PoolType.RENDER_TARGET);
+
+                if (resource != null && resource.isValid()) {
+                    long newImage = resource.handle;
+                    long newView = mgr.createView(newImage, format, 0x10);
+
+                    if (newView != 0L) {
+                        if (outputImageView != 0L) {
+                            try { VulkanAPIRegistry.invoke("vkDestroyImageView", dev, outputImageView, 0L); } catch (Throwable ignored) {}
+                        }
+                        if (outputImage != 0L) {
+                            try { VulkanAPIRegistry.invoke("vkDestroyImage", dev, outputImage, 0L); } catch (Throwable ignored) {}
+                        }
+
+                        outputImage = newImage;
+                        outputImageView = newView;
+                        lastOutputWidth = w;
+                        lastOutputHeight = h;
+
+                        LOGGER.fine(String.format("[SSR] 输出图像已创建 [%dx%d] image=0x%X view=0x%X",
+                                w, h, outputImage, outputImageView));
+                    } else {
+                        LOGGER.warning("[SSR] createView 失败，回退到 passThrough");
+                    }
+                } else {
+                    LOGGER.warning("[SSR] createImage 失败，回退到 passThrough");
+                }
+            } catch (Exception e) {
+                LOGGER.warning("ensureOutputImage 异常: " + e.getMessage());
             }
         }
     }

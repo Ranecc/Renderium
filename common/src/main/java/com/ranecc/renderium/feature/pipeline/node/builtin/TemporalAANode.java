@@ -133,6 +133,18 @@ public class TemporalAANode extends AbstractPipelineNode {
     /** Pipeline 是否已创建 */
     private volatile boolean pipelineCreated = false;
 
+    /** TAA 输出 Image 句柄（独立 STORAGE_IMAGE，compute shader 写入目标） */
+    private volatile long outputImage = 0L;
+
+    /** TAA 输出 ImageView 句柄（绑定到 descriptor set binding 3） */
+    private volatile long outputImageView = 0L;
+
+    /** 上次输出 Image 的宽度（用于检测尺寸变化并重建） */
+    private volatile int lastOutputWidth = 0;
+
+    /** 上次输出 Image 的高度（用于检测尺寸变化并重建） */
+    private volatile int lastOutputHeight = 0;
+
     // ==================== 构造函数 ====================
 
     /**
@@ -214,17 +226,14 @@ public class TemporalAANode extends AbstractPipelineNode {
         ensurePipeline();
         if (computePipeline == 0L) return passThrough(inputResources);
 
-        // 构建输出纹理：dispatch 结果写入 outputTexture
-        long outputTexture = inputResources[0];
+        ensureOutputImage(context);
 
-        // 实际 Vulkan Compute Shader 调度
-        // 1. 更新 descriptor set 绑定输入/输出纹理
         long dev = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
         if (dev != 0L && descriptorSet != 0L) {
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 0, inputResources[0], 0L, 0L);
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 1, historyColorBuffer, 0L, 0L);
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 2, inputResources.length > 1 ? inputResources[1] : 0L, 0L, 0L);
-            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 3, outputTexture, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 3, outputImageView, 0L);
         }
         try {
             long cmdBuf = com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.allocateCommandBuffer(dev);
@@ -248,17 +257,16 @@ public class TemporalAANode extends AbstractPipelineNode {
             LOGGER.fine("[TAA] dispatch 失败: " + t.getMessage());
         }
 
-        // 更新历史帧缓冲（ping-pong）：当前帧输出 = 下一帧的历史输入
         long previousHistory = this.historyColorBuffer;
-        this.historyColorBuffer = outputTexture;
+        this.historyColorBuffer = outputImageView;
 
         long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
-                "[TAA] 完成 | blend=%.2f sharpness=%.2f clamp=%b velReject=%b | history=0x%X | %.1fμs",
-                curBlendWeight, curSharpness, curClamp, curVelReject, previousHistory, elapsedMicros
+                "[TAA] 完成 | blend=%.2f sharpness=%.2f clamp=%b velReject=%b | outputView=0x%X prevHistory=0x%X | %.1fμs",
+                curBlendWeight, curSharpness, curClamp, curVelReject, outputImageView, previousHistory, elapsedMicros
         ));
 
-        return outputTexture;
+        return outputImageView != 0L ? outputImageView : passThrough(inputResources);
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -288,7 +296,32 @@ public class TemporalAANode extends AbstractPipelineNode {
      */
     @Override
     protected void onDispose() {
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) {
+            if (computePipeline != 0L) {
+                try { com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkDestroyPipeline", device, computePipeline, 0L); } catch (Throwable ignored) {}
+                computePipeline = 0L;
+            }
+            if (pipelineLayout != 0L) {
+                try { com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", device, pipelineLayout, 0L); } catch (Throwable ignored) {}
+                pipelineLayout = 0L;
+            }
+        }
+        long dev = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (outputImageView != 0L && dev != 0L) {
+            com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.destroyImageView(dev, outputImageView);
+            outputImageView = 0L;
+        }
+        if (outputImage != 0L) {
+            var mgr = com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.getInstance();
+            mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(
+                    outputImage, 0L, lastOutputWidth, lastOutputHeight, 87,
+                    com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.ResourceType.IMAGE));
+            outputImage = 0L;
+        }
         this.historyColorBuffer = 0L;
+        this.lastOutputWidth = 0;
+        this.lastOutputHeight = 0;
         LOGGER.fine("[TAA] 资源已释放");
     }
 
@@ -407,6 +440,53 @@ public class TemporalAANode extends AbstractPipelineNode {
                 LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
             }
         }
+    }
+
+    private void ensureOutputImage(RenderContext context) {
+        int w = context.getWidth();
+        int h = context.getHeight();
+        if (w <= 0 || h <= 0) return;
+
+        if (outputImage != 0L && w == lastOutputWidth && h == lastOutputHeight) return;
+
+        var mgr = com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.getInstance();
+        int format = 87;
+        int usage = 0x20 | 0x10;
+        var res = mgr.createImage(w, h, format, usage,
+                com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET);
+        if (!res.isValid()) {
+            LOGGER.warning("[TAA] ensureOutputImage: createImage 失败 [" + w + "x" + h + "]");
+            return;
+        }
+
+        long newView = mgr.createView(res.handle, format, 1);
+        if (newView == 0L) {
+            LOGGER.warning("[TAA] ensureOutputImage: createView 失败");
+            mgr.releaseResource(res);
+            return;
+        }
+
+        long oldImage = this.outputImage;
+        long oldView = this.outputImageView;
+        this.outputImage = res.handle;
+        this.outputImageView = newView;
+        this.lastOutputWidth = w;
+        this.lastOutputHeight = h;
+
+        if (oldView != 0L) {
+            long dev = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+            if (dev != 0L) {
+                com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper.destroyImageView(dev, oldView);
+            }
+        }
+        if (oldImage != 0L) {
+            mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(
+                    oldImage, 0L, lastOutputWidth, lastOutputHeight, format,
+                    com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.ResourceType.IMAGE));
+        }
+
+        LOGGER.fine("[TAA] outputImage 重建: 0x" + Long.toHexString(outputImage)
+                + " view=0x" + Long.toHexString(outputImageView) + " [" + w + "x" + h + "]");
     }
 
     /**

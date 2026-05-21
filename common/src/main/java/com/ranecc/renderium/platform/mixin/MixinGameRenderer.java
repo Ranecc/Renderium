@@ -41,7 +41,7 @@ public abstract class MixinGameRenderer {
         PerFrameArena.beginFrame();
         FrameContext ctx = FrameContext.get();
         ctx.beginFrame(deltaTracker.getGameTimeDeltaPartialTick(true));
-        HookDispatcher.syncCache();
+        HookDispatcher.onFrameStart(ctx);
         LifecycleManager lifecycle = HookDispatcher.getLifecycleManager();
         if (lifecycle != null) lifecycle.beginFrame();
     }
@@ -56,6 +56,7 @@ public abstract class MixinGameRenderer {
     @Inject(method = "render", at = @At("RETURN"), require = 0)
     private void onFrameEnd(CallbackInfo ci) {
         FrameContext ctx = FrameContext.get();
+        HookDispatcher.onFrameEnd(ctx);
         if (ctx != null) ctx.endFrame();
         LifecycleManager lifecycle = HookDispatcher.getLifecycleManager();
         if (lifecycle != null) lifecycle.endFrame();

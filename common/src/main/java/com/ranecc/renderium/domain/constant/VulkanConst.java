@@ -78,6 +78,16 @@ public final class VulkanConst {
     /** 内存属性: 主机缓存 (VK_MEMORY_PROPERTY_HOST_CACHED_BIT) */
     public static final int MEMORY_PROPERTY_HOST_CACHED_BIT = 0x00000008;
 
+    // ==================== Image Aspect 标志 ====================
+    /** 颜色 Image Aspect (VK_IMAGE_ASPECT_COLOR_BIT) */
+    public static final int IMAGE_ASPECT_COLOR_BIT = 0x00000001;
+    /** 深度 Image Aspect (VK_IMAGE_ASPECT_DEPTH_BIT) */
+    public static final int IMAGE_ASPECT_DEPTH_BIT = 0x00000002;
+    /** 模板 Image Aspect (VK_IMAGE_ASPECT_STENCIL_BIT) */
+    public static final int IMAGE_ASPECT_STENCIL_BIT = 0x00000004;
+    /** 元数据 Image Aspect (VK_IMAGE_ASPECT_METADATA_BIT) */
+    public static final int IMAGE_ASPECT_METADATA_BIT = 0x00000008;
+
     // ==================== Image 使用标志 ====================
     /** Image 可用于颜色附件 (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) */
     public static final int IMAGE_USAGE_COLOR_ATTACHMENT_BIT = 0x00000010;

@@ -194,32 +194,21 @@ public final class PipelineNodeRegistry {
         LOGGER.info("开始注册内置渲染节点...");
 
         // ===== 预计算阶段 (PRE_RENDER) =====
-        // 使用反射创建 builtin 包中的节点实例
         registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.ShadowMapNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.ShadowFilterNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.CascadeSplitNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.HiZBuildNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.OcclusionCullNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.LodCullingNode");
 
         // ===== G-Buffer 阶段 (GBUFFER) =====
         registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.GBufferGeometryNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.MaterialNode");
-
-        // ===== 光照阶段 (LIGHTING) =====
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.DirectLightNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.IndirectLightNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.SSAONode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.VolumetricLightNode");
 
         // ===== 后处理阶段 (POST_PROCESS) =====
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.BloomNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.TonemapNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.ColorCorrectionNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.MotionBlurNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.DepthOfFieldNode");
         registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.FilmGrainNode");
-        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.FXAANode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.DepthOfFieldEnhancedNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.MotionBlurEnhancedNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.SSRNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.LensFlareNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.ChromaticAberrationNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.AutoExposureNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.VolumetricFogNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.TemporalAANode");
 
         builtinNodesRegistered = true;
         LOGGER.info(String.format("✓ 内置节点注册完成 (共 %d 个)", nodes.size()));

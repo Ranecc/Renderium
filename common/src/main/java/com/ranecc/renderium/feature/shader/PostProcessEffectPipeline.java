@@ -5,7 +5,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 
 /**
- * 后处理效果管线。
+ * 后处理效果管线（遗留代码）。
+ *
+ * <p><b>⚠️ 遗留代码</b>：此类中的效果方法已被 {@link PipelineNodeRegistry} 体系下的真实 Vulkan 节点替代，
+ * 当前仅保留日志桩用于兼容性追踪。
  *
  * <p>负责 Bloom 泛光、色调映射、色彩校正、SSAO 环境光遮蔽、
  * 暗角、锐化等后处理效果的调度与执行。
@@ -244,10 +247,10 @@ public final class PostProcessEffectPipeline {
     private void executeCustomPass(String passName, long shaderModule,
                                     long colorTex, long depthTex,
                                     int width, int height) {
-        LOGGER.fine(String.format("[Pass 执行] 开始: %s (shader=0x%s, size=%dx%d)",
+        LOGGER.fine(String.format("[LEGACY] [Pass 执行] 开始 (已迁移至 PipelineNode 体系): %s (shader=0x%s, size=%dx%d)",
                 passName, Long.toHexString(shaderModule), width, height));
 
-        LOGGER.fine(String.format("[Pass 执行] 完成: %s", passName));
+        LOGGER.fine(String.format("[LEGACY] [Pass 执行] 完成 (已迁移至 PipelineNode 体系): %s", passName));
     }
 
     /**
@@ -288,7 +291,7 @@ public final class PostProcessEffectPipeline {
      */
     private void applyBloom(long colorTexture, int width, int height,
                             float strength, float radius) {
-        LOGGER.fine(String.format("应用 Bloom: strength=%.2f, radius=%.1f, size=%dx%d",
+        LOGGER.fine(String.format("[LEGACY] 应用 Bloom (已迁移至 PipelineNode 体系): strength=%.2f, radius=%.1f, size=%dx%d",
                 strength, radius, width, height));
     }
 
@@ -302,7 +305,7 @@ public final class PostProcessEffectPipeline {
      * @param contrast 对比度（通常 0.8 - 1.5）
      */
     private void applyToneMapping(long colorTexture, float exposure, float contrast) {
-        LOGGER.fine(String.format("应用色调映射: exposure=%.2f, contrast=%.2f [ACES Filmic]",
+        LOGGER.fine(String.format("[LEGACY] 应用色调映射 (已迁移至 PipelineNode 体系): exposure=%.2f, contrast=%.2f [ACES Filmic]",
                 exposure, contrast));
     }
 
@@ -313,7 +316,7 @@ public final class PostProcessEffectPipeline {
      * @param saturation 饱和度（0.0 = 灰度, 1.0 = 原色, >1.0 = 过饱和）
      */
     private void applyColorCorrection(long colorTexture, float saturation) {
-        LOGGER.fine(String.format("应用色彩校正: saturation=%.2f", saturation));
+        LOGGER.fine(String.format("[LEGACY] 应用色彩校正 (已迁移至 PipelineNode 体系): saturation=%.2f", saturation));
     }
 
     /**
@@ -326,7 +329,7 @@ public final class PostProcessEffectPipeline {
      * @param strength AO 强度（0.0 - 2.0+）
      */
     private void applyAmbientOcclusion(long depthTexture, long colorTexture, float strength) {
-        LOGGER.fine(String.format("应用 SSAO: strength=%.2f [64-sample Kernel]", strength));
+        LOGGER.fine(String.format("[LEGACY] 应用 SSAO (已迁移至 PipelineNode 体系): strength=%.2f [64-sample Kernel]", strength));
     }
 
     /**
@@ -340,7 +343,7 @@ public final class PostProcessEffectPipeline {
      * @param strength 暗角强度（0.0 - 1.0）
      */
     private void applyVignette(long colorTexture, int width, int height, float strength) {
-        LOGGER.fine(String.format("应用暗角: strength=%.2f, size=%dx%d [Natural Cos⁴ Model]",
+        LOGGER.fine(String.format("[LEGACY] 应用暗角 (已迁移至 PipelineNode 体系): strength=%.2f, size=%dx%d [Natural Cos⁴ Model]",
                 strength, width, height));
     }
 
@@ -355,7 +358,7 @@ public final class PostProcessEffectPipeline {
      * @param strength 锐化强度（0.0 - 2.0+）
      */
     private void applySharpening(long colorTexture, int width, int height, float strength) {
-        LOGGER.fine(String.format("应用锐化: strength=%.2f, size=%dx%d [Unsharp Mask, r=1.0px]",
+        LOGGER.fine(String.format("[LEGACY] 应用锐化 (已迁移至 PipelineNode 体系): strength=%.2f, size=%dx%d [Unsharp Mask, r=1.0px]",
                 strength, width, height));
     }
 

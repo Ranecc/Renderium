@@ -5,6 +5,10 @@ import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 import com.ranecc.renderium.platform.lifecycle.LifecycleManager;
+import com.ranecc.renderium.infrastructure.sanitizer.LazyGuard;
+import com.ranecc.renderium.infrastructure.sanitizer.DirtyFrameScope;
+import com.ranecc.renderium.infrastructure.sanitizer.EntityBudget;
+import com.ranecc.renderium.infrastructure.sanitizer.AutoCleanScheduler;
 
 /**
  * 热路径调度核心 — 高性能 Hook 分发器
@@ -368,8 +372,16 @@ public final class HookDispatcher {
             description = "每帧入口处的缓存同步和初始化"
     )
     public static void onFrameStart(FrameContext ctx) {
-        // 同步热路径缓存（检测配置变更）
         syncCache();
+
+        long frameTimeNs = ctx.deltaTime > 0 ? (long)(ctx.deltaTime * 1_000_000_000L) : 16_666_667L;
+        boolean dirty = LazyGuard.onFrameBegin(frameTimeNs, ctx.entityCount,
+                ctx.tileEntityCount, ctx.visibleSectionCount, ctx.totalSectionCount);
+        if (dirty) {
+            DirtyFrameScope scope = DirtyFrameScope.enter();
+            ctx.setDirtyFrameScope(scope);
+            EntityBudget.check(ctx.entityCount);
+        }
     }
 
     /**
@@ -385,8 +397,13 @@ public final class HookDispatcher {
             description = "每帧出口处的清理和统计"
     )
     public static void onFrameEnd(FrameContext ctx) {
-        // 当前实现：预留扩展点
-        // 未来可在此处添加帧级统计汇总、性能预算检查等
+        Object scope = ctx.getDirtyFrameScope();
+        if (scope instanceof DirtyFrameScope) {
+            ((DirtyFrameScope) scope).close();
+            ctx.setDirtyFrameScope(null);
+        }
+        LazyGuard.onFrameEnd(scope == null);
+        AutoCleanScheduler.onFrameEnd();
     }
 
     /**

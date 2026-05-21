@@ -3,6 +3,10 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
+// ⚠ 存根模式 (STUB) — 此节点的 execute() 不执行真实 GPU 操作
+//    框架代码和数学实现完整，但 GPU 管线创建和 dispatch 未实装。
+//    计划在未来迭代中替换为真实 Compute Shader dispatch。
+
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;

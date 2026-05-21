@@ -13,6 +13,7 @@ import com.ranecc.renderium.platform.bridge.mc.FogContext;
 import com.ranecc.renderium.platform.bridge.mc.CameraContext;
 import com.ranecc.renderium.platform.bridge.mc.MatrixContext;
 import com.ranecc.renderium.platform.bridge.mc.ChunkContext;
+import com.ranecc.renderium.feature.pipeline.core.PipelineExecutor;
 
 /**
  * 渲染生命周期管理器
@@ -168,6 +169,16 @@ public final class RenderiumLifecycleManager {
     }
 
     private RenderiumLifecycleManager() {}
+
+    public void beginFrame() {
+        PipelineExecutor executor = PipelineExecutor.getInstance();
+        if (executor != null) {
+            executor.initialize();
+        }
+    }
+
+    public void endFrame() {
+    }
 
     // ==================== 监听器注册 API（冷路径） ====================
 

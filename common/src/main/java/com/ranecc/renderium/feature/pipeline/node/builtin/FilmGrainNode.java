@@ -249,6 +249,17 @@ public class FilmGrainNode extends AbstractPipelineNode {
      */
     @Override
     protected void onDispose() {
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) {
+            if (computePipeline != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipeline", device, computePipeline, 0L); } catch (Throwable ignored) {}
+                computePipeline = 0L;
+            }
+            if (pipelineLayout != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", device, pipelineLayout, 0L); } catch (Throwable ignored) {}
+                pipelineLayout = 0L;
+            }
+        }
         this.seed = 0.0f;
         LOGGER.fine("[FilmGrain] 资源已释放");
     }

@@ -168,6 +168,11 @@ public class VolumetricFogNode extends AbstractPipelineNode {
     /** Pipeline 是否已创建 */
     private volatile boolean pipelineCreated = false;
 
+    private volatile long outputImage = 0L;
+    private volatile long outputImageView = 0L;
+    private volatile int lastOutputWidth = 0;
+    private volatile int lastOutputHeight = 0;
+
     // ==================== 构造函数 ====================
 
     /**
@@ -224,9 +229,9 @@ public class VolumetricFogNode extends AbstractPipelineNode {
         // 短路：禁用时直接传递输入
         if (!enabled) return passThrough(inputResources);
 
-        // 输入校验
-        if (inputResources == null || inputResources.length < 1) {
-            LOGGER.warning("[VolFog] 输入资源不足: 需要颜色纹理 1 张, "
+        // 输入校验（需要颜色纹理 + 深度纹理至少 2 张）
+        if (inputResources == null || inputResources.length < 2) {
+            LOGGER.warning("[VolFog] 输入资源不足: 需要颜色+深度纹理 2 张, "
                     + "实际收到 " + (inputResources == null ? 0 : inputResources.length) + " 张");
             return 0L;
         }
@@ -251,12 +256,12 @@ public class VolumetricFogNode extends AbstractPipelineNode {
         ensurePipeline();
         if (computePipeline == 0L) return passThrough(inputResources);
 
-        // 实际 Vulkan Compute Shader 调度
-        // 1. 更新 descriptor set 绑定输入/输出纹理
+        ensureOutputImage(context);
+
         long dev = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
         if (dev != 0L && descriptorSet != 0L) {
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 0, inputResources.length > 1 ? inputResources[1] : 0L, 0L, 0L);
-            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, inputResources[0], 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputImageView != 0L ? outputImageView : inputResources[0], 0L);
         }
         try {
             long cmdBuf = com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.allocateCommandBuffer(dev);
@@ -286,8 +291,7 @@ public class VolumetricFogNode extends AbstractPipelineNode {
                 curDensity, curFalloff, curSteps, curAniso, computePipeline, elapsedMicros
         ));
 
-        // 当前返回输入纹理（待 Vulkan 命令缓冲区集成后替换）
-        return inputResources[0];
+        return outputImageView != 0L ? outputImageView : passThrough(inputResources);
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -316,6 +320,37 @@ public class VolumetricFogNode extends AbstractPipelineNode {
      */
     @Override
     protected void onDispose() {
+        long device = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) {
+            if (computePipeline != 0L) {
+                try { com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkDestroyPipeline", device, computePipeline, 0L); } catch (Throwable ignored) {}
+                computePipeline = 0L;
+            }
+            if (pipelineLayout != 0L) {
+                try { com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", device, pipelineLayout, 0L); } catch (Throwable ignored) {}
+                pipelineLayout = 0L;
+            }
+        }
+        if (outputImageView != 0L) {
+            try {
+                com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke(
+                        "vkDestroyImageView",
+                        com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice(),
+                        outputImageView, 0L);
+            } catch (Throwable ignored) {}
+            outputImageView = 0L;
+        }
+        if (outputImage != 0L) {
+            try {
+                com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke(
+                        "vkDestroyImage",
+                        com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice(),
+                        outputImage, 0L);
+            } catch (Throwable ignored) {}
+            outputImage = 0L;
+        }
+        lastOutputWidth = 0;
+        lastOutputHeight = 0;
         LOGGER.fine("[VolFog] 资源已释放");
     }
 
@@ -450,6 +485,40 @@ public class VolumetricFogNode extends AbstractPipelineNode {
                 }
             } catch (Exception e) {
                 LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
+            }
+        }
+    }
+
+    private void ensureOutputImage(RenderContext context) {
+        int w = context.getWidth();
+        int h = context.getHeight();
+        if (outputImage != 0L && w == lastOutputWidth && h == lastOutputHeight) {
+            return;
+        }
+        synchronized (this) {
+            if (outputImage != 0L && w == lastOutputWidth && h == lastOutputHeight) {
+                return;
+            }
+            var mgr = com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.getInstance();
+            int format = 87;
+            int usage = 0x20 | 0x10;
+            var res = mgr.createImage(w, h, format, usage,
+                    com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET);
+            if (res != null && res.handle != 0L) {
+                long newImage = res.handle;
+                long newView = mgr.createView(newImage, format,
+                        com.ranecc.renderium.domain.constant.VulkanConst.IMAGE_ASPECT_COLOR_BIT);
+                if (newView != 0L) {
+                    outputImage = newImage;
+                    outputImageView = newView;
+                    lastOutputWidth = w;
+                    lastOutputHeight = h;
+                    LOGGER.fine(String.format("[VolFog] 输出 Image 创建成功: %dx%d image=0x%X view=0x%X", w, h, newImage, newView));
+                } else {
+                    LOGGER.warning("[VolFog] createView 失败");
+                }
+            } else {
+                LOGGER.warning("[VolFog] createImage 失败");
             }
         }
     }

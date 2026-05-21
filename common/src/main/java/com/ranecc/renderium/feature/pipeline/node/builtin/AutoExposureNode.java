@@ -20,13 +20,18 @@ package com.ranecc.renderium.feature.pipeline.node.builtin;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
 import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
+import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
@@ -172,6 +177,23 @@ public class AutoExposureNode extends AbstractPipelineNode {
     private volatile long pipelineLayout = 0L;
     private volatile long descriptorSet = 0L;
 
+    /** 输出 Image / ImageView（独立于输入，供 STORAGE_IMAGE binding=1 写入） */
+    private volatile long outputImage = 0L;
+    private volatile long outputImageView = 0L;
+    private volatile int lastOutputWidth = 0;
+    private volatile int lastOutputHeight = 0;
+
+    // ==================== SSBO 资源（GPU→CPU exposure 回读）====================
+
+    /** Storage Buffer 句柄（4 字节，存 exposure_out） */
+    private volatile long exposureBuffer = 0L;
+
+    /** Storage Buffer 对应的设备内存 */
+    private volatile long exposureBufferMemory = 0L;
+
+    /** 持久映射的 MemorySegment（指向 exposureBufferMemory，HOST_COHERENT 无需 flush） */
+    private volatile MemorySegment exposureMapped = null;
+
     // ==================== 构造函数 ====================
 
     /**
@@ -248,18 +270,19 @@ public class AutoExposureNode extends AbstractPipelineNode {
         int curFrameCount = this.frameCount;
 
         long colorTexture = inputResources[0];
-        long outputTexture = colorTexture; // 就地写入
 
         ensurePipeline();
         if (computePipeline == 0L) return passThrough(inputResources);
+
+        ensureOutputImage(context);
+        if (outputImageView == 0L) return passThrough(inputResources);
 
         try {
             long dev = VulkanDeviceHolder.getInstance().getDevice();
             if (dev == 0L || descriptorSet == 0L) return passThrough(inputResources);
 
-            // 更新 image descriptors
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 0, colorTexture, 0L, 0L);
-            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputTexture, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputImageView, 0L);
 
             // 构建 PushConstants: float speed, int frameCount, float targetLum, float prevExposure,
             //                      int meteringMode, float minExposure, float maxExposure (32 bytes)
@@ -297,20 +320,22 @@ public class AutoExposureNode extends AbstractPipelineNode {
             LOGGER.fine("[AutoExposure] dispatch 失败: " + t.getMessage());
         }
 
-        // 更新上一帧曝光值（此处简化：实际应由 GPU 回读 exposure 值）
-        // 在真实实现中，compute shader 应将 exposure 写入 SSBO 并回读到 CPU
-        // 简化版本：使用自适应帧间预测
-        this.prevExposure = curPrevExposure;
+        // 从 SSBO 回读 GPU 计算出的 exposure 值（HOST_COHERENT，直接读映射内存）
+        if (exposureMapped != null) {
+            this.prevExposure = exposureMapped.get(ValueLayout.JAVA_FLOAT, 0);
+        } else {
+            this.prevExposure = curPrevExposure;
+        }
         this.frameCount = curFrameCount + 1;
 
         long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
                 "[AutoExposure] 完成 | targetLum=%.2f rate=%.2f minExp=%.1f maxExp=%.1f mode=%d prevExp=%.2f | %.1fμs",
                 curTargetLuminance, curAdaptationRate, curMinExposure, curMaxExposure,
-                curMeteringMode, curPrevExposure, elapsedMicros
+                curMeteringMode, this.prevExposure, elapsedMicros
         ));
 
-        return outputTexture;
+        return outputImageView != 0L ? outputImageView : passThrough(inputResources);
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -340,8 +365,46 @@ public class AutoExposureNode extends AbstractPipelineNode {
      */
     @Override
     protected void onDispose() {
+        long dev = VulkanDeviceHolder.getInstance().getDevice();
+        if (dev != 0L) {
+            // 解除内存映射
+            if (exposureMapped != null) {
+                try { VulkanAPIRegistry.invoke("vkUnmapMemory", dev, exposureBufferMemory); } catch (Throwable ignored) {}
+                exposureMapped = null;
+            }
+            // 销毁 SSBO
+            if (exposureBuffer != 0L) {
+                try {
+                    VulkanMemoryAllocator.destroyBuffer(dev, exposureBuffer, exposureBufferMemory);
+                } catch (Throwable ignored) {}
+                exposureBuffer = 0L;
+                exposureBufferMemory = 0L;
+            }
+            // 销毁 Compute Pipeline 相关资源
+            if (computePipeline != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipeline", dev, computePipeline, 0L); } catch (Throwable ignored) {}
+                computePipeline = 0L;
+            }
+            if (pipelineLayout != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", dev, pipelineLayout, 0L); } catch (Throwable ignored) {}
+                pipelineLayout = 0L;
+            }
+            if (outputImageView != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyImageView", dev, outputImageView, 0L); } catch (Throwable ignored) {}
+                outputImageView = 0L;
+            }
+            if (outputImage != 0L) {
+                var mgr = VulkanGPUResourceManager.getInstance();
+                mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
+                        outputImage, 0L, lastOutputWidth, lastOutputHeight, 87,
+                        VulkanGPUResourceManager.ResourceType.IMAGE));
+                outputImage = 0L;
+            }
+        }
         this.prevExposure = 1.0f;
         this.frameCount = 0;
+        this.lastOutputWidth = 0;
+        this.lastOutputHeight = 0;
         LOGGER.fine("[AutoExposure] 资源已释放");
     }
 
@@ -428,6 +491,7 @@ public class AutoExposureNode extends AbstractPipelineNode {
      * AutoExposure Binding 配置:
      *   binding 0 = COMBINED_IMAGE_SAMPLER (color 纹理)
      *   binding 1 = STORAGE_IMAGE (output 输出纹理)
+     *   binding 2 = STORAGE_BUFFER (exposure_out SSBO)
      * PushConstant: size=32, offset=0
      */
     private void ensurePipeline() {
@@ -443,6 +507,7 @@ public class AutoExposureNode extends AbstractPipelineNode {
                 var bindings = new ComputePipelineHelper.Binding[]{
                     new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
                     new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(2, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
                 };
                 var pc = new ComputePipelineHelper.PushConstant(0, 32, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
                 var r = ComputePipelineHelper.createComputePipeline(spirv, bindings, pc);
@@ -451,10 +516,97 @@ public class AutoExposureNode extends AbstractPipelineNode {
                     pipelineLayout = r.pipelineLayout();
                     descriptorSet = r.descriptorSet();
                     LOGGER.fine("Compute Pipeline 创建成功: " + SHADER_PATH);
+
+                    // 创建 SSBO (Storage Buffer) 用于 GPU→CPU exposure 回读
+                    long dev = VulkanDeviceHolder.getInstance().getDevice();
+                    if (dev != 0L && exposureBuffer == 0L) {
+                        long[] bufAndMem = VulkanMemoryAllocator.createHostVisibleBuffer(
+                            dev, 4L, VulkanConst.BUFFER_USAGE_STORAGE_BUFFER_BIT);
+                        if (bufAndMem[0] != 0L && bufAndMem[1] != 0L) {
+                            exposureBuffer = bufAndMem[0];
+                            exposureBufferMemory = bufAndMem[1];
+
+                            // 持久映射（HOST_COHERENT，无需显式 flush）
+                            try (Arena arena = Arena.ofConfined()) {
+                                MemorySegment ppData = arena.allocate(ValueLayout.JAVA_LONG);
+                                int mapRc;
+                                try {
+                                    mapRc = (int) VulkanAPIRegistry.invoke(
+                                        "vkMapMemory", dev, exposureBufferMemory, 0L, 4L, 0, ppData.address());
+                                } catch (Throwable t) {
+                                    LOGGER.warning("[AutoExposure] vkMapMemory 失败: " + t.getMessage());
+                                    mapRc = -1;
+                                }
+                                if (mapRc == 0) {
+                                    long ptr = ppData.get(ValueLayout.JAVA_LONG, 0);
+                                    if (ptr != 0L) {
+                                        exposureMapped = MemorySegment.ofAddress(ptr).reinterpret(4L);
+                                    }
+                                }
+                            }
+
+                            // 将 SSBO 绑定到 descriptorSet binding=2
+                            ComputePipelineHelper.updateStorageBufferDescriptor(
+                                dev, descriptorSet, 2, exposureBuffer, 0L, 4L);
+
+                            LOGGER.fine("Exposure SSBO 创建并映射成功");
+                        }
+                    }
                 }
             } catch (Exception e) {
                 LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
             }
+        }
+    }
+
+    private void ensureOutputImage(RenderContext context) {
+        int w = context.getWidth();
+        int h = context.getHeight();
+        if (w <= 0 || h <= 0) return;
+
+        if (outputImage != 0L && w == lastOutputWidth && h == lastOutputHeight) return;
+
+        synchronized (this) {
+            if (outputImage != 0L && w == lastOutputWidth && h == lastOutputHeight) return;
+
+            var mgr = VulkanGPUResourceManager.getInstance();
+            int format = 87;
+            int usage = 0x20 | 0x10;
+            var res = mgr.createImage(w, h, format, usage,
+                    VmaMemoryPools.PoolType.RENDER_TARGET);
+            if (!res.isValid()) {
+                LOGGER.warning("[AutoExposure] ensureOutputImage: createImage 失败 [" + w + "x" + h + "]");
+                return;
+            }
+
+            long newView = mgr.createView(res.handle, format, 1);
+            if (newView == 0L) {
+                LOGGER.warning("[AutoExposure] ensureOutputImage: createView 失败");
+                mgr.releaseResource(res);
+                return;
+            }
+
+            long oldImage = this.outputImage;
+            long oldView = this.outputImageView;
+            this.outputImage = res.handle;
+            this.outputImageView = newView;
+            this.lastOutputWidth = w;
+            this.lastOutputHeight = h;
+
+            if (oldView != 0L) {
+                long dev = VulkanDeviceHolder.getInstance().getDevice();
+                if (dev != 0L) {
+                    try { VulkanAPIRegistry.invoke("vkDestroyImageView", dev, oldView, 0L); } catch (Throwable ignored) {}
+                }
+            }
+            if (oldImage != 0L) {
+                mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
+                        oldImage, 0L, lastOutputWidth, lastOutputHeight, format,
+                        VulkanGPUResourceManager.ResourceType.IMAGE));
+            }
+
+            LOGGER.fine("[AutoExposure] outputImage 重建: 0x" + Long.toHexString(outputImage)
+                    + " view=0x" + Long.toHexString(outputImageView) + " [" + w + "x" + h + "]");
         }
     }
 

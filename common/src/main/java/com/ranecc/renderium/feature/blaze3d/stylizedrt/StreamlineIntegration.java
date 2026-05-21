@@ -7,6 +7,7 @@ import com.ranecc.renderium.tech.streamline.SLContext;
 import com.ranecc.renderium.tech.streamline.ffm.SLFFMBindings;
 
 import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.feature.blaze3d.stylizedrt.StreamlineFrameManager;
 
 
 import java.lang.foreign.Arena;
@@ -199,6 +200,9 @@ public class StreamlineIntegration implements AutoCloseable {
     /** 是否Reflex可用 */
     private volatile boolean reflexAvailable = false;
 
+    /** 帧管理器 — 负责 #5-#9 帧级生命周期（beginFrame / Pass 计时 / endFrame / shutdown） */
+    private volatile StreamlineFrameManager frameManager;
+
     /** 帧性能数据缓存（线程安全列表） */
     private final List<FramePerfData> perfDataHistory = Collections.synchronizedList(new ArrayList<>());
 
@@ -287,6 +291,10 @@ public class StreamlineIntegration implements AutoCloseable {
 
             // 步骤 3: 检测可用特性
             detectFeatures();
+
+            // 步骤 3.5: 创建帧管理器（负责 #5-#9 帧级生命周期）
+            this.frameManager = new StreamlineFrameManager(
+                vkDevice, perfSDKAvailable, reflexAvailable);
 
             // 步骤 4: 初始化 Nsight Perf SDK（如果支持）
             if (perfSDKAvailable) {
@@ -612,59 +620,9 @@ public class StreamlineIntegration implements AutoCloseable {
      * @see IntegrationState#EVALUATING
      */
     public void beginFrame() {
-        if (!initialized) return;
-
-        // 状态检查：只允许从 INITIALIZED 或 PRESENTING 进入 EVALUATING
-        if (currentState != IntegrationState.INITIALIZED &&
-            currentState != IntegrationState.PRESENTING) {
-            LOGGER.fine(String.format("[Streamline] beginFrame 忽略: 当前状态 %s", currentState));
-            return;
+        if (frameManager != null) {
+            frameManager.beginFrame();
         }
-
-        // 状态转换: INITIALIZED/PRESENTING → EVALUATING
-        currentState = IntegrationState.EVALUATING;
-
-        // 创建新帧数据
-        currentFrameData = new FramePerfData();
-        currentFrameData.frameId = (int) frameCounter.incrementAndGet();
-        currentFrameData.stateSnapshot = currentState.name();
-
-        // 开始 Streamline 处理计时
-        long startTimeNs = System.nanoTime();
-        currentFrameData.streamlineProcessingTimeNs = startTimeNs;
-
-        // ========== TODO #5 实现：slBeginFrame + Reflex Sleep ==========
-        //
-        // 【需求】在渲染帧开始时：
-        //   1. 调用 slReflexSleep(sl::kReflexMarkerBeforeFrame) 让 Reflex 驱动做
-        //      低延迟睡眠，减少输入延迟。需通过 slGetFeatureFunction(FEATURE_REFLEX, "slReflexSleep", &ptr) 获取函数指针。
-        //   2. 调用 slNVPerfBeginPass() 开始 Nsight Perf SDK 采集范围。
-        //      需 NVPerf 专用 FFM 绑定（当前未添加）。
-        //   3. 可选调用 FrameEvaluator.beginFrame() 获取 slGetNewFrameToken。
-        //      FrameEvaluator 在 tech.streamline 包中，需要本类持有其引用。
-        //
-        // 【阻塞项】
-        //   - Reflex: SLFFMBindings 需添加 slReflexSleep 绑定或通过
-        //     slGetFeatureFunction + downcallHandle 动态解析。
-        //     参考 ReflexManagerImpl.setPCLMarkerInternal() 的模式。
-        //   - NVPerf: 需要 sl.nvperf.dll 加载 + 对应的 slNVPerfBeginPass/EndPass
-        //     FFM 绑定。SDK DLL 已在 resources/native/windows-x64/ 中。
-        //   - FrameEvaluator: 需从 RTBenchmarkRunner 或构造函数注入。
-        //
-        // 【前置条件】
-        //   ① SLContext.initialize() 必须已成功调用（slInit 通过）
-        //   ② SLContext.detectFeatures() 确认 FEATURE_REFLEX/NVPERF 支持
-        //   ③ 对应特性函数已通过 slGetFeatureFunction 解析
-        //
-        // 【关联模块】
-        //   tech.streamline.SLContext          — 生命周期管理
-        //   tech.streamline.FrameEvaluator      — 帧标记与资源标记
-        //   tech.reflex.ReflexManagerImpl       — Reflex/PCL 标记参考实现
-        //   feature.lod.compute.VulkanFFMBinding — Vulkan FFM 绑定的统一入口
-        //   tech.streamline.ffm.SLFFMBindings   — Streamline SDK FFM 调用
-        //
-        // 【重构建议】将 #5-#9 整体迁移到独立的 StreamlineFrameManager 类中，
-        // 与 FrameEvaluator 合并，减少 StreamlineIntegration 的职责。
     }
 
     /**
@@ -690,36 +648,8 @@ public class StreamlineIntegration implements AutoCloseable {
      * @see #endPass(int)
      */
     public void beginPass(int passIndex, String passName) {
-        if (!initialized || currentFrameData == null) return;
-        if (currentState != IntegrationState.EVALUATING) return;
-
-        // 边界检查
-        if (passIndex < 0 || passIndex >= currentFrameData.passTimesUs.length) {
-            LOGGER.warning(String.format("[Streamline] Pass 索引越界: %d (有效范围 0-%d)",
-                    passIndex, currentFrameData.passTimesUs.length - 1));
-            return;
-        }
-
-        // GPU 时间戳查询：Pass 开始
-        // 使用 VulkanFFMBinding 写入时间戳
-        try {
-            if (currentCommandBuffer != 0 && timestampQueryPool != 0) {
-                var mh = VulkanFFMBinding.getVkCmdWriteTimestamp();
-                if (mh != null) {
-                    mh.invokeExact(currentCommandBuffer,
-                            0x00010000, // VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
-                            timestampQueryPool,
-                            passIndex * 2);
-                    LOGGER.fine(String.format("[Streamline] Frame #%d Pass[%d:%s]: ▶ GPU 时间戳已写入",
-                            currentFrameData.frameId, passIndex, passName));
-                }
-            } else {
-                LOGGER.fine(String.format("[Streamline] Frame #%d Pass[%d:%s]: ▶ CPU 计时",
-                        currentFrameData.frameId, passIndex, passName));
-            }
-        } catch (Throwable e) {
-            LOGGER.warning(String.format("[Streamline] beginPass(%d) 异常: %s",
-                    passIndex, e.getMessage()));
+        if (frameManager != null) {
+            frameManager.beginPass(passIndex, passName);
         }
     }
 
@@ -738,32 +668,8 @@ public class StreamlineIntegration implements AutoCloseable {
      * @see #beginPass(int, String)
      */
     public void endPass(int passIndex) {
-        if (!initialized || currentFrameData == null) return;
-        if (currentState != IntegrationState.EVALUATING) return;
-
-        // 边界检查
-        if (passIndex < 0 || passIndex >= currentFrameData.passTimesUs.length) {
-            return; // beginPass 时已记录警告，此处静默返回
-        }
-
-        // GPU 时间戳查询：Pass 结束
-        // BOTTOM_OF_PIPE 阶段写入，与 beginPass 配对计算耗时
-        try {
-            if (currentCommandBuffer != 0 && timestampQueryPool != 0) {
-                var mh = VulkanFFMBinding.getVkCmdWriteTimestamp();
-                if (mh != null) {
-                    mh.invokeExact(currentCommandBuffer,
-                            0x00010002, // VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
-                            timestampQueryPool,
-                            passIndex * 2 + 1);
-                    LOGGER.fine(String.format("[Streamline] Frame #%d Pass[%d]: ◀ GPU 时间戳已写入",
-                            currentFrameData.frameId, passIndex));
-                }
-            }
-
-        } catch (Throwable e) {
-            LOGGER.warning(String.format("[Streamline] endPass(%d) 异常: %s",
-                    passIndex, e.getMessage()));
+        if (frameManager != null) {
+            frameManager.endPass(passIndex);
         }
     }
 
@@ -795,73 +701,12 @@ public class StreamlineIntegration implements AutoCloseable {
      * @see IntegrationState#PRESENTING
      */
     public void endFrame() {
-        if (!initialized || currentFrameData == null) return;
-        if (currentState != IntegrationState.EVALUATING) return;
+        if (frameManager != null) {
+            frameManager.endFrame();
 
-        // 计算 Streamline 处理耗时
-        long endTimeNs = System.nanoTime();
-        long frameProcessingTimeNs = endTimeNs - currentFrameData.streamlineProcessingTimeNs;
-        currentFrameData.streamlineProcessingTimeNs = frameProcessingTimeNs;
-
-        try {
-            // 读取 GPU 时间戳（计算每个 Pass 的 GPU 耗时）
-            if (timestampQueryPool != 0 && vkDeviceHandle != 0) {
-                var mh = VulkanFFMBinding.getVkGetQueryPoolResults();
-                if (mh != null) {
-                    int passCount = currentFrameData.passTimesUs.length;
-                    int queryCount = passCount * 2;
-                    try (Arena arena = Arena.ofConfined()) {
-                        MemorySegment timestamps = arena.allocate(queryCount * 8L);
-                        int result = (int) mh.invokeExact(
-                                vkDeviceHandle,
-                                timestampQueryPool,
-                                0,                 // firstQuery
-                                queryCount,        // queryCount
-                                queryCount * 8L,   // dataSize
-                                timestamps.address(),
-                                8L,                // stride
-                                0x00000001         // VK_QUERY_RESULT_64_BIT
-                        );
-                        if (result == 0) {
-                            double timestampPeriod = 1.0; // nanosecond
-                            for (int i = 0; i < passCount; i++) {
-                                long start = timestamps.getAtIndex(ValueLayout.JAVA_LONG, i * 2);
-                                long end = timestamps.getAtIndex(ValueLayout.JAVA_LONG, i * 2 + 1);
-                                long elapsed = (long)((end - start) * timestampPeriod / 1000);
-                                currentFrameData.passTimesUs[i] = Math.max(0, elapsed);
-                            }
-                            LOGGER.fine(String.format("[Streamline] Frame #%d: GPU 时间戳回读完成 (%d passes)",
-                                    currentFrameData.frameId, passCount));
-                        }
-                    }
-                }
-            }
-
-        } catch (Throwable e) {
-            LOGGER.warning(String.format("[Streamline] Frame #%d endFrame 异常: %s",
-                    currentFrameData.frameId, e.getMessage()));
+            // 同步本地状态
+            this.currentState = IntegrationState.PRESENTING;
         }
-
-        // 更新性能统计
-        updatePerformanceStats(frameProcessingTimeNs);
-
-        // 存入历史缓存
-        perfDataHistory.add(currentFrameData);
-
-        // 保留最近 1000 帧数据（防止内存泄漏）
-        while (perfDataHistory.size() > 1000) {
-            perfDataHistory.remove(0);
-        }
-
-        // 状态转换: EVALUATING → PRESENTING
-        currentState = IntegrationState.PRESENTING;
-        currentFrameData.stateSnapshot = currentState.name();
-
-        LOGGER.fine(String.format(
-                "[Streamline] Frame #%d 完成 | 处理耗时 %.2f µs | 状态 → %s",
-                currentFrameData.frameId,
-                frameProcessingTimeNs / 1000.0,
-                currentState));
     }
 
     /**
@@ -1038,6 +883,12 @@ public class StreamlineIntegration implements AutoCloseable {
         // 清空性能历史数据
         perfDataHistory.clear();
 
+        // 关闭帧管理器（#5-#9 帧级生命周期）
+        if (frameManager != null) {
+            frameManager.close();
+            frameManager = null;
+        }
+
         try {
             // 通过 SLContext 关闭 Streamline SDK
             if (slContext != null && slContext.isInitialized()) {
@@ -1172,6 +1023,9 @@ public class StreamlineIntegration implements AutoCloseable {
     public void setTimestampQueryPool(long queryPool, long timestampPeriod) {
         this.timestampQueryPool = queryPool;
         this.timestampPeriod = timestampPeriod;
+        if (frameManager != null) {
+            frameManager.setTimestampQueryPool(queryPool, timestampPeriod);
+        }
         LOGGER.fine(String.format("[Streamline] 时间戳查询池已设置: pool=0x%s, period=%dns",
                 Long.toHexString(queryPool), timestampPeriod));
     }
@@ -1185,6 +1039,9 @@ public class StreamlineIntegration implements AutoCloseable {
      */
     public void setCurrentCommandBuffer(long cmdBuffer) {
         this.currentCommandBuffer = cmdBuffer;
+        if (frameManager != null) {
+            frameManager.setCurrentCommandBuffer(cmdBuffer);
+        }
     }
 
     // ==================== 内部状态验证 ====================
