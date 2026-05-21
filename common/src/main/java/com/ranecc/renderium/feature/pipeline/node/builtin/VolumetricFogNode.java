@@ -332,21 +332,11 @@ public class VolumetricFogNode extends AbstractPipelineNode {
             }
         }
         if (outputImageView != 0L) {
-            try {
-                com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke(
-                        "vkDestroyImageView",
-                        com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice(),
-                        outputImageView, 0L);
-            } catch (Throwable ignored) {}
+            try { com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkDestroyImageView", device, outputImageView, 0L); } catch (Throwable ignored) {}
             outputImageView = 0L;
         }
         if (outputImage != 0L) {
-            try {
-                com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke(
-                        "vkDestroyImage",
-                        com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice(),
-                        outputImage, 0L);
-            } catch (Throwable ignored) {}
+            try { com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.getInstance().releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
             outputImage = 0L;
         }
         lastOutputWidth = 0;
@@ -500,6 +490,14 @@ public class VolumetricFogNode extends AbstractPipelineNode {
                 return;
             }
             var mgr = com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.getInstance();
+            if (outputImageView != 0L) {
+                try { mgr.destroyView(outputImageView); } catch (Throwable ignored) {}
+                outputImageView = 0L;
+            }
+            if (outputImage != 0L) {
+                try { mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+                outputImage = 0L;
+            }
             int format = 87;
             int usage = 0x20 | 0x10;
             var res = mgr.createImage(w, h, format, usage,

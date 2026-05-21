@@ -5,8 +5,8 @@
 package com.ranecc.renderium.feature.chunk.manager;
 
 import com.ranecc.renderium.domain.model.QualityMode;
-import com.ranecc.renderium.feature.blaze3d.aggressive.GPUCullingSystem;
-import com.ranecc.renderium.feature.blaze3d.aggressive.CullingPipeline;
+import com.ranecc.renderium.feature.blaze3d.render.GPUCullingSystem;
+import com.ranecc.renderium.feature.blaze3d.render.CullingPipeline;
 import com.ranecc.renderium.feature.chunk.build.ChunkBuildPipeline;
 import com.ranecc.renderium.feature.chunk.build.ChunkBuildTask;
 import com.ranecc.renderium.feature.chunk.build.ProgressiveMeshRefiner;

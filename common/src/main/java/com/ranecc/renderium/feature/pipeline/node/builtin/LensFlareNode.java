@@ -463,11 +463,11 @@ public class LensFlareNode extends AbstractPipelineNode {
             long dev = VulkanDeviceHolder.getInstance().getDevice();
 
             if (outputImageView != 0L) {
-                mgr.destroyView(outputImageView);
+                try { mgr.destroyView(outputImageView); } catch (Throwable ignored) {}
                 outputImageView = 0L;
             }
             if (outputImage != 0L) {
-                mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0, lastOutputWidth, lastOutputHeight, 0, null));
+                try { mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
                 outputImage = 0L;
             }
 

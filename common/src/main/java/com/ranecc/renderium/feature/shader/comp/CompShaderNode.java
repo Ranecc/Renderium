@@ -530,6 +530,14 @@ public class CompShaderNode extends AbstractPipelineNode {
             }
 
             VulkanGPUResourceManager resMgr = VulkanGPUResourceManager.getInstance();
+            if (outputImageView != 0L) {
+                try { resMgr.destroyView(outputImageView); } catch (Throwable ignored) {}
+                outputImageView = 0L;
+            }
+            if (outputImage != 0L) {
+                try { resMgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+                outputImage = 0L;
+            }
             var imgRes = resMgr.createImage(w, h, 87, 0x30, VmaMemoryPools.PoolType.RENDER_TARGET);
             if (imgRes == null || !imgRes.isValid()) {
                 LOGGER.warning("CompShader 输出 Image 创建失败: w=" + w + " h=" + h);

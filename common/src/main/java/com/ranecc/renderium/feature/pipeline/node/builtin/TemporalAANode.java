@@ -450,6 +450,14 @@ public class TemporalAANode extends AbstractPipelineNode {
         if (outputImage != 0L && w == lastOutputWidth && h == lastOutputHeight) return;
 
         var mgr = com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.getInstance();
+        if (outputImageView != 0L) {
+            try { mgr.destroyView(outputImageView); } catch (Throwable ignored) {}
+            outputImageView = 0L;
+        }
+        if (outputImage != 0L) {
+            try { mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+            outputImage = 0L;
+        }
         int format = 87;
         int usage = 0x20 | 0x10;
         var res = mgr.createImage(w, h, format, usage,

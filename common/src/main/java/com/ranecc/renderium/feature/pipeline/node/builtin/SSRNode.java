@@ -524,6 +524,14 @@ public class SSRNode extends AbstractPipelineNode {
                 int usageFlags = 0x20 | 0x10;
 
                 var mgr = VulkanGPUResourceManager.getInstance();
+                if (outputImageView != 0L) {
+                    try { mgr.destroyView(outputImageView); } catch (Throwable ignored) {}
+                    outputImageView = 0L;
+                }
+                if (outputImage != 0L) {
+                    try { mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+                    outputImage = 0L;
+                }
                 var resource = mgr.createImage(w, h, format, usageFlags,
                         VmaMemoryPools.PoolType.RENDER_TARGET);
 

@@ -316,6 +316,13 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
             }
         }
         if (outputImage != 0L || outputImageView != 0L) {
+            if (outputImageView != 0L && device != 0L) {
+                try { com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkDestroyImageView", device, outputImageView, 0L); } catch (Throwable ignored) {}
+            }
+            var mgr2 = com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.getInstance();
+            if (outputImage != 0L) {
+                try { mgr2.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+            }
             LOGGER.fine(String.format("[MotionBlur] 释放输出资源 image=0x%X view=0x%X",
                     outputImage, outputImageView));
             outputImage = 0L;
@@ -469,8 +476,17 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
             com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager mgr =
                     com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.getInstance();
 
-            int format = 87; // VK_FORMAT_R8G8B8A8_UNORM
-            int usageFlags = 0x20 | 0x10; // VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+            if (outputImageView != 0L) {
+                try { mgr.destroyView(outputImageView); } catch (Throwable ignored) {}
+                outputImageView = 0L;
+            }
+            if (outputImage != 0L) {
+                try { mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+                outputImage = 0L;
+            }
+
+            int format = 87;
+            int usageFlags = 0x20 | 0x10;
 
             com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource resource =
                     mgr.createImage(w, h, format, usageFlags,

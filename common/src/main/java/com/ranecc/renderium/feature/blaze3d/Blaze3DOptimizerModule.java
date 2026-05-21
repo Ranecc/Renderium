@@ -14,8 +14,8 @@ import com.ranecc.renderium.platform.hook.OptimizerRegistry;
 
 import com.ranecc.renderium.feature.blaze3d.VersionAdapter;
 import com.ranecc.renderium.feature.blaze3d.MethodSignature;
-import com.ranecc.renderium.feature.blaze3d.RenderiumProfiler;
-import com.ranecc.renderium.feature.blaze3d.ResourceStats;
+import com.ranecc.renderium.feature.blaze3d.diagnostic.RenderiumProfiler;
+import com.ranecc.renderium.feature.blaze3d.diagnostic.ResourceStats;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
 
