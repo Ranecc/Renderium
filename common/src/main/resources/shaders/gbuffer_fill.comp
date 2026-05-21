@@ -1,0 +1,61 @@
+#version 460
+// Renderium - G-Buffer 填充 Compute Shader
+// 输入: SSBO 顶点位置/法线/颜色, Push Constant (VP 矩阵)
+// 输出: 4 张 storage image (Position RGB32F, Normal RGB16F, Albedo RGBA8, Material RGBA8)
+// workgroup: 64 threads
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0, std430) readonly buffer VertexBuffer {
+    vec4 vertices[]; // xyz = position, w = padding
+} vtxBuf;
+
+layout(binding = 1, std430) readonly buffer NormalBuffer {
+    vec4 normals[]; // xyz = normal (packed), w = padding
+} nrmBuf;
+
+layout(binding = 2, std430) readonly buffer ColorBuffer {
+    vec4 colors[]; // rgb = albedo, a = material flags
+} colBuf;
+
+layout(binding = 3, rgba32f) uniform writeonly image2D uPositionImage;
+layout(binding = 4, rg16f)   uniform writeonly image2D uNormalImage;
+layout(binding = 5, rgba8)   uniform writeonly image2D uAlbedoImage;
+layout(binding = 6, rgba8)   uniform writeonly image2D uMaterialImage;
+
+layout(push_constant) uniform PushConstants {
+    vec4 viewProj[4]; // VP 矩阵 (16 floats, column-major, 64 bytes)
+} pc;
+
+void main() {
+    uint vtxIdx = gl_GlobalInvocationID.x;
+    if (vtxIdx >= vtxBuf.vertices.length()) return;
+
+    vec3 worldPos = vtxBuf.vertices[vtxIdx].xyz;
+    vec3 normal   = nrmBuf.normals[vtxIdx].xyz;
+    vec4 albedo   = colBuf.colors[vtxIdx];
+
+    // 变换到裁剪空间 → 屏幕 UV
+    vec4 clipPos;
+    clipPos.x = dot(pc.viewProj[0], vec4(worldPos, 1.0));
+    clipPos.y = dot(pc.viewProj[1], vec4(worldPos, 1.0));
+    clipPos.z = dot(pc.viewProj[2], vec4(worldPos, 1.0));
+    clipPos.w = dot(pc.viewProj[3], vec4(worldPos, 1.0));
+
+    vec2 ndc = clipPos.xy / max(clipPos.w, 1e-8);
+    vec2 uv = ndc * 0.5 + 0.5;
+
+    // 边界检查
+    uvec2 imgSize = imageSize(uPositionImage);
+    ivec2 texel = ivec2(uv * vec2(imgSize));
+    if (texel.x < 0 || texel.x >= int(imgSize.x) ||
+        texel.y < 0 || texel.y >= int(imgSize.y)) return;
+
+    // 写入 G-Buffer 四通道
+    imageStore(uPositionImage, texel, vec4(worldPos, 1.0));
+    imageStore(uNormalImage,   texel, vec4(normal.xy * 0.5 + 0.5, 0, 0));
+    imageStore(uAlbedoImage,   texel, vec4(albedo.rgb, 1.0));
+
+    // Material: r = metallic, g = roughness, b = ao, a = specular
+    imageStore(uMaterialImage, texel, vec4(0.5, 0.5, 1.0, 0.04));
+}

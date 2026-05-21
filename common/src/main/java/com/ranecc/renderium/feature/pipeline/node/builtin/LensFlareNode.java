@@ -331,7 +331,7 @@ public class LensFlareNode extends AbstractPipelineNode {
             outputImageView = 0L;
         }
         if (outputImage != 0L) {
-            mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0, lastOutputWidth, lastOutputHeight, 0, null));
+            mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0, lastOutputWidth, lastOutputHeight, 87, VulkanGPUResourceManager.ResourceType.IMAGE));
             outputImage = 0L;
         }
         lastOutputWidth = 0;
@@ -467,7 +467,7 @@ public class LensFlareNode extends AbstractPipelineNode {
                 outputImageView = 0L;
             }
             if (outputImage != 0L) {
-                try { mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+                try { mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastOutputWidth, lastOutputHeight, 87, VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
                 outputImage = 0L;
             }
 

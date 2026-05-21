@@ -535,7 +535,7 @@ public class CompShaderNode extends AbstractPipelineNode {
                 outputImageView = 0L;
             }
             if (outputImage != 0L) {
-                try { resMgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+                try { resMgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastOutputWidth, lastOutputHeight, 87, VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
                 outputImage = 0L;
             }
             var imgRes = resMgr.createImage(w, h, 87, 0x30, VmaMemoryPools.PoolType.RENDER_TARGET);

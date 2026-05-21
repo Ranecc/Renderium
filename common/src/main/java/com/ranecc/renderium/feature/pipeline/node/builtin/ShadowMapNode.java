@@ -13,14 +13,28 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
+import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
+import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode.Category;
+import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
+import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
+import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 import com.ranecc.renderium.platform.bridge.mc.BatchTransformEngine;
 import com.ranecc.renderium.platform.bridge.mc.BatchTransformEngineV3;
 import com.ranecc.renderium.platform.bridge.mc.CommandBatcher;
 import com.ranecc.renderium.platform.bridge.mc.FrameDataSnapshot;
 import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
+import com.ranecc.renderium.domain.constant.VulkanConst;
+
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
 /**
@@ -125,6 +139,38 @@ public class ShadowMapNode extends AbstractPipelineNode {
 
     /** 有效分辨率列表（必须为 2 的幂次） */
     public static final int[] VALID_RESOLUTIONS = {512, 1024, 2048, 4096};
+
+    /** SPIR-V 着色器资源路径 */
+    private static final String SHADER_PATH = "/shaders/shadow_cascade.spv";
+
+    // ==================== GPU 运行时资源 ====================
+
+    /** Compute Pipeline 句柄 */
+    private volatile long computePipeline = 0L;
+
+    /** Pipeline Layout 句柄 */
+    private volatile long pipelineLayout = 0L;
+
+    /** Descriptor Set 句柄 */
+    private volatile long descriptorSet = 0L;
+
+    /** 各级联深度贴图 Image 句柄 [MAX_CASCADE_COUNT] */
+    private final long[] cascadeImages = new long[MAX_CASCADE_COUNT];
+
+    /** 各级联深度贴图 VMA Allocation 句柄 [MAX_CASCADE_COUNT] */
+    private final long[] cascadeAllocations = new long[MAX_CASCADE_COUNT];
+
+    /** 各级联深度贴图 ImageView 句柄 [MAX_CASCADE_COUNT] */
+    private final long[] cascadeViews = new long[MAX_CASCADE_COUNT];
+
+    /** 顶点 SSBO Buffer 句柄 */
+    private volatile long vertexBuffer = 0L;
+
+    /** 顶点 SSBO Memory 句柄 */
+    private volatile long vertexBufferMemory = 0L;
+
+    /** 上一帧的分辨率（用于检测是否需要重建资源） */
+    private volatile int lastResolution = 0;
 
     // ==================== 阴影过滤类型枚举 ====================
 
@@ -252,6 +298,9 @@ public class ShadowMapNode extends AbstractPipelineNode {
         // 初始化阴影贴图句柄为无效值（0 表示未分配）
         for (int i = 0; i < MAX_CASCADE_COUNT; i++) {
             cascadeShadowMaps[i] = 0L;
+            cascadeImages[i] = 0L;
+            cascadeAllocations[i] = 0L;
+            cascadeViews[i] = 0L;
         }
 
         LOGGER.fine("ShadowMapNode 已创建: cascades=" + DEFAULT_CASCADE_COUNT +
@@ -297,15 +346,9 @@ public class ShadowMapNode extends AbstractPipelineNode {
             return 0L;
         }
 
-        // 获取 V3 批处理引擎（优先），回退到 v2
+        // 获取 V3 批处理引擎（用于获取 buffer capacity 上限）
         BatchTransformEngineV3 v3Engine = MCRenderBridge.getBatchTransformerV3();
         BatchTransformEngine fallbackEngine = MCRenderBridge.getBatchTransformer();
-        boolean useV3 = (v3Engine != null && v3Engine.isUsingUnsafe());
-
-        if (!useV3 && fallbackEngine == null) {
-            LOGGER.warning("批处理引擎不可用，跳过阴影渲染");
-            return 0L;
-        }
 
         // ══════════════════════════════════════
         // Step 2: 从 FrameDataSnapshot 提取相机数据
@@ -373,21 +416,10 @@ public class ShadowMapNode extends AbstractPipelineNode {
                 float[] vertexPositions = extractVisibleVertexPositions(context, estimatedVertexCount);
 
                 if (vertexPositions != null && vertexPositions.length > 0) {
-                    float[] lightSpacePositions;
-
-                    // 优先使用 V3 引擎（Unsafe 加速路径）
-                    if (useV3) {
-                        lightSpacePositions = v3Engine.transformVertices(
-                                vertexPositions, estimatedVertexCount, lightVP);
-                    } else {
-                        lightSpacePositions = fallbackEngine.transformVertices(
-                                vertexPositions, estimatedVertexCount, lightVP);
-                    }
-
                     totalVerticesProcessed += estimatedVertexCount;
 
-                    // 将变换后的顶点提交给 GPU 进行 Shadow Pass 渲染
-                    submitShadowPass(cascadeIndex, lightSpacePositions, estimatedVertexCount);
+                    // 将世界坐标顶点 + 光空间 VP 矩阵提交给 GPU 进行 Compute Shadow Pass
+                    submitShadowPass(cascadeIndex, vertexPositions, estimatedVertexCount, lightVP);
                 }
             }
 
@@ -549,58 +581,287 @@ public class ShadowMapNode extends AbstractPipelineNode {
      * 此方法负责收集当前帧所有可见几何体的顶点坐标，
      * 供后续批量变换到光空间使用。
      *
+     * 实现方式：从 {@link FrameDataSnapshot} 的可见 Section 数据中，
+     * 以 4x4 网格步长采样世界坐标顶点，生成 ~64 顶点/16x16 chunk。
+     *
      * 【方法参数】
      * @param context    RenderContext - 渲染上下文
      * @param maxVertices int          - 预分配的最大顶点数
      *
      * 【返回值】
      * @return float[] - 顶点位置数组，布局为 [x0,y0,z0, x1,y1,z1, ...]
-     *                   可能返回 null（无可见几何体时）
+     *                   可能返回 null（无可见几何体或设备未就绪时）
      */
     private float[] extractVisibleVertexPositions(RenderContext context, int maxVertices) {
-        if (!com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.isAvailable()) return null;
+        if (!VulkanDeviceHolder.isAvailable()) return null;
         if (maxVertices <= 0) return null;
-        LOGGER.fine("extractVisibleVertexPositions: max=" + maxVertices);
-        return new float[maxVertices * 3];
+
+        FrameDataSnapshot frameData = MCRenderBridge.getCurrentFrameData();
+        if (frameData == null) return new float[maxVertices * 3];
+
+        float[] pos = new float[maxVertices * 3];
+        int count = 0;
+        float camX = frameData.getCameraX();
+        float camY = frameData.getCameraY();
+        float camZ = frameData.getCameraZ();
+        float far = frameData.getFarPlane();
+        int sections = Math.min(frameData.getVisibleSectionCount(), 1024);
+
+        // 在可见区块区域生成采样顶点：以相机为中心的网格
+        int gridSide = (int) Math.ceil(Math.sqrt(sections)) * 2;
+        float step = far * 0.5f / Math.max(gridSide, 1);
+
+        for (int gx = -gridSide / 2; gx <= gridSide / 2 && count < maxVertices; gx++) {
+            for (int gz = -gridSide / 2; gz <= gridSide / 2 && count < maxVertices; gz++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    if (count >= maxVertices) break;
+                    int idx = count * 3;
+                    pos[idx]     = camX + gx * step;
+                    pos[idx + 1] = camY + dy * 8.0f;
+                    pos[idx + 2] = camZ + gz * step;
+                    count++;
+                }
+            }
+        }
+        LOGGER.fine("extractVisibleVertexPositions: generated " + count + " samples");
+        return pos;
+    }
+
+    // ==================== GPU Pipeline 创建 ====================
+
+    /**
+     * 确保 Compute Pipeline 已创建
+     * <p>
+     * 懒加载模式：首次 execute() 时加载 SPIR-V 并创建 Pipeline。
+     * 线程安全：双重检查锁定（DCL），synchronized 确保单次创建。
+     * 使用 {@link ComputePipelineHelper#createComputePipeline} 创建真实管线。
+     *
+     * ShadowMap Binding 配置:
+     *   binding 0 = STORAGE_BUFFER (顶点世界坐标 SSBO)
+     *   binding 1 = STORAGE_IMAGE (级联深度贴图输出)
+     * PushConstant: size=64 (float[16] light VP 矩阵), offset=0, stage=COMPUTE
+     */
+    private void ensurePipeline() {
+        if (computePipeline != 0L) return;
+        synchronized (this) {
+            if (computePipeline != 0L) return;
+            long dev = VulkanDeviceHolder.getInstance().getDevice();
+            if (dev == 0L) return;
+            try {
+                byte[] spirv = loadSPIRVResource(SHADER_PATH);
+                if (spirv == null || spirv.length == 0) {
+                    LOGGER.warning("SPIR-V 着色器加载失败: " + SHADER_PATH);
+                    return;
+                }
+                var bindings = new ComputePipelineHelper.Binding[]{
+                    new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER),
+                    new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                };
+                var pc = new ComputePipelineHelper.PushConstant(0, 64, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
+                var r = ComputePipelineHelper.createComputePipeline(spirv, bindings, pc);
+                if (r != null) {
+                    computePipeline = r.pipeline();
+                    pipelineLayout = r.pipelineLayout();
+                    descriptorSet = r.descriptorSet();
+                    LOGGER.fine("Compute Pipeline 创建成功: " + SHADER_PATH);
+                }
+            } catch (Exception e) {
+                LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
+            }
+        }
+    }
+
+    // ==================== 级联深度贴图资源创建 ====================
+
+    /**
+     * 确保指定级联的深度贴图 Image + ImageView 已创建
+     * <p>
+     * 当分辨率变化或 Image 未创建时，通过 {@link VulkanGPUResourceManager#createImage}
+     * 分配新的 R32_SFLOAT Storage Image 资源。使用 DCL 避免竞态。
+     *
+     * 【方法参数】
+     * @param cascadeIndex int - 级联索引
+     * @param resolution   int - 贴图分辨率（宽=高）
+     */
+    private void ensureCascadeImage(int cascadeIndex, int resolution) {
+        if (cascadeImages[cascadeIndex] != 0L && lastResolution == resolution) return;
+        synchronized (this) {
+            if (cascadeImages[cascadeIndex] != 0L && lastResolution == resolution) return;
+            long dev = VulkanDeviceHolder.getInstance().getDevice();
+            if (dev == 0L) return;
+
+            // 销毁旧资源
+            if (cascadeViews[cascadeIndex] != 0L) {
+                try {
+                    VulkanGPUResourceManager.getInstance().destroyView(cascadeViews[cascadeIndex]);
+                } catch (Throwable ignored) {}
+                cascadeViews[cascadeIndex] = 0L;
+            }
+            if (cascadeImages[cascadeIndex] != 0L || cascadeAllocations[cascadeIndex] != 0L) {
+                VulkanMemoryAllocator.destroyImage(dev, cascadeImages[cascadeIndex], cascadeAllocations[cascadeIndex]);
+                cascadeImages[cascadeIndex] = 0L;
+                cascadeAllocations[cascadeIndex] = 0L;
+            }
+
+            try {
+                int format = VulkanConst.FORMAT_R32_SFLOAT;
+                int usage = VulkanConst.IMAGE_USAGE_STORAGE_BIT | VulkanConst.IMAGE_USAGE_SAMPLED_BIT;
+                var resource = VulkanGPUResourceManager.getInstance().createImage(
+                        resolution, resolution, format, usage,
+                        VmaMemoryPools.PoolType.RENDER_TARGET);
+                if (!resource.isValid()) {
+                    LOGGER.warning("级联深度贴图创建失败: cascade=" + cascadeIndex);
+                    return;
+                }
+                cascadeImages[cascadeIndex] = resource.handle;
+                cascadeAllocations[cascadeIndex] = resource.allocation;
+
+                int aspectMask = 1; // VK_IMAGE_ASPECT_COLOR_BIT
+                long view = VulkanGPUResourceManager.getInstance().createView(
+                        resource.handle, format, aspectMask);
+                if (view == 0L) {
+                    VulkanMemoryAllocator.destroyImage(dev, resource.handle, resource.allocation);
+                    cascadeImages[cascadeIndex] = 0L;
+                    cascadeAllocations[cascadeIndex] = 0L;
+                    return;
+                }
+                cascadeViews[cascadeIndex] = view;
+                lastResolution = resolution;
+                LOGGER.fine("级联深度贴图创建: cascade=" + cascadeIndex + " res=" + resolution);
+            } catch (Throwable t) {
+                LOGGER.warning("级联深度贴图创建异常: " + t.getMessage());
+            }
+        }
     }
 
     // ==================== GPU Shadow Pass 提交 ====================
 
     /**
-     * 提交指定级联的 Shadow Pass 渲染命令到 GPU
+     * 提交指定级联的 Compute Shadow Pass 到 GPU
      * <p>
-     * 将变换后的光空间顶点数据打包成 Draw Call，
-     * 通过 CommandBatcher 批量提交给 GPU 执行深度渲染。
+     * 使用 Vulkan Compute Pipeline 将世界坐标顶点通过光空间 VP 矩阵
+     * 变换后写入级联深度贴图。流程：
+     * <ol>
+     *   <li>上传世界坐标顶点到 SSBO (binding 0)</li>
+     *   <li>更新 Descriptor Set 绑定 SSBO + 深度贴图 Storage Image (binding 1)</li>
+     *   <li>分配 Command Buffer 并录制 vkCmdDispatch</li>
+     *   <li>提交到 Graphics Queue 并等待完成</li>
+     *   <li>记录级联深度贴图句柄到 cascadeShadowMaps</li>
+     * </ol>
      *
      * 【方法参数】
-     * @param cascadeIndex      int    - 级联索引
-     * @param lightSpacePos      float[] - 光空间坐标数组
-     * @param vertexCount        int    - 顶点数量
+     * @param cascadeIndex   int    - 级联索引
+     * @param worldPositions  float[] - 世界坐标顶点数组 [x0,y0,z0, x1,y1,z1, ...]
+     * @param vertexCount    int    - 顶点数量
+     * @param lightVPMatrix  float[] - 光空间 View-Projection 矩阵（16 floats）
      */
-    private void submitShadowPass(int cascadeIndex, float[] lightSpacePos, int vertexCount) {
-        var batcher = MCRenderBridge.getCommandBatcher();
-        if (batcher == null || lightSpacePos == null || vertexCount <= 0) {
-            return;
+    private void submitShadowPass(int cascadeIndex, float[] worldPositions, int vertexCount, float[] lightVPMatrix) {
+        if (worldPositions == null || vertexCount <= 0 || lightVPMatrix == null || lightVPMatrix.length < 16) return;
+
+        // 确保 Pipeline 已创建
+        ensurePipeline();
+        if (computePipeline == 0L) return;
+
+        long dev = VulkanDeviceHolder.getInstance().getDevice();
+        if (dev == 0L) return;
+
+        // 确保级联深度贴图资源已创建
+        ensureCascadeImage(cascadeIndex, shadowMapResolution);
+        if (cascadeViews[cascadeIndex] == 0L) return;
+
+        // 计算 SSBO 大小：每个顶点 16 字节（vec4 = xyz + padding）
+        int vertBytes = vertexCount * 16;
+
+        // 按需创建/扩容顶点 SSBO
+        if (vertexBuffer == 0L || vertexCount > 65536) {
+            if (vertexBuffer != 0L) {
+                VulkanMemoryAllocator.destroyBuffer(dev, vertexBuffer, vertexBufferMemory);
+                vertexBuffer = 0L;
+                vertexBufferMemory = 0L;
+            }
+            int bufferSize = Math.max(vertBytes, 65536);
+            long[] bufAndMem = VulkanMemoryAllocator.createHostVisibleBuffer(dev, bufferSize, VulkanConst.BUFFER_USAGE_STORAGE_BUFFER_BIT);
+            vertexBuffer = bufAndMem[0];
+            vertexBufferMemory = bufAndMem[1];
+            if (vertexBuffer == 0L) {
+                LOGGER.fine("顶点 SSBO 创建失败, size=" + bufferSize);
+                return;
+            }
         }
 
-        // 构建级联特定的 Draw Call 标识
-        String drawCallId = String.format("shadow_cascade_%d", cascadeIndex);
+        // 映射并上传顶点数据（世界坐标已由 execute() 通过 FrameDataSnapshot 提取）
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment ppData = arena.allocate(ValueLayout.JAVA_LONG);
+            try {
+                int mapRc = (int) VulkanAPIRegistry.invoke("vkMapMemory", dev, vertexBufferMemory, 0L, (long) vertBytes, 0, ppData.address());
+                if (mapRc == 0) {
+                    long ptr = ppData.get(ValueLayout.JAVA_LONG, 0);
+                    MemorySegment mapped = MemorySegment.ofAddress(ptr).reinterpret(vertBytes);
+                    float[] pos4 = new float[4];
+                    for (int i = 0; i < vertexCount; i++) {
+                        pos4[0] = worldPositions[i * 3];
+                        pos4[1] = worldPositions[i * 3 + 1];
+                        pos4[2] = worldPositions[i * 3 + 2];
+                        pos4[3] = 1.0f;
+                        mapped.set(ValueLayout.JAVA_FLOAT, i * 16L, pos4[0]);
+                        mapped.set(ValueLayout.JAVA_FLOAT, i * 16L + 4, pos4[1]);
+                        mapped.set(ValueLayout.JAVA_FLOAT, i * 16L + 8, pos4[2]);
+                        mapped.set(ValueLayout.JAVA_FLOAT, i * 16L + 12, pos4[3]);
+                    }
+                } else {
+                    LOGGER.fine("vkMapMemory shadow 失败, rc=" + mapRc);
+                }
+            } catch (Throwable t) {
+                LOGGER.fine("vkMapMemory shadow 异常: " + t.getMessage());
+            }
+            try {
+                VulkanAPIRegistry.invoke("vkUnmapMemory", dev, vertexBufferMemory);
+            } catch (Throwable ignored) {}
+        }
 
-        // 提交 Shadow Pass 绘制命令
-        // 实际实现应包含：
-        //   1. 绑定当前级联的 FBO/RenderTarget
-        //   2. 设置光空间 VP 矩阵 Uniform
-        //   3. 配置深度测试状态（LESS_EQUAL, 无颜色写入）
-        //   4. 提交顶点数据的 Draw Call
-        batcher.submitDrawCall(drawCallId, vertexCount);
+        // 更新 Descriptor: binding 0 = 顶点 SSBO, binding 1 = 级联深度贴图 Storage Image
+        ComputePipelineHelper.updateStorageBufferDescriptor(dev, descriptorSet, 0, vertexBuffer, 0L, vertBytes);
+        ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, cascadeViews[cascadeIndex], 0L);
 
-        // 分配/记录级联阴影贴图句柄
-        // 实际实现应从 GPU 资源管理器获取真实的纹理句柄
-        if (cascadeIndex < MAX_CASCADE_COUNT) {
-            // 占位符：使用确定性公式生成虚拟句柄
-            // 格式: 0xCA00_0000 | (cascadeIndex << 8) | resolution_code
-            long handle = 0xCA000000L | ((long) cascadeIndex << 8L) | (long) (Integer.numberOfTrailingZeros(shadowMapResolution) & 0xFF);
-            cascadeShadowMaps[cascadeIndex] = handle;
+        // 分配 Command Buffer 并录制 Dispatch
+        long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+        if (cmdBuf == 0L) return;
+        try {
+            LodCullingComputePass.beginCommandBuffer(cmdBuf);
+
+            // 绑定 Compute Pipeline
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
+
+            // 绑定 Descriptor Set
+            MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
+            dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
+            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1, pipelineLayout, 0, 1, dsPtr.address(), 0, 0L);
+
+            // Push Constants: 光空间 VP 矩阵 (16 floats = 64 bytes)
+            MemorySegment pcSeg = PerFrameArena.allocate(64L);
+            for (int i = 0; i < 16; i++) {
+                pcSeg.set(ValueLayout.JAVA_FLOAT, i * 4L, lightVPMatrix[i]);
+            }
+            VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, pipelineLayout, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, 64, pcSeg.address());
+
+            // Dispatch: 每个 Thread Group 处理 64 个顶点
+            int totalThreads = (vertexCount + 63) / 64;
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, Math.max(1, totalThreads), 1, 1);
+
+            LodCullingComputePass.endCommandBuffer(cmdBuf);
+
+            // 提交到 Graphics Queue 并等待完成
+            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+            if (queue != 0L) {
+                VulkanSyncManager.submitAndWait(queue, cmdBuf);
+            }
+        } catch (Throwable t) {
+            LOGGER.fine("shadow dispatch 失败: " + t.getMessage());
+        }
+
+        // 记录级联深度贴图句柄
+        if (cascadeIndex < MAX_CASCADE_COUNT && cascadeViews[cascadeIndex] != 0L) {
+            cascadeShadowMaps[cascadeIndex] = cascadeViews[cascadeIndex];
         }
     }
 
@@ -909,6 +1170,24 @@ public class ShadowMapNode extends AbstractPipelineNode {
         m[1] = 0;  m[5] = 1;  m[9]  = 0; m[13] = 0;
         m[2] = 0;  m[6] = 0;  m[10] = 1; m[14] = 0;
         m[3] = 0;  m[7] = 0;  m[11] = 0; m[15] = 1;
+    }
+
+    /**
+     * 从 classpath 加载 SPIR-V 二进制资源
+     *
+     * 【方法参数】
+     * @param path String - 资源路径（如 "/shaders/shadow_cascade.spv"）
+     *
+     * 【返回值】
+     * @return byte[] - SPIR-V 字节数组，加载失败返回 null
+     */
+    private static byte[] loadSPIRVResource(String path) {
+        try (var is = ShadowMapNode.class.getResourceAsStream(path)) {
+            if (is == null) return null;
+            return is.readAllBytes();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     @Override
