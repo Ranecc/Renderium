@@ -1,0 +1,70 @@
+#version 460
+// ============================================================================
+// Renderium - 胶片颗粒 (Film Grain) Compute Shader
+// ============================================================================
+// 算法: 基于屏幕位置+种子的伪随机噪声，叠加到颜色纹理
+// ============================================================================
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// ============================================================================
+// 资源绑定:
+//   binding 0: 颜色纹理 (sampler2D, COMBINED_IMAGE_SAMPLER)
+//   binding 1: 输出存储图像 (writeonly, STORAGE_IMAGE)
+// ============================================================================
+layout(binding = 0, rgba16f) uniform readonly image2D uColorTexture;
+layout(binding = 1, rgba16f) uniform image2D          uOutputImage;
+
+// ============================================================================
+// PushConstants (32 bytes)
+// ============================================================================
+layout(push_constant) uniform PushConstants {
+    float strength;         // 颗粒强度
+    float seed;             // 随机种子
+    float padding0;
+    float padding1;
+    float padding2;
+    float padding3;
+    float padding4;
+    float padding5;
+} pc;
+
+// ============================================================================
+// 伪随机数生成 (hash 函数)
+// 输入: 屏幕坐标 + 种子
+// 输出: [0, 1) 范围的伪随机数
+// ============================================================================
+float hash(vec3 seed3) {
+    // 将 vec3 编码为 uint
+    uvec3 u = floatBitsToUint(seed3);
+    uint x = u.x ^ u.y ^ u.z;
+    x = (x ^ 61u) ^ (x >> 16u);
+    x = x + (x << 3u);
+    x = x ^ (x >> 4u);
+    x = x * 0x27d4eb2du;
+    x = x ^ (x >> 15u);
+    return float(x) / float(0xffffffffu);
+}
+
+// ============================================================================
+// 主函数
+// ============================================================================
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imgSize = imageSize(uColorTexture);
+    if (pixel.x >= imgSize.x || pixel.y >= imgSize.y) return;
+
+    // 读取原始颜色
+    vec4 color = imageLoad(uColorTexture, pixel);
+
+    // 生成伪随机噪声
+    vec3 seed3 = vec3(vec2(pixel), pc.seed);
+    float noise = hash(seed3);
+
+    // noise = (hash - 0.5) * strength
+    float grain = (noise - 0.5) * pc.strength;
+
+    // 输出: 原色 + 噪声
+    vec4 result = vec4(color.rgb + grain, color.a);
+    imageStore(uOutputImage, pixel, result);
+}

@@ -1,0 +1,68 @@
+#version 460
+// ============================================================================
+// Renderium - 色差 (Chromatic Aberration) Compute Shader
+// ============================================================================
+// 算法: 径向 RGB 通道分离，R 向外偏移，B 向内偏移，G 保持原位
+// ============================================================================
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// ============================================================================
+// 资源绑定:
+//   binding 0: 颜色纹理 (sampler2D, COMBINED_IMAGE_SAMPLER)
+//   binding 1: 输出存储图像 (writeonly, STORAGE_IMAGE)
+// ============================================================================
+layout(binding = 0, rgba16f) uniform readonly image2D uColorTexture;
+layout(binding = 1, rgba16f) uniform image2D          uOutputImage;
+
+// ============================================================================
+// PushConstants (32 bytes)
+// ============================================================================
+layout(push_constant) uniform PushConstants {
+    float strength;         // 色差强度
+    int   screenWidth;      // 屏幕宽度
+    int   screenHeight;     // 屏幕高度
+    float radialEnabled;    // 1.0 = 径向模式, 0.0 = 固定偏移
+    float centerOffsetX;    // 中心点 X 偏移
+    float centerOffsetY;    // 中心点 Y 偏移
+} pc;
+
+// ============================================================================
+// 主函数
+// ============================================================================
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imgSize = ivec2(pc.screenWidth, pc.screenHeight);
+    if (pixel.x >= imgSize.x || pixel.y >= imgSize.y) return;
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(imgSize);
+    vec2 center = vec2(0.5 + pc.centerOffsetX, 0.5 + pc.centerOffsetY);
+    vec2 dir = uv - center;
+
+    float dist = length(dir);
+    vec2 dirNorm = dist > 0.001 ? normalize(dir) : vec2(0.0);
+
+    // 计算每通道偏移量
+    float scale = (pc.radialEnabled > 0.5) ? dist : 1.0;
+    float offsetAmount = pc.strength * scale;
+
+    vec2 offsetR = dirNorm * offsetAmount;
+    vec2 offsetB = -dirNorm * offsetAmount;
+
+    // R 通道采样（向外偏移）
+    vec2 uvR = clamp(uv + offsetR, vec2(0.0), vec2(1.0));
+    ivec2 pixelR = ivec2(uvR * vec2(imgSize));
+    pixelR = clamp(pixelR, ivec2(0), imgSize - 1);
+    float r = imageLoad(uColorTexture, pixelR).r;
+
+    // G 通道采样（保持原位）
+    float g = imageLoad(uColorTexture, pixel).g;
+
+    // B 通道采样（向内偏移）
+    vec2 uvB = clamp(uv + offsetB, vec2(0.0), vec2(1.0));
+    ivec2 pixelB = ivec2(uvB * vec2(imgSize));
+    pixelB = clamp(pixelB, ivec2(0), imgSize - 1);
+    float b = imageLoad(uColorTexture, pixelB).b;
+
+    imageStore(uOutputImage, pixel, vec4(r, g, b, 1.0));
+}

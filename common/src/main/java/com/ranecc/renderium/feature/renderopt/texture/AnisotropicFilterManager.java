@@ -1,6 +1,10 @@
 package com.ranecc.renderium.feature.renderopt.texture;
 
-import java.util.concurrent.ConcurrentHashMap;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
 /**
@@ -74,14 +78,35 @@ public final class AnisotropicFilterManager {
      * - maxAnisotropy = level
      */
     public long createAnisoSampler(int level) {
-        // TODO: 调用 vkCreateSampler
-        // VkSamplerCreateInfo info = {};
-        // info.magFilter = LINEAR;
-        // info.minFilter = LINEAR;
-        // info.mipmapMode = LINEAR;
-        // info.anisotropyEnable = level > 1;
-        // info.maxAnisotropy = (float) level;
-        return 0L;
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L) return 0L;
+        try {
+            MemorySegment ci = PerFrameArena.allocate(96L);
+            ci.set(ValueLayout.JAVA_LONG, 0, 21L);  // sType = SAMPLER_CREATE_INFO
+            ci.set(ValueLayout.JAVA_LONG, 8, 0L);   // pNext
+            ci.set(ValueLayout.JAVA_INT, 16, 0);    // flags
+            ci.set(ValueLayout.JAVA_INT, 20, 1);    // magFilter = VK_FILTER_LINEAR (1)
+            ci.set(ValueLayout.JAVA_INT, 24, 1);    // minFilter = VK_FILTER_LINEAR (1)
+            ci.set(ValueLayout.JAVA_INT, 28, 1);    // mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR (1)
+            ci.set(ValueLayout.JAVA_INT, 32, 0);    // addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT (0)
+            ci.set(ValueLayout.JAVA_INT, 36, 0);    // addressModeV
+            ci.set(ValueLayout.JAVA_INT, 40, 0);    // addressModeW
+            ci.set(ValueLayout.JAVA_FLOAT, 44, 0.0f); // mipLodBias
+            ci.set(ValueLayout.JAVA_INT, 48, level > 1 ? 1 : 0);  // anisotropyEnable
+            ci.set(ValueLayout.JAVA_FLOAT, 52, (float) Math.max(1, level)); // maxAnisotropy
+            ci.set(ValueLayout.JAVA_INT, 56, 0);    // compareEnable
+            ci.set(ValueLayout.JAVA_INT, 60, 0);    // compareOp
+            ci.set(ValueLayout.JAVA_FLOAT, 64, 0.0f); // minLod
+            ci.set(ValueLayout.JAVA_FLOAT, 68, 16.0f); // maxLod
+            ci.set(ValueLayout.JAVA_INT, 72, 0);    // borderColor
+            ci.set(ValueLayout.JAVA_INT, 76, 0);    // unnormalizedCoordinates
+            MemorySegment out = PerFrameArena.allocateLongs(1);
+            int rc = (int) VulkanAPIRegistry.invoke("vkCreateSampler", device, ci.address(), 0L, out.address());
+            return rc == 0 ? out.get(ValueLayout.JAVA_LONG, 0) : 0L;
+        } catch (Throwable t) {
+            LOGGER.fine("vkCreateSampler 失败: " + t.getMessage());
+            return 0L;
+        }
     }
 
     // ==================== 公共 API ====================

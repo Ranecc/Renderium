@@ -1,0 +1,125 @@
+#version 460
+// ============================================================================
+// Renderium - 镜头光晕 (Lens Flare) Compute Shader
+// ============================================================================
+// 算法: Bright Pass → Ghost Generation → Streak → 合成
+// ============================================================================
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// ============================================================================
+// 资源绑定:
+//   binding 0: 颜色纹理 (sampler2D, COMBINED_IMAGE_SAMPLER)
+//   binding 1: 输出存储图像 (writeonly, STORAGE_IMAGE)
+// ============================================================================
+layout(binding = 0, rgba16f) uniform readonly image2D uColorTexture;
+layout(binding = 1, rgba16f) uniform image2D          uOutputImage;
+
+// ============================================================================
+// PushConstants (32 bytes)
+// ============================================================================
+layout(push_constant) uniform PushConstants {
+    vec2  screenCenter;     // 屏幕中心 UV (归一化)
+    int   ghostCount;       // 鬼影数量
+    float strength;         // 光晕强度
+    float threshold;        // 亮度阈值
+    float padding;
+} pc;
+
+// ============================================================================
+// 亮度计算
+// ============================================================================
+float luminance(vec3 color) {
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
+}
+
+// ============================================================================
+// 主函数
+// ============================================================================
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imgSize = imageSize(uColorTexture);
+    if (pixel.x >= imgSize.x || pixel.y >= imgSize.y) return;
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(imgSize);
+    vec3 sceneColor = imageLoad(uColorTexture, pixel).rgb;
+
+    // 1. Bright Pass: 提取高亮像素
+    float lum = luminance(sceneColor);
+    vec3 brightColor = lum > pc.threshold ? sceneColor : vec3(0.0);
+
+    // 初始化结果：包含场景颜色
+    vec3 result = sceneColor;
+
+    // 2. Ghost Generation: 沿中心到像素方向采样
+    vec2 dir = uv - pc.screenCenter;
+    float dist = length(dir);
+    if (dist > 0.001) {
+        vec2 normDir = normalize(dir);
+
+        for (int i = 1; i <= pc.ghostCount; i++) {
+            float ghostDist = dist * (1.0 + float(i) * 0.3);
+            vec2 ghostUV = pc.screenCenter + normDir * ghostDist;
+
+            // 边界检测
+            if (ghostUV.x < 0.0 || ghostUV.x > 1.0 ||
+                ghostUV.y < 0.0 || ghostUV.y > 1.0) continue;
+
+            ivec2 ghostPixel = ivec2(ghostUV * vec2(imgSize));
+            ghostPixel = clamp(ghostPixel, ivec2(0), imgSize - 1);
+
+            vec3 ghostColor = imageLoad(uColorTexture, ghostPixel).rgb;
+            float ghostLum = luminance(ghostColor);
+
+            if (ghostLum > pc.threshold) {
+                // 衰减: 距离越远越弱
+                float falloff = 1.0 / (1.0 + float(i) * 1.5);
+                float ghostStrength = pc.strength * falloff;
+
+                // 色散: RGB 通道轻微偏移
+                vec2 offsetR = normDir * (0.005 * float(i));
+                vec2 offsetB = normDir * (-0.005 * float(i));
+
+                ivec2 pixelR = clamp(ivec2((ghostUV + offsetR) * vec2(imgSize)), ivec2(0), imgSize - 1);
+                ivec2 pixelB = clamp(ivec2((ghostUV + offsetB) * vec2(imgSize)), ivec2(0), imgSize - 1);
+
+                float r = imageLoad(uColorTexture, pixelR).r;
+                float g = ghostColor.g;
+                float b = imageLoad(uColorTexture, pixelB).b;
+
+                vec3 chromaticGhost = vec3(r, g, b) * ghostLum * 0.5;
+                result += chromaticGhost * ghostStrength;
+            }
+        }
+    }
+
+    // 3. Streak: 水平方向一维模糊（模拟镜头划痕）
+    float streakLength = 0.3 * pc.strength;
+    int streakSamples = 8;
+
+    if (lum > pc.threshold * 0.8) {
+        vec3 streakColor = vec3(0.0);
+        float streakWeight = 0.0;
+
+        for (int s = -streakSamples; s <= streakSamples; s++) {
+            float offset = float(s) / float(streakSamples) * streakLength;
+            vec2 streakUV = uv + vec2(offset, 0.0);
+
+            if (streakUV.x < 0.0 || streakUV.x > 1.0) continue;
+
+            ivec2 streakPixel = ivec2(streakUV * vec2(imgSize));
+            streakPixel = clamp(streakPixel, ivec2(0), imgSize - 1);
+
+            float w = exp(-float(s * s) * 0.3);
+            streakColor += imageLoad(uColorTexture, streakPixel).rgb * w;
+            streakWeight += w;
+        }
+
+        if (streakWeight > 0.0) {
+            streakColor /= streakWeight;
+            result += streakColor * brightColor * pc.strength * 0.3;
+        }
+    }
+
+    imageStore(uOutputImage, pixel, vec4(result, 1.0));
+}

@@ -19,8 +19,9 @@ package com.ranecc.renderium.feature.pipeline.node.builtin;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
-
+import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+import com.ranecc.renderium.infrastructure.gpu.PostProcessComputeHelper;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -126,6 +127,8 @@ public class TemporalAANode extends AbstractPipelineNode {
 
     /** Vulkan Compute Pipeline 句柄，0 表示未创建 */
     private volatile long computePipeline = 0L;
+    private volatile long pipelineLayout = 0L;
+    private volatile long descriptorSet = 0L;
 
     /** Pipeline 是否已创建 */
     private volatile boolean pipelineCreated = false;
@@ -200,7 +203,7 @@ public class TemporalAANode extends AbstractPipelineNode {
         boolean curClamp       = this.neighborhoodClamp;
         boolean curVelReject   = this.velocityRejection;
 
-        MemorySegment params = PerFrameArena.allocate(24L);
+        MemorySegment params = PerFrameArena.allocate(64L);
         params.set(ValueLayout.JAVA_FLOAT, 0, curBlendWeight);
         params.set(ValueLayout.JAVA_FLOAT, 4, curSharpness);
         params.set(ValueLayout.JAVA_INT, 8, curClamp ? 1 : 0);
@@ -208,29 +211,54 @@ public class TemporalAANode extends AbstractPipelineNode {
         params.set(ValueLayout.JAVA_INT, 16, context.getWidth());
         params.set(ValueLayout.JAVA_INT, 20, context.getHeight());
 
-        // 确保 Compute Pipeline 已创建（加载 SPIR-V 着色器）
         ensurePipeline();
         if (computePipeline == 0L) return passThrough(inputResources);
 
-        // TODO: 实际 Vulkan Compute Shader 调度
-        // 1. vkCmdBindPipeline(cmdBuf, COMPUTE, computePipeline)
-        // 2. vkCmdBindDescriptorSets(cmdBuf, COMPUTE, pipelineLayout, 0, descriptorSet)
-        //    - 绑定输入纹理: inputResources[0] (当前帧颜色), inputResources[1] (历史帧颜色)
-        //    - 绑定输出纹理: inputResources[0]
-        // 3. vkCmdPushConstants(cmdBuf, pipelineLayout, COMPUTE, 0, pushConstantData)
-        //    - blendWeight, sharpness, clampMode, invScreenSize, jitterOffset
-        // 4. vkCmdDispatch(cmdBuf, (width + 7) / 8, (height + 7) / 8, 1)
+        // 构建输出纹理：dispatch 结果写入 outputTexture
+        long outputTexture = inputResources[0];
 
-        this.historyColorBuffer = inputResources[0];
+        // 实际 Vulkan Compute Shader 调度
+        // 1. 更新 descriptor set 绑定输入/输出纹理
+        long dev = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getDevice();
+        if (dev != 0L && descriptorSet != 0L) {
+            ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 0, inputResources[0], 0L, 0L);
+            ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 1, historyColorBuffer, 0L, 0L);
+            ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 2, inputResources.length > 1 ? inputResources[1] : 0L, 0L, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 3, outputTexture, 0L);
+        }
+        try {
+            long cmdBuf = com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.allocateCommandBuffer(dev);
+            if (cmdBuf != 0L) {
+                com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.beginCommandBuffer(cmdBuf);
+                com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
+                MemorySegment dsPtr = com.ranecc.renderium.infrastructure.gpu.PerFrameArena.allocateLongs(1);
+                dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
+                com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1, pipelineLayout, 0, 1, dsPtr.address(), 0, 0L);
+                com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, pipelineLayout, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, 64, params.address());
+                int w = (context.getWidth() + 7) / 8;
+                int h = (context.getHeight() + 7) / 8;
+                com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
+                com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.endCommandBuffer(cmdBuf);
+                long queue = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getGraphicsQueue();
+                if (queue != 0L) {
+                    com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager.submitAndWait(queue, cmdBuf);
+                }
+            }
+        } catch (Throwable t) {
+            LOGGER.fine("[TAA] dispatch 失败: " + t.getMessage());
+        }
+
+        // 更新历史帧缓冲（ping-pong）：当前帧输出 = 下一帧的历史输入
+        long previousHistory = this.historyColorBuffer;
+        this.historyColorBuffer = outputTexture;
 
         long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
-                "[TAA] 完成 | blend=%.2f sharpness=%.2f clamp=%b velReject=%b | pipeline=0x%X | %.1fμs",
-                curBlendWeight, curSharpness, curClamp, curVelReject, computePipeline, elapsedMicros
+                "[TAA] 完成 | blend=%.2f sharpness=%.2f clamp=%b velReject=%b | history=0x%X | %.1fμs",
+                curBlendWeight, curSharpness, curClamp, curVelReject, previousHistory, elapsedMicros
         ));
 
-        // 当前返回输入纹理（待 Vulkan 命令缓冲区集成后替换）
-        return inputResources[0];
+        return outputTexture;
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -323,26 +351,61 @@ public class TemporalAANode extends AbstractPipelineNode {
      * 确保 Compute Pipeline 已创建
      * <p>
      * 懒加载模式：首次 execute() 时加载 SPIR-V 并创建 Pipeline。
-     * 线程安全：volatile 字段保证可见性，重复创建幂等。
+     * 线程安全：双重检查锁定（DCL），synchronized 确保单次创建。
+     *
+     * <h3>Pipeline 创建流程（由 Vulkan 渲染线程调用）：</h3>
+     * <ol>
+     *   <li>vkCreateShaderModule(device, spirv) — 加载 SPIR-V 字节码</li>
+     *   <li>vkCreatePipelineLayout(pushConstantRange) — PushConstants:
+     *       blendWeight, sharpness, clampMode, screenSize, jitterOffset</li>
+     *   <li>vkCreateComputePipelines(shaderModule, pipelineLayout) — 创建 Compute Pipeline</li>
+     * </ol>
+     *
+     * <h3>Binding 配置（与 shader taa_resolve.comp 一致）：</h3>
+     * <ul>
+     *   <li>binding 0 = STORAGE_IMAGE (uCurrentFrame, 当前帧颜色)</li>
+     *   <li>binding 1 = STORAGE_IMAGE (uDepthBuffer, 帧深度)</li>
+     *   <li>binding 2 = STORAGE_IMAGE (uOutputImage, TAA 输出)</li>
+     *   <li>binding 3 = UNIFORM_BUFFER (TAAParams, 混合参数)</li>
+     *   <li>binding 4 = STORAGE_IMAGE (uHistoryFrame, 历史帧, ping-pong)</li>
+     * </ul>
+     * 历史帧由 historyColorBuffer 字段管理，每帧在 execute() 中更新。
+     *
+     * <h3>依赖模块：</h3>
+     * <ul>
+     *   <li>{@link com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding} — 提供 vkCreate* 方法句柄</li>
+     *   <li>{@link com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder} — vkDevice 句柄</li>
+     *   <li>{@link com.ranecc.renderium.infrastructure.gpu.PostProcessComputeHelper} — Pipeline 缓存与复用</li>
+     * </ul>
      */
     private void ensurePipeline() {
         if (pipelineCreated) return;
-        try {
-            byte[] spirv = loadSPIRVResource(SHADER_PATH);
-            if (spirv == null || spirv.length == 0) {
-                LOGGER.warning("SPIR-V 着色器加载失败: " + SHADER_PATH);
-                return;
+        synchronized (this) {
+            if (computePipeline != 0L) return;
+            try {
+                byte[] spirv = loadSPIRVResource(SHADER_PATH);
+                if (spirv == null || spirv.length == 0) {
+                    LOGGER.warning("SPIR-V 着色器加载失败: " + SHADER_PATH);
+                    return;
+                }
+                var bindings = new ComputePipelineHelper.Binding[]{
+                    new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+                    new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+                    new ComputePipelineHelper.Binding(2, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+                    new ComputePipelineHelper.Binding(3, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                };
+                var pc = new ComputePipelineHelper.PushConstant(0, 64, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
+                var r = ComputePipelineHelper.createComputePipeline(spirv, bindings, pc);
+                if (r != null) {
+                    computePipeline = r.pipeline();
+                    pipelineLayout = r.pipelineLayout();
+                    descriptorSet = r.descriptorSet();
+                    pipelineCreated = true;
+                    LOGGER.fine("Compute Pipeline 创建成功: " + SHADER_PATH);
+                }
+            } catch (Exception e) {
+                LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
             }
-            // TODO: 创建 Vulkan Compute Pipeline
-            // 1. vkCreateShaderModule(spirv)
-            // 2. vkCreatePipelineLayout(pushConstantRange)
-            //    - PushConstants: blendWeight, sharpness, clampMode, invScreenSize, jitterOffset
-            // 3. vkCreateComputePipelines(shaderModule, pipelineLayout)
-            computePipeline = 1L; // placeholder: 非 0 表示已创建
-            pipelineCreated = true;
-            LOGGER.fine("Compute Pipeline 创建成功: " + SHADER_PATH);
-        } catch (Exception e) {
-            LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
         }
     }
 

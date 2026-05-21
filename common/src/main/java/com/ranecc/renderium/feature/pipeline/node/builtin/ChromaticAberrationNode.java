@@ -16,7 +16,15 @@ package com.ranecc.renderium.feature.pipeline.node.builtin;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
+import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
 /**
@@ -72,6 +80,9 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(ChromaticAberrationNode.class.getName());
 
+    /** SPIR-V 着色器资源路径 */
+    private static final String SHADER_PATH = "/shaders/chromatic_aberration.spv";
+
     // ==================== 参数边界 ====================
 
     /** 色差强度下界 */
@@ -108,6 +119,11 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
 
     /** 中心点 Y 偏移 */
     private volatile float centerOffsetY = CENTER_OFFSET_DEFAULT;
+
+    /** Vulkan Compute Pipeline 句柄，0 表示未创建 */
+    private volatile long computePipeline = 0L;
+    private volatile long pipelineLayout = 0L;
+    private volatile long descriptorSet = 0L;
 
     // ==================== 构造函数 ====================
 
@@ -156,7 +172,7 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
      * @return long - 处理后的颜色纹理句柄，0 表示失败
      *
      * 【性能预算】
-     * - 1080p 目标: < 0.3ms (Fragment Shader)
+     * - 1080p 目标: < 0.3ms (Compute Shader)
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
@@ -181,28 +197,52 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
         float curCenterOffsetX = this.centerOffsetX;
         float curCenterOffsetY = this.centerOffsetY;
 
-        // TODO: 实现 GPU Chromatic Aberration
-        // 1. 计算每通道偏移：R 偏移 = -strength, B 偏移 = +strength, G = 0
-        //    vec2 dir = uv - vec2(0.5 + centerOffsetX, 0.5 + centerOffsetY);
-        //    float dist = length(dir);
-        //    vec2 offsetR, offsetB;
-        //    if (radial) {
-        //        offsetR = -dir * strength * dist;
-        //        offsetB =  dir * strength * dist;
-        //    } else {
-        //        offsetR = vec2(-strength, 0);
-        //        offsetB = vec2( strength, 0);
-        //    }
-        //
-        // 2. 若 radial：偏移按距中心距离缩放
-        //    已在上方计算中体现
-        //
-        // 3. 分别采样 R, G, B 通道，使用不同 UV 偏移
-        //    float r = texture(input, uv + offsetR).r;
-        //    float g = texture(input, uv).g;
-        //    float b = texture(input, uv + offsetB).b;
-        //
-        // 4. 合成：output = vec3(r, g, b)
+        long colorTexture = inputResources[0];
+        long outputTexture = colorTexture; // 就地写入
+
+        ensurePipeline();
+        if (computePipeline == 0L) return passThrough(inputResources);
+
+        try {
+            long dev = VulkanDeviceHolder.getInstance().getDevice();
+            if (dev == 0L || descriptorSet == 0L) return passThrough(inputResources);
+
+            // 更新 image descriptors
+            ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 0, colorTexture, 0L, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputTexture, 0L);
+
+            // 构建 PushConstants: float strength, int screenWidth, int screenHeight, float radial, float centerX, float centerY (32 bytes)
+            MemorySegment params = PerFrameArena.allocate(32L);
+            params.set(ValueLayout.JAVA_FLOAT, 0, curStrength);
+            params.set(ValueLayout.JAVA_INT, 4, context.getWidth());
+            params.set(ValueLayout.JAVA_INT, 8, context.getHeight());
+            params.set(ValueLayout.JAVA_FLOAT, 12, curRadial ? 1.0f : 0.0f);
+            params.set(ValueLayout.JAVA_FLOAT, 16, curCenterOffsetX);
+            params.set(ValueLayout.JAVA_FLOAT, 20, curCenterOffsetY);
+
+            // Vulkan compute dispatch
+            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+            if (cmdBuf != 0L) {
+                LodCullingComputePass.beginCommandBuffer(cmdBuf);
+                VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
+                MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
+                dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
+                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1, pipelineLayout, 0, 1, dsPtr.address(), 0, 0L);
+                VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, pipelineLayout, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, 32, params.address());
+
+                int w = (context.getWidth() + 7) / 8;
+                int h = (context.getHeight() + 7) / 8;
+                VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
+                LodCullingComputePass.endCommandBuffer(cmdBuf);
+
+                long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+                if (queue != 0L) {
+                    VulkanSyncManager.submitAndWait(queue, cmdBuf);
+                }
+            }
+        } catch (Throwable t) {
+            LOGGER.fine("[ChromaticAberration] dispatch 失败: " + t.getMessage());
+        }
 
         long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
@@ -210,7 +250,7 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
                 curStrength, curRadial, curCenterOffsetX, curCenterOffsetY, elapsedMicros
         ));
 
-        return inputResources[0]; // 待 GPU 实现后返回处理后的纹理
+        return outputTexture;
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -300,6 +340,64 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
     }
 
     // ==================== 辅助方法 ====================
+
+    /**
+     * 确保 Compute Pipeline 已创建
+     * <p>
+     * 懒加载模式：首次 execute() 时加载 SPIR-V 并创建 Pipeline。
+     * 线程安全：双重检查锁定（DCL），synchronized 确保单次创建。
+     * 使用 {@link ComputePipelineHelper#createComputePipeline} 创建真实管线。
+     *
+     * ChromaticAberration Binding 配置:
+     *   binding 0 = COMBINED_IMAGE_SAMPLER (color 纹理)
+     *   binding 1 = STORAGE_IMAGE (output 输出纹理)
+     * PushConstant: size=32, offset=0
+     */
+    private void ensurePipeline() {
+        if (computePipeline != 0L) return;
+        synchronized (this) {
+            if (computePipeline != 0L) return;
+            try {
+                byte[] spirv = loadSPIRVResource(SHADER_PATH);
+                if (spirv == null || spirv.length == 0) {
+                    LOGGER.warning("SPIR-V 着色器加载失败: " + SHADER_PATH);
+                    return;
+                }
+                var bindings = new ComputePipelineHelper.Binding[]{
+                    new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+                    new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                };
+                var pc = new ComputePipelineHelper.PushConstant(0, 32, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
+                var r = ComputePipelineHelper.createComputePipeline(spirv, bindings, pc);
+                if (r != null) {
+                    computePipeline = r.pipeline();
+                    pipelineLayout = r.pipelineLayout();
+                    descriptorSet = r.descriptorSet();
+                    LOGGER.fine("Compute Pipeline 创建成功: " + SHADER_PATH);
+                }
+            } catch (Exception e) {
+                LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 从 classpath 加载 SPIR-V 二进制资源
+     *
+     * 【方法参数】
+     * @param path String - 资源路径（如 "/shaders/chromatic_aberration.spv"）
+     *
+     * 【返回值】
+     * @return byte[] - SPIR-V 字节数组，加载失败返回 null
+     */
+    private static byte[] loadSPIRVResource(String path) {
+        try (var is = ChromaticAberrationNode.class.getResourceAsStream(path)) {
+            if (is == null) return null;
+            return is.readAllBytes();
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /**
      * 短路：禁用时直接传递输入

@@ -1,13 +1,12 @@
 // Renderium - 风格化光线追踪实验框架
 // Streamline SDK 集成 - NVIDIA性能采集 + DLSS/Reflex/PerfSDK
-// SDK路径: e:\DEV\Renderium\env\streamline-sdk-v2.10.3
-// 目标GPU: NVIDIA RTX 5060 (Blackwell架构)
-// ⚠️ 这是真实的SDK集成, 不是占位符
 
 package com.ranecc.renderium.feature.blaze3d.stylizedrt;
 import com.ranecc.renderium.tech.streamline.VulkanStreamlineBridge;
 import com.ranecc.renderium.tech.streamline.SLContext;
 import com.ranecc.renderium.tech.streamline.ffm.SLFFMBindings;
+
+import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 
 
 import java.lang.foreign.Arena;
@@ -35,17 +34,17 @@ import java.util.logging.Logger;
  * <h2>状态机管理：</h2>
  * <pre>
  *   ┌──────┐    initialize()    ┌───────────┐
- *   │ IDLE │ ─────────────────→ │ INITIALIZED│
- *   └──────┘                   └─────┬─────┘
+ *   │ IDLE │ ─────────────────→ │INITIALIZED│
+ *   └──────┘                    └─────┬─────┘
  *                                     │ beginFrame()
  *                                     ↓
  *                              ┌──────────────┐
- *                              │  EVALUATING   │ ← 帧评估中（标记资源、设置常量）
+ *                              │  EVALUATING  │ ← 帧评估中（标记资源、设置常量）
  *                              └──────┬───────┘
  *                                     │ endFrame()
  *                                     ↓
  *                              ┌──────────────┐
- *                              │  PRESENTING   │ ← 等待呈现
+ *                              │  PRESENTING  │ ← 等待呈现
  *                              └──────┬───────┘
  *                                     │ present() / 下一帧beginFrame()
  *                                     ↓
@@ -449,7 +448,7 @@ public class StreamlineIntegration implements AutoCloseable {
                     vkInstance,                           // 1st: VkInstance
                     vkPhysicalDevice,                     // 2nd: VkPhysicalDevice
                     vkDevice,                             // 3rd: VkDevice
-                    0L,                                   // 4th: VkQueue (暂时为 0)
+                    0L,                                   // 4th: VkQueue (暂时为 0) TODO
                     0,                                    // queueFamilyIndex
                     0                                     // queueIndex
             );
@@ -632,41 +631,40 @@ public class StreamlineIntegration implements AutoCloseable {
 
         // 开始 Streamline 处理计时
         long startTimeNs = System.nanoTime();
+        currentFrameData.streamlineProcessingTimeNs = startTimeNs;
 
         // ========== TODO #5 实现：slBeginFrame + Reflex Sleep ==========
         //
-        // 对应 C++ 伪代码:
-        //   slReflexSleep(sl::kReflexMarkerBeforeFrame);  // Reflex 低延迟睡眠
-        //   slNVPerfBeginPass();                            // 开始 Perf SDK Pass
+        // 【需求】在渲染帧开始时：
+        //   1. 调用 slReflexSleep(sl::kReflexMarkerBeforeFrame) 让 Reflex 驱动做
+        //      低延迟睡眠，减少输入延迟。需通过 slGetFeatureFunction(FEATURE_REFLEX, "slReflexSleep", &ptr) 获取函数指针。
+        //   2. 调用 slNVPerfBeginPass() 开始 Nsight Perf SDK 采集范围。
+        //      需 NVPerf 专用 FFM 绑定（当前未添加）。
+        //   3. 可选调用 FrameEvaluator.beginFrame() 获取 slGetNewFrameToken。
+        //      FrameEvaluator 在 tech.streamline 包中，需要本类持有其引用。
         //
-        // 注意：Streamline 的帧开始通常通过 FrameEvaluator.beginFrame() 实现
-        // 这里进行基础配置和 Reflex 标记
-
-        try {
-            // Reflex 标记：如果 Reflex 可用，插入帧开始标记
-            // 这有助于测量渲染管线输入延迟
-            if (reflexAvailable) {
-                LOGGER.fine(String.format("[Streamline] Frame #%d: Reflex 标记 - BeforeFrame",
-                        currentFrameData.frameId));
-                // 实际 Reflex 调用需通过 slGetFeatureFunction 获取 Reflex 函数
-                // 或使用 SLFFMBindings 的 Reflex 相关绑定（如已添加）
-            }
-
-            // NVPerf Pass 开始：如果 Perf SDK 可用
-            if (perfSDKAvailable) {
-                LOGGER.fine(String.format("[Streamline] Frame #%d: NVPerf BeginPass",
-                        currentFrameData.frameId));
-                // slNVPerfBeginPass() 调用
-                // 实际实现需要 NVPerf 专用绑定
-            }
-
-            // 记录开始时间戳（用于帧耗时计算）
-            currentFrameData.streamlineProcessingTimeNs = startTimeNs;
-
-        } catch (Exception e) {
-            LOGGER.warning(String.format("[Streamline] Frame #%d beginFrame 异常: %s",
-                    currentFrameData.frameId, e.getMessage()));
-        }
+        // 【阻塞项】
+        //   - Reflex: SLFFMBindings 需添加 slReflexSleep 绑定或通过
+        //     slGetFeatureFunction + downcallHandle 动态解析。
+        //     参考 ReflexManagerImpl.setPCLMarkerInternal() 的模式。
+        //   - NVPerf: 需要 sl.nvperf.dll 加载 + 对应的 slNVPerfBeginPass/EndPass
+        //     FFM 绑定。SDK DLL 已在 resources/native/windows-x64/ 中。
+        //   - FrameEvaluator: 需从 RTBenchmarkRunner 或构造函数注入。
+        //
+        // 【前置条件】
+        //   ① SLContext.initialize() 必须已成功调用（slInit 通过）
+        //   ② SLContext.detectFeatures() 确认 FEATURE_REFLEX/NVPERF 支持
+        //   ③ 对应特性函数已通过 slGetFeatureFunction 解析
+        //
+        // 【关联模块】
+        //   tech.streamline.SLContext          — 生命周期管理
+        //   tech.streamline.FrameEvaluator      — 帧标记与资源标记
+        //   tech.reflex.ReflexManagerImpl       — Reflex/PCL 标记参考实现
+        //   feature.lod.compute.VulkanFFMBinding — Vulkan FFM 绑定的统一入口
+        //   tech.streamline.ffm.SLFFMBindings   — Streamline SDK FFM 调用
+        //
+        // 【重构建议】将 #5-#9 整体迁移到独立的 StreamlineFrameManager 类中，
+        // 与 FrameEvaluator 合并，减少 StreamlineIntegration 的职责。
     }
 
     /**
@@ -702,38 +700,24 @@ public class StreamlineIntegration implements AutoCloseable {
             return;
         }
 
-        // ========== TODO #6 实现：插入 GPU 时间戳查询（Pass 开始）==========
-        //
-        // 对应 C++/Vulkan 伪代码:
-        //   vkCmdWriteTimestamp(
-        //       commandBuffer,                              // 当前的 VkCommandBuffer
-        //       VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,          // 管线顶部阶段
-        //       timestampQueryPool,                         // 时间戳查询池
-        //       passIndex * 2                              // 查询索引（偶数=开始）
-        //   );
-        //
-        // 注意：实际的时间戳写入需要有效的 VkCommandBuffer 和 VkQueryPool
-        // 这里提供接口框架，实际的 Vulkan 命令由渲染层注入
-
+        // GPU 时间戳查询：Pass 开始
+        // 使用 VulkanFFMBinding 写入时间戳
         try {
-            // 检查是否有有效的命令缓冲区
             if (currentCommandBuffer != 0 && timestampQueryPool != 0) {
-                // 实际实现：通过 Vulkan FFM 绑定调用 vkCmdWriteTimestamp
-                // VkFFMBindings.vkCmdWriteTimestamp(
-                //     currentCommandBuffer,
-                //     VulkanConst.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                //     timestampQueryPool,
-                //     passIndex * 2
-                // );
-                LOGGER.fine(String.format("[Streamline] Frame #%d Pass[%d:%s]: ▶ 开始时间戳已写入",
-                        currentFrameData.frameId, passIndex, passName));
+                var mh = VulkanFFMBinding.getVkCmdWriteTimestamp();
+                if (mh != null) {
+                    mh.invokeExact(currentCommandBuffer,
+                            0x00010000, // VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+                            timestampQueryPool,
+                            passIndex * 2);
+                    LOGGER.fine(String.format("[Streamline] Frame #%d Pass[%d:%s]: ▶ GPU 时间戳已写入",
+                            currentFrameData.frameId, passIndex, passName));
+                }
             } else {
-                // 无有效 Vulkan 资源时使用 CPU 时间作为后备方案
-                LOGGER.fine(String.format("[Streamline] Frame #%d Pass[%d:%s]: ▶ CPU 后备计时",
+                LOGGER.fine(String.format("[Streamline] Frame #%d Pass[%d:%s]: ▶ CPU 计时",
                         currentFrameData.frameId, passIndex, passName));
             }
-
-        } catch (Exception e) {
+        } catch (Throwable e) {
             LOGGER.warning(String.format("[Streamline] beginPass(%d) 异常: %s",
                     passIndex, e.getMessage()));
         }
@@ -762,31 +746,22 @@ public class StreamlineIntegration implements AutoCloseable {
             return; // beginPass 时已记录警告，此处静默返回
         }
 
-        // ========== TODO #7 实现：插入 GPU 时间戳查询（Pass 结束）==========
-        //
-        // 对应 C++/Vulkan 伪代码:
-        //   vkCmdWriteTimestamp(
-        //       commandBuffer,                                // 当前的 VkCommandBuffer
-        //       VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,         // 管线底部阶段
-        //       timestampQueryPool,                           // 时间戳查询池
-        //       passIndex * 2 + 1                            // 查询索引（奇数=结束）
-        //   );
-
+        // GPU 时间戳查询：Pass 结束
+        // BOTTOM_OF_PIPE 阶段写入，与 beginPass 配对计算耗时
         try {
-            // 检查是否有有效的命令缓冲区
             if (currentCommandBuffer != 0 && timestampQueryPool != 0) {
-                // 实际实现：通过 Vulkan FFM 绑定调用 vkCmdWriteTimestamp
-                // VkFFMBindings.vkCmdWriteTimestamp(
-                //     currentCommandBuffer,
-                //     VulkanConst.VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                //     timestampQueryPool,
-                //     passIndex * 2 + 1
-                // );
-                LOGGER.fine(String.format("[Streamline] Frame #%d Pass[%d]: ◀ 结束时间戳已写入",
-                        currentFrameData.frameId, passIndex));
+                var mh = VulkanFFMBinding.getVkCmdWriteTimestamp();
+                if (mh != null) {
+                    mh.invokeExact(currentCommandBuffer,
+                            0x00010002, // VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
+                            timestampQueryPool,
+                            passIndex * 2 + 1);
+                    LOGGER.fine(String.format("[Streamline] Frame #%d Pass[%d]: ◀ GPU 时间戳已写入",
+                            currentFrameData.frameId, passIndex));
+                }
             }
 
-        } catch (Exception e) {
+        } catch (Throwable e) {
             LOGGER.warning(String.format("[Streamline] endPass(%d) 异常: %s",
                     passIndex, e.getMessage()));
         }
@@ -828,57 +803,41 @@ public class StreamlineIntegration implements AutoCloseable {
         long frameProcessingTimeNs = endTimeNs - currentFrameData.streamlineProcessingTimeNs;
         currentFrameData.streamlineProcessingTimeNs = frameProcessingTimeNs;
 
-        // ========== TODO #8 实现：slEndFrame + 采集计数器 ==========
-        //
-        // 对应 C++ 伪代码:
-        //   slNVPerfEndPass();                                    // 结束 Perf SDK Pass
-        //   slNVPerfGetCounterValues(currentFrameData.counters); // 采集计数器值
-        //
-        //   // 读取 GPU 时间戳:
-        //   vkGetQueryPoolResults(
-        //       device,              // VkDevice
-        //       queryPool,           // VkQueryPool
-        //       0,                   // 首个查询索引
-        //       10,                  // 查询数量 (5 passes × 2)
-        //       timestampData,       // 输出缓冲区
-        //       sizeof(uint64_t) * 10, // 数据大小
-        //       sizeof(uint64_t),     // 步长
-        //       VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT  // 标志
-        //   );
-
         try {
-            // 步骤 1: NVPerf Pass 结束
-            if (perfSDKAvailable) {
-                LOGGER.fine(String.format("[Streamline] Frame #%d: NVPerf EndPass",
-                        currentFrameData.frameId));
-                // slNVPerfEndPass() 调用
-            }
-
-            // 步骤 2: 采集性能计数器（模拟数据/存根）
-            // 实际实现需要 NVPerf 专用 API 绑定
-            if (perfSDKAvailable) {
-                // 这里可以添加实际的计数器采集逻辑
-                // 例如: slNVPerfGetCounterValues(counterMap);
-                LOGGER.fine(String.format("[Streamline] Frame #%d: 性能计数器采集完成",
-                        currentFrameData.frameId));
-            }
-
-            // 步骤 3: 读取 GPU 时间戳（如果有有效的查询池）
+            // 读取 GPU 时间戳（计算每个 Pass 的 GPU 耗时）
             if (timestampQueryPool != 0 && vkDeviceHandle != 0) {
-                // 实际实现：vkGetQueryPoolResults()
-                // 计算每个 Pass 的 GPU 耗时:
-                //   passTimeUs[i] = (timestamps[2*i+1] - timestamps[2*i]) * timestampPeriod / 1000
-                LOGGER.fine(String.format("[Streamline] Frame #%d: GPU 时间戳读取完成",
-                        currentFrameData.frameId));
+                var mh = VulkanFFMBinding.getVkGetQueryPoolResults();
+                if (mh != null) {
+                    int passCount = currentFrameData.passTimesUs.length;
+                    int queryCount = passCount * 2;
+                    try (Arena arena = Arena.ofConfined()) {
+                        MemorySegment timestamps = arena.allocate(queryCount * 8L);
+                        int result = (int) mh.invokeExact(
+                                vkDeviceHandle,
+                                timestampQueryPool,
+                                0,                 // firstQuery
+                                queryCount,        // queryCount
+                                queryCount * 8L,   // dataSize
+                                timestamps.address(),
+                                8L,                // stride
+                                0x00000001         // VK_QUERY_RESULT_64_BIT
+                        );
+                        if (result == 0) {
+                            double timestampPeriod = 1.0; // nanosecond
+                            for (int i = 0; i < passCount; i++) {
+                                long start = timestamps.getAtIndex(ValueLayout.JAVA_LONG, i * 2);
+                                long end = timestamps.getAtIndex(ValueLayout.JAVA_LONG, i * 2 + 1);
+                                long elapsed = (long)((end - start) * timestampPeriod / 1000);
+                                currentFrameData.passTimesUs[i] = Math.max(0, elapsed);
+                            }
+                            LOGGER.fine(String.format("[Streamline] Frame #%d: GPU 时间戳回读完成 (%d passes)",
+                                    currentFrameData.frameId, passCount));
+                        }
+                    }
+                }
             }
 
-            // 步骤 4: Reflex 标记：帧结束
-            if (reflexAvailable) {
-                LOGGER.fine(String.format("[Streamline] Frame #%d: Reflex 标记 - Present",
-                        currentFrameData.frameId));
-            }
-
-        } catch (Exception e) {
+        } catch (Throwable e) {
             LOGGER.warning(String.format("[Streamline] Frame #%d endFrame 异常: %s",
                     currentFrameData.frameId, e.getMessage()));
         }
@@ -1079,13 +1038,8 @@ public class StreamlineIntegration implements AutoCloseable {
         // 清空性能历史数据
         perfDataHistory.clear();
 
-        // ========== TODO #9 实现：slShutdown() ==========
-        //
-        // 对应 C++ 伪代码:
-        //   slShutdown();  // 关闭 Streamline SDK，释放所有内部资源
-
         try {
-            // 步骤 1: 通过 SLContext 关闭 Streamline SDK
+            // 通过 SLContext 关闭 Streamline SDK
             if (slContext != null && slContext.isInitialized()) {
                 slContext.shutdown();
                 LOGGER.info("[Streamline] slShutdown 完成 (via SLContext)");

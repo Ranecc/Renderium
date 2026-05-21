@@ -19,13 +19,15 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 //   binding 1: 输入深度纹理 (R32F) — 当前帧线性深度
 //   binding 2: 输出颜色纹理 (RGBA16F) — TAA 累积结果 (当前帧输出 + 历史帧更新)
 //   binding 3: 参数 UBO — { jitterOffset, blendFactor, sharpenStrength }
+//   binding 4: 历史帧颜色纹理 (RGBA16F) — 上一帧 TAA 累积结果 (ping-pong)
 //
-// 注意: 历史帧由外部管理 (ping-pong 纹理交换),
+// 历史帧由外部管理 (ping-pong 纹理交换),
 //       当前帧的 TAA 输出将作为下一帧的历史输入
 // ============================================================================
 layout(binding = 0, rgba16f) uniform readonly image2D  uCurrentFrame;
 layout(binding = 1, r32f)    uniform readonly image2D  uDepthBuffer;
-layout(binding = 2, rgba16f) uniform writeonly image2D uOutputImage;
+layout(binding = 2, rgba16f) uniform image2D uOutputImage;
+layout(binding = 4, rgba16f) uniform readonly image2D  uHistoryFrame;
 
 // ============================================================================
 // TAA 参数 (通过 UBO 传入)
@@ -152,11 +154,13 @@ void main() {
         return;
     }
 
-    // TAA Resolve: 历史帧混合
-    // 实际流水线中, 历史帧通过 ping-pong 纹理传递 (binding 4, rgba16f),
-    // 需要在 PipelineLayout 中添加对应的 DescriptorSet Binding
-    // 当前 placeholder 使用自身像素作为回退
-    vec4 historyColor = imageLoad(uCurrentFrame, uv);
+    // 从历史帧纹理读取前一帧 TAA 累积结果
+    // historyColorBuffer 由 TemporalAANode 管理，通过 ping-pong 机制交换
+    vec4 historyColor = imageLoad(uHistoryFrame, uv);
+    // 首帧或 historyColorBuffer=0L 时回退到当前帧
+    if (all(lessThan(historyColor, vec4(0.0)))) {
+        historyColor = imageLoad(uCurrentFrame, uv);
+    }
     vec4 result = temporalResolve(uv, historyColor);
 
     result = applySharpen(result, uv);

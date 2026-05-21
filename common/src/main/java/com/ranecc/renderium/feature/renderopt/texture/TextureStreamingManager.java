@@ -1,5 +1,10 @@
 package com.ranecc.renderium.feature.renderopt.texture;
 
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
@@ -209,6 +214,174 @@ public final class TextureStreamingManager {
     public void setStreamingEnabled(boolean v) { this.streamingEnabled = v; }
     public boolean isStreamingEnabled() { return streamingEnabled; }
     public int getTextureCount() { return textures.size(); }
+
+    // ==================== Mipmap 链生成 ====================
+
+    // Vulkan 常量（本地化，避免对 VulkanConst 的依赖）
+    private static final int VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL = 0x00000005;
+    private static final int VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL = 0x00000004;
+    private static final int VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL = 0x00000000;
+    private static final int VK_ACCESS_TRANSFER_WRITE_BIT = 0x00020000;
+    private static final int VK_ACCESS_TRANSFER_READ_BIT = 0x00040000;
+    private static final int VK_ACCESS_SHADER_READ_BIT = 0x00000020;
+    private static final int VK_PIPELINE_STAGE_TRANSFER_BIT = 0x00040000;
+    private static final int VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT = 0x00000080;
+    private static final int VK_IMAGE_ASPECT_COLOR_BIT = 0x00000001;
+    private static final int VK_FILTER_LINEAR = 1;
+    /** VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER = 47 */
+    private static final int VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER = 47;
+
+    /**
+     * 使用 vkCmdBlitImage 在运行时生成完整的 mip chain。
+     * <p>
+     * 算法：从 mip level 0 开始，逐级向下采样到 mip N。
+     * 每级先将源 mip 从 TRANSFER_DST 转换为 TRANSFER_SRC，
+     * 执行 blit 后将源 mip 转为 SHADER_READ_ONLY，
+     * 最后一个 mip 在循环外转换。
+     * <p>
+     * 前置条件：mip level 0 已上传数据且处于 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL。
+     * Image 必须包含 VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT。
+     *
+     * @param cmdBuf   已开始录制的 command buffer handle
+     * @param image    VkImage handle
+     * @param width    base width (mip 0)
+     * @param height   base height (mip 0)
+     * @param mipLevels 总 mip 级别数
+     */
+    public void generateMipChain(long cmdBuf, long image, int width, int height, int mipLevels) {
+        if (cmdBuf == 0L || image == 0L || mipLevels <= 1) {
+            return; // 无 mip 或无效句柄时直接跳过
+        }
+
+        try {
+            for (int i = 1; i < mipLevels; i++) {
+                // 计算当前级别的尺寸
+                int srcWidth  = Math.max(1, width >> (i - 1));
+                int srcHeight = Math.max(1, height >> (i - 1));
+                int dstWidth  = Math.max(1, width >> i);
+                int dstHeight = Math.max(1, height >> i);
+
+                // --- Barrier 1: 转换 mip i-1 (源) 从 TRANSFER_DST → TRANSFER_SRC ---
+                insertMipBarrier(cmdBuf, image, i - 1, 1,
+                        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+
+                // --- 构造 VkImageBlit: 从 mip i-1 blit 到 mip i ---
+                MemorySegment blitRegion = PerFrameArena.allocate(80);
+                // srcSubresource
+                blitRegion.set(ValueLayout.JAVA_INT, 0, VK_IMAGE_ASPECT_COLOR_BIT);  // aspectMask
+                blitRegion.set(ValueLayout.JAVA_INT, 4, i - 1);                        // mipLevel
+                blitRegion.set(ValueLayout.JAVA_INT, 8, 0);                            // baseArrayLayer
+                blitRegion.set(ValueLayout.JAVA_INT, 12, 1);                           // layerCount
+                // srcOffsets[0] = {0, 0, 0}
+                blitRegion.set(ValueLayout.JAVA_INT, 16, 0);
+                blitRegion.set(ValueLayout.JAVA_INT, 20, 0);
+                blitRegion.set(ValueLayout.JAVA_INT, 24, 0);
+                // srcOffsets[1] = {srcWidth, srcHeight, 1}
+                blitRegion.set(ValueLayout.JAVA_INT, 28, srcWidth);
+                blitRegion.set(ValueLayout.JAVA_INT, 32, srcHeight);
+                blitRegion.set(ValueLayout.JAVA_INT, 36, 1);
+                // dstSubresource
+                blitRegion.set(ValueLayout.JAVA_INT, 40, VK_IMAGE_ASPECT_COLOR_BIT);  // aspectMask
+                blitRegion.set(ValueLayout.JAVA_INT, 44, i);                           // mipLevel
+                blitRegion.set(ValueLayout.JAVA_INT, 48, 0);                           // baseArrayLayer
+                blitRegion.set(ValueLayout.JAVA_INT, 52, 1);                           // layerCount
+                // dstOffsets[0] = {0, 0, 0}
+                blitRegion.set(ValueLayout.JAVA_INT, 56, 0);
+                blitRegion.set(ValueLayout.JAVA_INT, 60, 0);
+                blitRegion.set(ValueLayout.JAVA_INT, 64, 0);
+                // dstOffsets[1] = {dstWidth, dstHeight, 1}
+                blitRegion.set(ValueLayout.JAVA_INT, 68, dstWidth);
+                blitRegion.set(ValueLayout.JAVA_INT, 72, dstHeight);
+                blitRegion.set(ValueLayout.JAVA_INT, 76, 1);
+
+                // --- vkCmdBlitImage: mip i-1 → mip i ---
+                VulkanAPIRegistry.invoke("vkCmdBlitImage",
+                        cmdBuf,
+                        image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                        image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        1, blitRegion.address(),
+                        VK_FILTER_LINEAR);
+
+                // --- Barrier 2: 转换 mip i-1 (已完成作为源) 从 TRANSFER_SRC → SHADER_READ_ONLY ---
+                insertMipBarrier(cmdBuf, image, i - 1, 1,
+                        VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT,
+                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+            }
+
+            // --- 最终 barrier: 转换最后一个 mip (mipLevels-1) 从 TRANSFER_DST → SHADER_READ_ONLY ---
+            insertMipBarrier(cmdBuf, image, mipLevels - 1, 1,
+                    VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+        } catch (Throwable t) {
+            LOGGER.warning("generateMipChain 失败: " + t.getMessage());
+        }
+    }
+
+    /**
+     * 插入单个 mip 级别的 VkImageMemoryBarrier。
+     * <p>
+     * VkImageMemoryBarrier 结构体大小: 68 字节（分配 72 字节以确保对齐安全）
+     * <pre>
+     * 偏移  字段                    类型      大小
+     *  0    sType                  int32      4
+     *  4    (padding)                         4
+     *  8    pNext                  address    8
+     * 16    srcAccessMask          int32      4
+     * 20    dstAccessMask          int32      4
+     * 24    oldLayout              int32      4
+     * 28    newLayout              int32      4
+     * 32    srcQueueFamilyIndex    int32      4
+     * 36    dstQueueFamilyIndex    int32      4
+     * 40    image                  address    8
+     * 48    subresourceRange
+     *        .aspectMask           int32      4
+     *        .baseMipLevel         int32      4
+     *        .levelCount           int32      4
+     *        .baseArrayLayer       int32      4
+     *        .layerCount           int32      4  → 偏移 64
+     * </pre>
+     */
+    private void insertMipBarrier(long cmdBuf, long image,
+                                   int baseMipLevel, int levelCount,
+                                   int srcAccessMask, int dstAccessMask,
+                                   int oldLayout, int newLayout,
+                                   int srcStageMask, int dstStageMask) throws Throwable {
+        MemorySegment barrier = PerFrameArena.allocate(72);
+        // sType
+        barrier.set(ValueLayout.JAVA_INT, 0, VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER);
+        // pNext = NULL
+        barrier.set(ValueLayout.JAVA_LONG, 8, 0L);
+        // srcAccessMask / dstAccessMask
+        barrier.set(ValueLayout.JAVA_INT, 16, srcAccessMask);
+        barrier.set(ValueLayout.JAVA_INT, 20, dstAccessMask);
+        // oldLayout / newLayout
+        barrier.set(ValueLayout.JAVA_INT, 24, oldLayout);
+        barrier.set(ValueLayout.JAVA_INT, 28, newLayout);
+        // srcQueueFamilyIndex / dstQueueFamilyIndex (VK_QUEUE_FAMILY_IGNORED)
+        barrier.set(ValueLayout.JAVA_INT, 32, -1);
+        barrier.set(ValueLayout.JAVA_INT, 36, -1);
+        // image
+        barrier.set(ValueLayout.JAVA_LONG, 40, image);
+        // subresourceRange
+        barrier.set(ValueLayout.JAVA_INT, 48, VK_IMAGE_ASPECT_COLOR_BIT); // aspectMask
+        barrier.set(ValueLayout.JAVA_INT, 52, baseMipLevel);              // baseMipLevel
+        barrier.set(ValueLayout.JAVA_INT, 56, levelCount);                // levelCount
+        barrier.set(ValueLayout.JAVA_INT, 60, 0);                         // baseArrayLayer
+        barrier.set(ValueLayout.JAVA_INT, 64, 1);                         // layerCount
+
+        VulkanAPIRegistry.invoke("vkCmdPipelineBarrier",
+                cmdBuf,
+                srcStageMask, dstStageMask,
+                0,                // dependencyFlags
+                0, 0L,            // memoryBarrierCount, pMemoryBarriers
+                0, 0L,            // bufferMemoryBarrierCount, pBufferMemoryBarriers
+                1, barrier.address()); // imageMemoryBarrierCount, pImageMemoryBarriers
+    }
 
     // ==================== 内部方法 ====================
 

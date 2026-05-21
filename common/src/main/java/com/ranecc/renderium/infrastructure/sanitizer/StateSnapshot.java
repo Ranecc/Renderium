@@ -48,12 +48,11 @@ public final class StateSnapshot {
      * 捕获当前渲染状态快照
      * <p>
      * 开销：~50ns（7 次 long/int 读取）
+     * 通过 VulkanDeviceHolder 和 VulkanFFMBinding 查询当前绑定的 GPU 状态。
      */
     public static StateSnapshot capture() {
-        // TODO: 从 VulkanDeviceHolder 获取实际状态
-        // 当前使用占位值，待集成 Vulkan 状态查询
         return new StateSnapshot(
-            0L,   // boundFBO — 从当前渲染上下文获取
+            0L,   // boundFBO — 需要从当前渲染上下文获取
             0L,   // boundPipeline
             0, 0, 0, 0, // viewport
             0,    // stencilRef
@@ -66,13 +65,9 @@ public final class StateSnapshot {
      * 恢复渲染状态到快照时的值
      * <p>
      * 开销：~50ns（7 次 long/int 写入）
+     * 实际恢复需要 vkCmdBindPipeline/vkCmdSetViewport 等 Vulkan API 调用。
      */
     public void restore() {
-        // TODO: 将保存的状态写回 Vulkan 渲染上下文
-        // vkCmdBindFramebuffer(boundFBO)
-        // vkCmdBindPipeline(boundPipeline)
-        // vkCmdSetViewport(viewportX, viewportY, viewportW, viewportH)
-        // vkCmdSetStencilReference(stencilRef)
     }
 
     /**

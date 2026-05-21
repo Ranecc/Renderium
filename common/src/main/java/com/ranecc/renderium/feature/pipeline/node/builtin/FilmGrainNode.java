@@ -1,18 +1,14 @@
 // Renderium - 光影系统 v2.0
-// 镜头光晕 (Lens Flare) 后处理节点
+// 胶片颗粒 (Film Grain) 后处理节点
 //
 // 核心算法:
-//   1. 亮度提取：阈值过滤 → 仅保留高亮像素
-//   2. 鬼影生成：沿像素到光源中心连线采样，带偏移
-//   3. 条纹生成：4 方向（十字）条纹从高亮特征扩散
-//   4. 色散：每个鬼影轻微 RGB 偏移
-//   5. 合成：加法混合叠加到场景
+//   1. 每像素根据屏幕位置 + 种子生成伪随机数 (hash)
+//   2. noise = (hash - 0.5) * strength
+//   3. output = input + noise
 //
 // 性能预算:
-//   - 亮度提取: < 0.1ms/帧
-//   - 鬼影 + 条纹: < 0.5ms/帧
-//   - 合成: < 0.1ms/帧
-//   - 总计: 0.3-1ms/帧
+//   - 噪声生成 + 叠加: < 0.1ms/帧
+//   - 总计: < 0.1ms/帧
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
@@ -31,14 +27,14 @@ import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
 /**
- * 镜头光晕节点 (Lens Flare)
+ * 胶片颗粒节点 (Film Grain)
  * <p>
- * 模拟真实镜头的光晕效果，包括鬼影、条纹和色散。
+ * 模拟胶片颗粒感，通过伪随机噪声叠加到场景纹理上。
  * 需要色调映射后的场景纹理。
  * <p>
- * Blender: Lens Flare (Compositor) | Unreal: Lens Flare | Unity: Lens Flare
+ * Blender: Add Noise (Film) | Unreal: Film Grain | Unity: Film Grain
  * <p>
- * GPU 开销：0.3-1ms (1080p)
+ * GPU 开销：<0.1ms (1080p)
  * 短路条件：enabled == false → 直接返回输入纹理
  *
  * <h2>算法概述：</h2>
@@ -50,99 +46,55 @@ import java.util.logging.Logger;
  *     ↓                                                          │
  * ├─ Step 2: 输入校验（至少需要颜色纹理 1 张）                     │
  *     ↓                                                          │
- * ├─ Step 3: 亮度提取                                            │
- * │   阈值过滤，仅保留亮度 > threshold 的像素                      │
+ * ├─ Step 3: 生成伪随机噪声                                       │
+ * │   hash = hash(vec3(screenPos, seed))                         │
+ * │   noise = (hash - 0.5) * strength                            │
  *     ↓                                                          │
- * ├─ Step 4: 鬼影生成                                            │
- * │   对每个鬼影，沿像素到光源中心连线采样，带偏移                  │
+ * ├─ Step 4: 叠加到场景                                          │
+ * │   output = input + noise                                     │
  *     ↓                                                          │
- * ├─ Step 5: 条纹生成                                            │
- * │   4 方向（十字）条纹从高亮特征扩散                             │
- *     ↓                                                          │
- * ├─ Step 6: 色散                                               │
- * │   每个鬼影轻微 RGB 偏移，模拟色散效果                          │
- *     ↓                                                          │
- * ├─ Step 7: 合成                                               │
- * │   加法混合叠加到场景                                          │
- *     ↓                                                          │
- * └─ Step 8: 返回处理后的纹理句柄                                │
+ * └─ Step 5: 返回处理后的纹理句柄                                │
  * └──────────────────────────────────────────────────────────────┘
  * </pre>
  *
  * <h2>参数调优建议：</h2>
  * <table border="1">
  *   <tr><th>参数</th><th>默认值</th><th>效果</th></tr>
- *   <tr><td>intensity</td><td>0.5</td><td>光晕强度，0.0-2.0</td></tr>
- *   <tr><td>ghostCount</td><td>4</td><td>鬼影数量，1-8</td></tr>
- *   <tr><td>streakLength</td><td>0.5</td><td>条纹长度，0.1-2.0</td></tr>
- *   <tr><td>threshold</td><td>0.85</td><td>亮度阈值，0.5-1.0</td></tr>
+ *   <tr><td>strength</td><td>0.05</td><td>颗粒强度，0.0-0.5，越大颗粒感越强</td></tr>
  * </table>
  *
  * @see AbstractPipelineNode
  * @see PipelineNode.Category#POST_PROCESS
  * @since 5.5.0
  */
-public class LensFlareNode extends AbstractPipelineNode {
+public class FilmGrainNode extends AbstractPipelineNode {
 
-    private static final Logger LOGGER = Logger.getLogger(LensFlareNode.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(FilmGrainNode.class.getName());
 
     /** SPIR-V 着色器资源路径 */
-    private static final String SHADER_PATH = "/shaders/lens_flare.spv";
+    private static final String SHADER_PATH = "/shaders/film_grain.spv";
 
     // ==================== 参数边界 ====================
 
-    /** 光晕强度下界 */
-    private static final float INTENSITY_MIN = 0.0f;
+    /** 颗粒强度下界 */
+    private static final float STRENGTH_MIN = 0.0f;
 
-    /** 光晕强度上界 */
-    private static final float INTENSITY_MAX = 2.0f;
+    /** 颗粒强度上界 */
+    private static final float STRENGTH_MAX = 0.5f;
 
-    /** 光晕强度默认值 */
-    private static final float INTENSITY_DEFAULT = 0.5f;
-
-    /** 鬼影数量下界 */
-    private static final int GHOST_COUNT_MIN = 1;
-
-    /** 鬼影数量上界 */
-    private static final int GHOST_COUNT_MAX = 8;
-
-    /** 鬼影数量默认值 */
-    private static final int GHOST_COUNT_DEFAULT = 4;
-
-    /** 条纹长度下界 */
-    private static final float STREAK_LENGTH_MIN = 0.1f;
-
-    /** 条纹长度上界 */
-    private static final float STREAK_LENGTH_MAX = 2.0f;
-
-    /** 条纹长度默认值 */
-    private static final float STREAK_LENGTH_DEFAULT = 0.5f;
-
-    /** 亮度阈值下界 */
-    private static final float THRESHOLD_MIN = 0.5f;
-
-    /** 亮度阈值上界 */
-    private static final float THRESHOLD_MAX = 1.0f;
-
-    /** 亮度阈值默认值 */
-    private static final float THRESHOLD_DEFAULT = 0.85f;
+    /** 颗粒强度默认值 */
+    private static final float STRENGTH_DEFAULT = 0.05f;
 
     // ==================== 可调参数 ====================
 
-    /** 是否启用镜头光晕 */
-    private volatile boolean enabled = false;
+    /** 是否启用胶片颗粒 */
+    private volatile boolean enabled = true;
 
-    /** 光晕强度 */
-    private volatile float intensity = INTENSITY_DEFAULT;
+    /** 颗粒强度，控制噪声幅度 */
+    private volatile float strength = STRENGTH_DEFAULT;
 
-    /** 鬼影数量 */
-    private volatile int ghostCount = GHOST_COUNT_DEFAULT;
-
-    /** 条纹长度 */
-    private volatile float streakLength = STREAK_LENGTH_DEFAULT;
-
-    /** 亮度阈值，仅亮度高于此值的像素参与光晕计算 */
-    private volatile float threshold = THRESHOLD_DEFAULT;
+    /** 随机种子（每帧变化产生动态颗粒） */
+    private volatile float seed = 0.0f;
 
     /** Vulkan Compute Pipeline 句柄，0 表示未创建 */
     private volatile long computePipeline = 0L;
@@ -152,23 +104,23 @@ public class LensFlareNode extends AbstractPipelineNode {
     // ==================== 构造函数 ====================
 
     /**
-     * 构造镜头光晕节点
+     * 构造胶片颗粒节点
      * <p>
      * 配置节点身份信息：
      * <ul>
-     *   <li>ID: "lens_flare"</li>
-     *   <li>DisplayName: "Lens Flare (镜头光晕)"</li>
+     *   <li>ID: "film_grain"</li>
+     *   <li>DisplayName: "Film Grain (胶片颗粒)"</li>
      *   <li>Category: {@link PipelineNode.Category#POST_PROCESS}</li>
-     *   <li>Priority: 175（后处理阶段，色调映射之后）</li>
+     *   <li>Priority: 240（后处理最末阶段）</li>
      *   <li>依赖: ["tonemap"]</li>
      * </ul>
      */
-    public LensFlareNode() {
+    public FilmGrainNode() {
         super(
-                "lens_flare",                                   // 唯一标识符（kebab-case）
-                "Lens Flare (镜头光晕)",                        // 显示名称
+                "film_grain",                                   // 唯一标识符（kebab-case）
+                "Film Grain (胶片颗粒)",                        // 显示名称
                 PipelineNode.Category.POST_PROCESS,            // 分类：后处理阶段
-                175,                                           // 优先级
+                240,                                           // 优先级（后处理最末）
                 new String[]{"tonemap"}                        // 依赖：色调映射节点
         );
     }
@@ -176,17 +128,14 @@ public class LensFlareNode extends AbstractPipelineNode {
     // ==================== PipelineNode 核心方法 ====================
 
     /**
-     * 执行镜头光晕计算
+     * 执行胶片颗粒计算
      * <p>
      * 每帧调用一次的热路径方法。完整流程：
      * <ol>
      *   <li>短路检查：enabled == false 时直接返回输入纹理</li>
      *   <li>输入校验：至少需要颜色纹理 1 张</li>
-     *   <li>亮度提取：阈值过滤高亮像素</li>
-     *   <li>鬼影生成：沿像素到光源中心连线采样</li>
-     *   <li>条纹生成：4 方向十字条纹</li>
-     *   <li>色散：轻微 RGB 偏移</li>
-     *   <li>合成：加法混合叠加到场景</li>
+     *   <li>生成伪随机噪声</li>
+     *   <li>叠加到场景颜色</li>
      * </ol>
      *
      * 【方法参数】
@@ -198,7 +147,7 @@ public class LensFlareNode extends AbstractPipelineNode {
      * @return long - 处理后的颜色纹理句柄，0 表示失败
      *
      * 【性能预算】
-     * - 1080p 目标: 0.3-1ms (Compute Shader)
+     * - 1080p 目标: < 0.1ms (Compute Shader)
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
@@ -207,7 +156,7 @@ public class LensFlareNode extends AbstractPipelineNode {
 
         // 输入校验
         if (inputResources == null || inputResources.length < 1) {
-            LOGGER.warning("[LensFlare] 输入资源不足: 需要颜色纹理 1 张, "
+            LOGGER.warning("[FilmGrain] 输入资源不足: 需要颜色纹理 1 张, "
                     + "实际收到 " + (inputResources == null ? 0 : inputResources.length) + " 张");
             return 0L;
         }
@@ -215,10 +164,10 @@ public class LensFlareNode extends AbstractPipelineNode {
         long startTimeNanos = System.nanoTime();
 
         // 快照读取 volatile 参数（一次读取，避免多次读不一致）
-        float curIntensity = this.intensity;
-        int curGhostCount = this.ghostCount;
-        float curStreakLength = this.streakLength;
-        float curThreshold = this.threshold;
+        float curStrength = this.strength;
+        // 每帧更新种子，产生动态颗粒效果
+        float curSeed = this.seed + (float) Math.random() * 100.0f;
+        this.seed = curSeed;
 
         long colorTexture = inputResources[0];
         long outputTexture = colorTexture; // 就地写入
@@ -234,14 +183,11 @@ public class LensFlareNode extends AbstractPipelineNode {
             ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 0, colorTexture, 0L, 0L);
             ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputTexture, 0L);
 
-            // 构建 PushConstants: vec2 screenCenter, int ghostCount, float strength, float threshold (32 bytes)
+            // 构建 PushConstants: float strength, float seed (32 bytes)
             MemorySegment params = PerFrameArena.allocate(32L);
-            params.set(ValueLayout.JAVA_FLOAT, 0, 0.5f);  // screenCenter.x
-            params.set(ValueLayout.JAVA_FLOAT, 4, 0.5f);  // screenCenter.y
-            params.set(ValueLayout.JAVA_INT, 8, curGhostCount);
-            params.set(ValueLayout.JAVA_FLOAT, 12, curIntensity);
-            params.set(ValueLayout.JAVA_FLOAT, 16, curThreshold);
-            params.set(ValueLayout.JAVA_FLOAT, 20, 0.0f); // padding
+            params.set(ValueLayout.JAVA_FLOAT, 0, curStrength);
+            params.set(ValueLayout.JAVA_FLOAT, 4, curSeed);
+            // 剩余 24 bytes 保持 0
 
             // Vulkan compute dispatch
             long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
@@ -264,13 +210,13 @@ public class LensFlareNode extends AbstractPipelineNode {
                 }
             }
         } catch (Throwable t) {
-            LOGGER.fine("[LensFlare] dispatch 失败: " + t.getMessage());
+            LOGGER.fine("[FilmGrain] dispatch 失败: " + t.getMessage());
         }
 
         long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
-                "[LensFlare] 完成 | intensity=%.2f ghosts=%d streak=%.2f threshold=%.2f | %.1fμs",
-                curIntensity, curGhostCount, curStreakLength, curThreshold, elapsedMicros
+                "[FilmGrain] 完成 | strength=%.4f seed=%.2f | %.1fμs",
+                curStrength, curSeed, elapsedMicros
         ));
 
         return outputTexture;
@@ -290,8 +236,8 @@ public class LensFlareNode extends AbstractPipelineNode {
     @Override
     protected boolean onInitialize(RenderContext context) {
         LOGGER.info(String.format(
-                "[LensFlare] 初始化成功 | intensity=%.2f ghosts=%d streak=%.2f threshold=%.2f",
-                this.intensity, this.ghostCount, this.streakLength, this.threshold
+                "[FilmGrain] 初始化成功 | strength=%.4f",
+                this.strength
         ));
         return true;
     }
@@ -299,17 +245,18 @@ public class LensFlareNode extends AbstractPipelineNode {
     /**
      * 节点资源释放钩子
      * <p>
-     * 清空内部缓冲区。
+     * 重置种子值。
      */
     @Override
     protected void onDispose() {
-        LOGGER.fine("[LensFlare] 资源已释放");
+        this.seed = 0.0f;
+        LOGGER.fine("[FilmGrain] 资源已释放");
     }
 
     // ==================== 参数 Setter ====================
 
     /**
-     * 设置是否启用镜头光晕
+     * 设置是否启用胶片颗粒
      *
      * @param v 是否启用
      */
@@ -323,48 +270,14 @@ public class LensFlareNode extends AbstractPipelineNode {
     public boolean isEnabled() { return enabled; }
 
     /**
-     * 设置光晕强度
+     * 设置颗粒强度
      * <p>
-     * 值会被钳制到有效范围 [{@value #INTENSITY_MIN}, {@value #INTENSITY_MAX}]。
+     * 值会被钳制到有效范围 [{@value #STRENGTH_MIN}, {@value #STRENGTH_MAX}]。
      *
-     * @param v 光晕强度（0.0 ~ 2.0）
+     * @param v 颗粒强度（0.0 ~ 0.5）
      */
-    public void setIntensity(float v) {
-        this.intensity = Math.max(INTENSITY_MIN, Math.min(INTENSITY_MAX, v));
-    }
-
-    /**
-     * 设置鬼影数量
-     * <p>
-     * 值会被钳制到有效范围 [{@value #GHOST_COUNT_MIN}, {@value #GHOST_COUNT_MAX}]。
-     *
-     * @param v 鬼影数量（1 ~ 8）
-     */
-    public void setGhostCount(int v) {
-        this.ghostCount = Math.max(GHOST_COUNT_MIN, Math.min(GHOST_COUNT_MAX, v));
-    }
-
-    /**
-     * 设置条纹长度
-     * <p>
-     * 值会被钳制到有效范围 [{@value #STREAK_LENGTH_MIN}, {@value #STREAK_LENGTH_MAX}]。
-     *
-     * @param v 条纹长度（0.1 ~ 2.0）
-     */
-    public void setStreakLength(float v) {
-        this.streakLength = Math.max(STREAK_LENGTH_MIN, Math.min(STREAK_LENGTH_MAX, v));
-    }
-
-    /**
-     * 设置亮度阈值
-     * <p>
-     * 值会被钳制到有效范围 [{@value #THRESHOLD_MIN}, {@value #THRESHOLD_MAX}]。
-     * 仅亮度高于此值的像素参与光晕计算。
-     *
-     * @param v 亮度阈值（0.5 ~ 1.0）
-     */
-    public void setThreshold(float v) {
-        this.threshold = Math.max(THRESHOLD_MIN, Math.min(THRESHOLD_MAX, v));
+    public void setStrength(float v) {
+        this.strength = Math.max(STRENGTH_MIN, Math.min(STRENGTH_MAX, v));
     }
 
     // ==================== 辅助方法 ====================
@@ -376,7 +289,7 @@ public class LensFlareNode extends AbstractPipelineNode {
      * 线程安全：双重检查锁定（DCL），synchronized 确保单次创建。
      * 使用 {@link ComputePipelineHelper#createComputePipeline} 创建真实管线。
      *
-     * LensFlare Binding 配置:
+     * FilmGrain Binding 配置:
      *   binding 0 = COMBINED_IMAGE_SAMPLER (color 纹理)
      *   binding 1 = STORAGE_IMAGE (output 输出纹理)
      * PushConstant: size=32, offset=0
@@ -413,13 +326,13 @@ public class LensFlareNode extends AbstractPipelineNode {
      * 从 classpath 加载 SPIR-V 二进制资源
      *
      * 【方法参数】
-     * @param path String - 资源路径（如 "/shaders/lens_flare.spv"）
+     * @param path String - 资源路径（如 "/shaders/film_grain.spv"）
      *
      * 【返回值】
      * @return byte[] - SPIR-V 字节数组，加载失败返回 null
      */
     private static byte[] loadSPIRVResource(String path) {
-        try (var is = LensFlareNode.class.getResourceAsStream(path)) {
+        try (var is = FilmGrainNode.class.getResourceAsStream(path)) {
             if (is == null) return null;
             return is.readAllBytes();
         } catch (Exception e) {
@@ -440,8 +353,8 @@ public class LensFlareNode extends AbstractPipelineNode {
     @Override
     public String toString() {
         return String.format(
-                "LensFlareNode{enabled=%b intensity=%.2f ghosts=%d streak=%.2f threshold=%.2f}",
-                enabled, intensity, ghostCount, streakLength, threshold
+                "FilmGrainNode{enabled=%b strength=%.4f}",
+                enabled, strength
         );
     }
 }

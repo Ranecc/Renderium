@@ -281,6 +281,20 @@ public final class VulkanFFMBinding {
     /** vkCmdPushConstants: 推送常量到 Shader */
     private static volatile MethodHandle VK_CMD_PUSH_CONSTANTS;
 
+    // ============ Query Pool（时间戳查询）============
+
+    /** vkCmdWriteTimestamp: 写入时间戳 */
+    private static volatile MethodHandle VK_CMD_WRITE_TIMESTAMP;
+
+    /** vkGetQueryPoolResults: 获取查询池结果 */
+    private static volatile MethodHandle VK_GET_QUERY_POOL_RESULTS;
+
+    /** vkCreateQueryPool: 创建查询池 */
+    private static volatile MethodHandle VK_CREATE_QUERY_POOL;
+
+    /** vkDestroyQueryPool: 销毁查询池 */
+    private static volatile MethodHandle VK_DESTROY_QUERY_POOL;
+
     // ==================== 加载状态 ====================
 
     /** FFM 方法是否已加载 */
@@ -389,6 +403,11 @@ public final class VulkanFFMBinding {
     public static MethodHandle getVkCreateRayTracingPipelinesKHR() { ensureLoaded(); return VK_CREATE_RAY_TRACING_PIPELINES_KHR; }
     public static MethodHandle getVkCmdCopyAccelerationStructureKHR() { ensureLoaded(); return VK_CMD_COPY_ACCELERATION_STRUCTURE_KHR; }
     public static MethodHandle getVkCmdDrawMeshTasksEXT() { ensureLoaded(); return VK_CMD_DRAW_MESH_TASKS_EXT; }
+
+    public static MethodHandle getVkCmdWriteTimestamp() { ensureLoaded(); return VK_CMD_WRITE_TIMESTAMP; }
+    public static MethodHandle getVkGetQueryPoolResults() { ensureLoaded(); return VK_GET_QUERY_POOL_RESULTS; }
+    public static MethodHandle getVkCreateQueryPool() { ensureLoaded(); return VK_CREATE_QUERY_POOL; }
+    public static MethodHandle getVkDestroyQueryPool() { ensureLoaded(); return VK_DESTROY_QUERY_POOL; }
 
     /** FFM 方法句柄是否已加载成功 */
     public static boolean isFfmLoaded() { ensureLoaded(); return ffmLoaded; }
@@ -1005,6 +1024,58 @@ public final class VulkanFFMBinding {
                             ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG)
             );
 
+            // ============ Query Pool（核心 Vulkan 1.0，必须存在）============
+
+            // vkCmdWriteTimestamp(VkCommandBuffer, VkPipelineStageFlagBits, VkQueryPool, uint32_t query)
+            VK_CMD_WRITE_TIMESTAMP = linker.downcallHandle(
+                    vulkanLookup.find("vkCmdWriteTimestamp").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG,          // commandBuffer
+                            ValueLayout.JAVA_INT,            // pipelineStage
+                            ValueLayout.JAVA_LONG,           // queryPool
+                            ValueLayout.JAVA_INT             // query
+                    )
+            );
+
+            // vkGetQueryPoolResults(VkDevice, VkQueryPool, uint32_t firstQuery, uint32_t queryCount,
+            //                       size_t dataSize, void* pData, VkDeviceSize stride, VkQueryResultFlags flags)
+            VK_GET_QUERY_POOL_RESULTS = linker.downcallHandle(
+                    vulkanLookup.find("vkGetQueryPoolResults").orElseThrow(),
+                    FunctionDescriptor.of(
+                            ValueLayout.JAVA_INT,            // VkResult
+                            ValueLayout.JAVA_LONG,           // device
+                            ValueLayout.JAVA_LONG,           // queryPool
+                            ValueLayout.JAVA_INT,            // firstQuery
+                            ValueLayout.JAVA_INT,            // queryCount
+                            ValueLayout.JAVA_LONG,           // dataSize
+                            ValueLayout.JAVA_LONG,           // pData
+                            ValueLayout.JAVA_LONG,           // stride
+                            ValueLayout.JAVA_INT             // flags
+                    )
+            );
+
+            // vkCreateQueryPool(VkDevice, const VkQueryPoolCreateInfo*, const VkAllocationCallbacks*, VkQueryPool*)
+            VK_CREATE_QUERY_POOL = linker.downcallHandle(
+                    vulkanLookup.find("vkCreateQueryPool").orElseThrow(),
+                    FunctionDescriptor.of(
+                            ValueLayout.JAVA_INT,            // VkResult
+                            ValueLayout.JAVA_LONG,           // device
+                            ValueLayout.JAVA_LONG,           // pCreateInfo
+                            ValueLayout.JAVA_LONG,           // pAllocator
+                            ValueLayout.JAVA_LONG            // pQueryPool
+                    )
+            );
+
+            // vkDestroyQueryPool(VkDevice, VkQueryPool, const VkAllocationCallbacks*)
+            VK_DESTROY_QUERY_POOL = linker.downcallHandle(
+                    vulkanLookup.find("vkDestroyQueryPool").orElseThrow(),
+                    FunctionDescriptor.ofVoid(
+                            ValueLayout.JAVA_LONG,           // device
+                            ValueLayout.JAVA_LONG,           // queryPool
+                            ValueLayout.JAVA_LONG            // pAllocator
+                    )
+            );
+
             ffmLoaded = true;
             registerAllToRegistry();
             LOGGER.info("[VulkanFFM] ✓ FFM Vulkan 方法句柄加载成功 (" + VulkanAPIRegistry.getRegisteredCount() + " APIs)");
@@ -1169,7 +1240,11 @@ public final class VulkanFFMBinding {
             java.util.Map.entry("vkCmdCopyAccelerationStructureKHR", VK_CMD_COPY_ACCELERATION_STRUCTURE_KHR),
             java.util.Map.entry("vkCmdDrawMeshTasksEXT", VK_CMD_DRAW_MESH_TASKS_EXT),
             java.util.Map.entry("vkCmdFillBuffer", VK_CMD_FILL_BUFFER),
-            java.util.Map.entry("vkCmdPushConstants", VK_CMD_PUSH_CONSTANTS)
+            java.util.Map.entry("vkCmdPushConstants", VK_CMD_PUSH_CONSTANTS),
+            java.util.Map.entry("vkCmdWriteTimestamp", VK_CMD_WRITE_TIMESTAMP),
+            java.util.Map.entry("vkGetQueryPoolResults", VK_GET_QUERY_POOL_RESULTS),
+            java.util.Map.entry("vkCreateQueryPool", VK_CREATE_QUERY_POOL),
+            java.util.Map.entry("vkDestroyQueryPool", VK_DESTROY_QUERY_POOL)
         );
         VulkanAPIRegistry.registerAll(all);
     }

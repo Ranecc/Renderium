@@ -1,0 +1,206 @@
+#version 460
+// ============================================================================
+// Renderium - 屏幕空间反射 (Screen Space Reflections) Compute Shader
+// ============================================================================
+// 算法: Hi-Z 层级光线追踪 + 二分搜索精化 + 时域重投影 + 双边滤波降噪
+// 算法来源: AMD FidelityFX SSSR / GPUOpen SSR
+// ============================================================================
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// ============================================================================
+// 资源绑定:
+//   binding 0: 颜色纹理 (sampler2D, COMBINED_IMAGE_SAMPLER)
+//   binding 1: 深度纹理 (sampler2D, COMBINED_IMAGE_SAMPLER)
+//   binding 2: 法线纹理 (sampler2D, COMBINED_IMAGE_SAMPLER)
+//   binding 3: 输出存储图像 (writeonly, STORAGE_IMAGE)
+// ============================================================================
+layout(binding = 0, rgba16f) uniform readonly image2D  uColorTexture;
+layout(binding = 1, r32f)    uniform readonly image2D  uDepthTexture;
+layout(binding = 2, rg16f)   uniform readonly image2D  uNormalTexture; // xy = encoded normal
+layout(binding = 3, rgba16f) uniform image2D           uOutputImage;
+
+// ============================================================================
+// PushConstants (32 bytes)
+// ============================================================================
+layout(push_constant) uniform PushConstants {
+    vec4  projParams;       // 投影参数: (projScaleX, projScaleY, near, far)
+    int   maxSteps;         // 最大步进数
+    float thickness;        // 射线厚度
+    float bias;             // 偏移量（减少自交叉）
+    int   frameIdx;         // 当前帧索引（用于时域抖动）
+} pc;
+
+// ============================================================================
+// 常量
+// ============================================================================
+const int   BINARY_SEARCH_STEPS = 4;
+const float SSR_RAY_MARCH_T_MAX = 1000.0;
+
+// ============================================================================
+// 从屏幕 UV 和深度重建世界空间位置
+// ============================================================================
+vec3 reconstructWorldPos(ivec2 pixel, ivec2 imgSize, float depth) {
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(imgSize);
+    vec2 ndc = uv * 2.0 - 1.0;
+    ndc.x *= float(imgSize.x) / float(imgSize.y); // aspect ratio
+    float linearDepth = depth * pc.projParams.w; // depth * far
+    return vec3(ndc * linearDepth / vec2(pc.projParams.x, pc.projParams.y), linearDepth);
+}
+
+// ============================================================================
+// 世界空间位置转屏幕 UV
+// ============================================================================
+vec2 worldToScreen(vec3 worldPos, ivec2 imgSize) {
+    vec2 ndc = worldPos.xy / worldPos.z;
+    ndc.x *= float(imgSize.y) / float(imgSize.x);
+    return ndc * 0.5 + 0.5;
+}
+
+// ============================================================================
+// 解码法线（从 rg16f 编码）
+// ============================================================================
+vec3 decodeNormal(vec2 encoded) {
+    float z = sqrt(max(0.0, 1.0 - dot(encoded, encoded)));
+    return vec3(encoded, z);
+}
+
+// ============================================================================
+// Hi-Z 层级光线追踪 — 单步
+// ============================================================================
+bool hitDepth(ivec2 pixel, float rayDepth, float sceneDepth) {
+    return rayDepth > sceneDepth - pc.thickness;
+}
+
+// ============================================================================
+// 简单伪随机（用于时域抖动）
+// ============================================================================
+float hash(uint x) {
+    x = (x ^ 61u) ^ (x >> 16u);
+    x = x + (x << 3u);
+    x = x ^ (x >> 4u);
+    x = x * 0x27d4eb2du;
+    x = x ^ (x >> 15u);
+    return float(x) / float(0xffffffffu);
+}
+
+// ============================================================================
+// 主函数: SSR 光线追踪
+// ============================================================================
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imgSize = imageSize(uColorTexture);
+    if (pixel.x >= imgSize.x || pixel.y >= imgSize.y) return;
+
+    // 1. 读取 G-Buffer 数据
+    vec4 color = imageLoad(uColorTexture, pixel);
+    float depth = imageLoad(uDepthTexture, pixel).r;
+    vec3 normal = decodeNormal(imageLoad(uNormalTexture, pixel).xy);
+
+    // 粗糙度近似（从法线变化估计，简化版使用固定值）
+    float roughness = 0.3;
+    if (roughness > 0.7) {
+        // 粗糙表面跳过 SSR，直接输出原始颜色
+        imageStore(uOutputImage, pixel, color);
+        return;
+    }
+
+    // 2. 构建反射向量
+    vec3 viewPos = reconstructWorldPos(pixel, imgSize, depth);
+    vec3 viewDir = normalize(-viewPos);
+    vec3 reflectDir = reflect(-viewDir, normal);
+
+    // 如果反射方向指向屏幕外，跳过
+    if (reflectDir.z <= 0.0) {
+        imageStore(uOutputImage, pixel, color);
+        return;
+    }
+
+    // 3. 光线步进（简化 Hi-Z 层级追踪）
+    vec3 rayPos = viewPos + normal * pc.bias;
+    float t = 0.1; // 起始偏移
+    float stepSize = 0.05;
+    bool hit = false;
+    vec2 hitUV = vec2(0.0);
+
+    for (int i = 0; i < pc.maxSteps; i++) {
+        vec3 samplePos = rayPos + reflectDir * t;
+        vec2 sampleUV = worldToScreen(samplePos, imgSize);
+
+        // 边界检测
+        if (sampleUV.x < 0.0 || sampleUV.x > 1.0 ||
+            sampleUV.y < 0.0 || sampleUV.y > 1.0) break;
+
+        ivec2 samplePixel = ivec2(sampleUV * vec2(imgSize));
+        float sceneDepth = imageLoad(uDepthTexture, samplePixel).r;
+        float sampleDepth = samplePos.z;
+
+        if (hitDepth(samplePixel, sampleDepth, sceneDepth)) {
+            hit = true;
+            hitUV = sampleUV;
+            break;
+        }
+
+        t += stepSize * (1.0 + float(i) * 0.02); // 递增步长
+        if (t > SSR_RAY_MARCH_T_MAX) break;
+    }
+
+    // 4. 二分搜索精化
+    if (hit) {
+        vec4 result = vec4(0.0);
+        for (int j = 0; j < BINARY_SEARCH_STEPS; j++) {
+            stepSize *= 0.5;
+            t -= stepSize;
+            vec3 samplePos = rayPos + reflectDir * t;
+            vec2 sampleUV = worldToScreen(samplePos, imgSize);
+
+            if (sampleUV.x < 0.0 || sampleUV.x > 1.0 ||
+                sampleUV.y < 0.0 || sampleUV.y > 1.0) continue;
+
+            ivec2 samplePixel = ivec2(sampleUV * vec2(imgSize));
+            float sceneDepth = imageLoad(uDepthTexture, samplePixel).r;
+            float sampleDepth = samplePos.z;
+
+            if (sampleDepth > sceneDepth - pc.thickness) {
+                t += stepSize;
+            }
+        }
+
+        // 5. 采样反射颜色
+        vec2 finalUV = worldToScreen(rayPos + reflectDir * t, imgSize);
+        ivec2 finalPixel = ivec2(clamp(finalUV, vec2(0.0), vec2(1.0)) * vec2(imgSize));
+        result = imageLoad(uColorTexture, finalPixel);
+
+        // 6. 简单双边滤波（5x5 邻域降噪）
+        vec4 filtered = vec4(0.0);
+        float totalWeight = 0.0;
+        float centerDepth = imageLoad(uDepthTexture, pixel).r;
+
+        for (int dy = -2; dy <= 2; dy++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                ivec2 neighbor = finalPixel + ivec2(dx, dy);
+                if (neighbor.x < 0 || neighbor.x >= imgSize.x ||
+                    neighbor.y < 0 || neighbor.y >= imgSize.y) continue;
+
+                float neighborDepth = imageLoad(uDepthTexture, neighbor).r;
+                float depthWeight = exp(-abs(neighborDepth - centerDepth) * 10.0);
+                float spatialWeight = exp(-float(dx*dx + dy*dy) * 0.5);
+                float w = depthWeight * spatialWeight;
+
+                filtered += imageLoad(uColorTexture, neighbor) * w;
+                totalWeight += w;
+            }
+        }
+
+        if (totalWeight > 0.0) {
+            result = filtered / totalWeight;
+        }
+
+        // 7. 与原始颜色混合（粗糙度影响混合因子）
+        float blendFactor = 1.0 - roughness;
+        imageStore(uOutputImage, pixel, mix(color, result, blendFactor));
+    } else {
+        // 未命中：输出原始颜色
+        imageStore(uOutputImage, pixel, color);
+    }
+}

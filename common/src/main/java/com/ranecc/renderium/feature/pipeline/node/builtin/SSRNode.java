@@ -21,7 +21,15 @@ package com.ranecc.renderium.feature.pipeline.node.builtin;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
+import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 
 /**
@@ -87,6 +95,9 @@ public class SSRNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(SSRNode.class.getName());
 
+    /** SPIR-V 着色器资源路径 */
+    private static final String SHADER_PATH = "/shaders/ssr.spv";
+
     // ==================== 参数边界 ====================
 
     /** 质量等级下界 */
@@ -148,6 +159,14 @@ public class SSRNode extends AbstractPipelineNode {
     /** RT 反射可用标志（外部设置，>0 表示 RT 反射可用，SSR 短路） */
     private volatile int rtReflections = 0;
 
+    /** 当前帧索引（用于时域抖动） */
+    private volatile int frameIndex = 0;
+
+    /** Vulkan Compute Pipeline 句柄，0 表示未创建 */
+    private volatile long computePipeline = 0L;
+    private volatile long pipelineLayout = 0L;
+    private volatile long descriptorSet = 0L;
+
     // ==================== 构造函数 ====================
 
     /**
@@ -193,6 +212,8 @@ public class SSRNode extends AbstractPipelineNode {
      * @param context         RenderContext - 当前帧渲染上下文
      * @param inputResources long...      - 上游节点输出的资源句柄数组
      *                                  [0] = 颜色纹理句柄
+     *                                  [1] = 深度纹理句柄
+     *                                  [2] = 法线纹理句柄
      *
      * 【返回值】
      * @return long - 处理后的颜色纹理句柄，0 表示失败
@@ -209,10 +230,10 @@ public class SSRNode extends AbstractPipelineNode {
         if (rtReflections > 0) return passThrough(inputResources);
 
         // 输入校验
-        if (inputResources == null || inputResources.length < 1) {
-            LOGGER.warning("[SSR] 输入资源不足: 需要颜色纹理 1 张, "
+        if (inputResources == null || inputResources.length < 3) {
+            LOGGER.warning("[SSR] 输入资源不足: 需要颜色/深度/法线纹理 3 张, "
                     + "实际收到 " + (inputResources == null ? 0 : inputResources.length) + " 张");
-            return 0L;
+            return passThrough(inputResources);
         }
 
         long startTimeNanos = System.nanoTime();
@@ -223,35 +244,67 @@ public class SSRNode extends AbstractPipelineNode {
         float curThickness = this.thickness;
         float curBruteForceBias = this.bruteForceBias;
         boolean curHalfResolution = this.halfResolution;
+        int curFrameIdx = this.frameIndex;
 
-        // TODO: 实现 GPU SSR (Hi-Z Tracing)
-        // 1. 深度缓冲 → Hi-Z 金字塔构建
-        //    从深度缓冲逐级降采样，构建 mipmap 链
-        //    每级取 min(depth)，用于粗粒度交叉测试
-        //
-        // 2. 光线步进：从命中点出发，沿反射方向步进
-        //    反射方向 = reflect(viewDir, normal)
-        //    起始点 = 世界空间像素位置 + normal * bruteForceBias
-        //
-        // 3. Hi-Z 遍历：由粗到细的交叉测试
-        //    从最粗 mipmap 开始，如果射线在当前层未命中则降级
-        //    如果命中则升级到更精细的层继续追踪
-        //    快速跳过大面积空区域
-        //
-        // 4. 二分搜索精化：在交叉点处进行二分搜索
-        //    在命中区间 [tNear, tFar] 上做 4-8 次二分
-        //    提高命中精度，减少锯齿
-        //
-        // 5. 时域重投影：利用历史帧信息降低反射噪声
-        //    根据运动矢量采样历史帧反射结果
-        //    邻域夹紧防止鬼影
-        //
-        // 6. 空间滤波 (5x5 双边)
-        //    双边滤波平滑反射结果
-        //    法线/深度权重保留边缘
-        //
-        // 7. 回退策略：粗糙度 > 0.7 → 跳过 SSR，使用预滤波环境贴图
-        //    避免在粗糙表面上产生噪点反射
+        long colorTexture = inputResources[0];
+        long depthTexture = inputResources[1];
+        long normalTexture = inputResources[2];
+        long outputTexture = colorTexture; // 就地写入
+
+        ensurePipeline();
+        if (computePipeline == 0L) return passThrough(inputResources);
+
+        try {
+            long dev = VulkanDeviceHolder.getInstance().getDevice();
+            if (dev == 0L || descriptorSet == 0L) return passThrough(inputResources);
+
+            // 更新 image descriptors
+            ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 0, colorTexture, 0L, 0L);
+            ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 1, depthTexture, 0L, 0L);
+            ComputePipelineHelper.updateImageDescriptor(dev, descriptorSet, 2, normalTexture, 0L, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 3, outputTexture, 0L);
+
+            // 构建 PushConstants: vec4 projParams, int maxSteps, float thickness, float bias, int frameIdx (32 bytes)
+            MemorySegment params = PerFrameArena.allocate(32L);
+            float projScaleX = (float) context.getWidth() * 0.5f;
+            float projScaleY = (float) context.getHeight() * 0.5f;
+            float nearPlane = 0.1f;
+            float farPlane = 1000.0f;
+            params.set(ValueLayout.JAVA_FLOAT, 0, projScaleX);
+            params.set(ValueLayout.JAVA_FLOAT, 4, projScaleY);
+            params.set(ValueLayout.JAVA_FLOAT, 8, nearPlane);
+            params.set(ValueLayout.JAVA_FLOAT, 12, farPlane);
+            params.set(ValueLayout.JAVA_INT, 16, curMaxSteps);
+            params.set(ValueLayout.JAVA_FLOAT, 20, curThickness);
+            params.set(ValueLayout.JAVA_FLOAT, 24, curBruteForceBias);
+            params.set(ValueLayout.JAVA_INT, 28, curFrameIdx);
+
+            // Vulkan compute dispatch
+            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+            if (cmdBuf != 0L) {
+                LodCullingComputePass.beginCommandBuffer(cmdBuf);
+                VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
+                MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
+                dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
+                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1, pipelineLayout, 0, 1, dsPtr.address(), 0, 0L);
+                VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, pipelineLayout, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, 32, params.address());
+
+                int w = (context.getWidth() + 7) / 8;
+                int h = (context.getHeight() + 7) / 8;
+                VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
+                LodCullingComputePass.endCommandBuffer(cmdBuf);
+
+                long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+                if (queue != 0L) {
+                    VulkanSyncManager.submitAndWait(queue, cmdBuf);
+                }
+            }
+        } catch (Throwable t) {
+            LOGGER.fine("[SSR] dispatch 失败: " + t.getMessage());
+        }
+
+        // 更新帧索引
+        this.frameIndex = curFrameIdx + 1;
 
         long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
@@ -259,7 +312,7 @@ public class SSRNode extends AbstractPipelineNode {
                 curQuality, curMaxSteps, curThickness, curBruteForceBias, curHalfResolution, elapsedMicros
         ));
 
-        return inputResources[0]; // 待 GPU 实现后返回处理后的纹理
+        return outputTexture;
     }
 
     // ==================== 初始化与释放钩子 ====================
@@ -289,6 +342,7 @@ public class SSRNode extends AbstractPipelineNode {
      */
     @Override
     protected void onDispose() {
+        this.frameIndex = 0;
         LOGGER.fine("[SSR] 资源已释放");
     }
 
@@ -368,6 +422,68 @@ public class SSRNode extends AbstractPipelineNode {
     public void setRtReflections(int v) { this.rtReflections = v; }
 
     // ==================== 辅助方法 ====================
+
+    /**
+     * 确保 Compute Pipeline 已创建
+     * <p>
+     * 懒加载模式：首次 execute() 时加载 SPIR-V 并创建 Pipeline。
+     * 线程安全：双重检查锁定（DCL），synchronized 确保单次创建。
+     * 使用 {@link ComputePipelineHelper#createComputePipeline} 创建真实管线。
+     *
+     * SSR Binding 配置:
+     *   binding 0 = COMBINED_IMAGE_SAMPLER (color 纹理)
+     *   binding 1 = COMBINED_IMAGE_SAMPLER (depth 深度纹理)
+     *   binding 2 = COMBINED_IMAGE_SAMPLER (normal 法线纹理)
+     *   binding 3 = STORAGE_IMAGE (output 输出纹理)
+     * PushConstant: size=32, offset=0
+     */
+    private void ensurePipeline() {
+        if (computePipeline != 0L) return;
+        synchronized (this) {
+            if (computePipeline != 0L) return;
+            try {
+                byte[] spirv = loadSPIRVResource(SHADER_PATH);
+                if (spirv == null || spirv.length == 0) {
+                    LOGGER.warning("SPIR-V 着色器加载失败: " + SHADER_PATH);
+                    return;
+                }
+                var bindings = new ComputePipelineHelper.Binding[]{
+                    new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+                    new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+                    new ComputePipelineHelper.Binding(2, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+                    new ComputePipelineHelper.Binding(3, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                };
+                var pc = new ComputePipelineHelper.PushConstant(0, 32, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
+                var r = ComputePipelineHelper.createComputePipeline(spirv, bindings, pc);
+                if (r != null) {
+                    computePipeline = r.pipeline();
+                    pipelineLayout = r.pipelineLayout();
+                    descriptorSet = r.descriptorSet();
+                    LOGGER.fine("Compute Pipeline 创建成功: " + SHADER_PATH);
+                }
+            } catch (Exception e) {
+                LOGGER.warning("Pipeline 创建异常: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 从 classpath 加载 SPIR-V 二进制资源
+     *
+     * 【方法参数】
+     * @param path String - 资源路径（如 "/shaders/ssr.spv"）
+     *
+     * 【返回值】
+     * @return byte[] - SPIR-V 字节数组，加载失败返回 null
+     */
+    private static byte[] loadSPIRVResource(String path) {
+        try (var is = SSRNode.class.getResourceAsStream(path)) {
+            if (is == null) return null;
+            return is.readAllBytes();
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /**
      * 短路：禁用时直接传递输入
