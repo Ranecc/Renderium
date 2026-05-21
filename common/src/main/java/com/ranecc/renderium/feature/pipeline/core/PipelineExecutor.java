@@ -98,6 +98,43 @@ public final class PipelineExecutor {
 
     private boolean doInitNodes(RenderContext context) {
         PipelineNodeRegistry registry = PipelineNodeRegistry.getInstance();
+
+        var configLoader = com.ranecc.renderium.feature.config.RenderiumConfigLoader.getInstance();
+        if (!configLoader.isLoaded()) {
+            configLoader.loadDefault();
+        }
+
+        String shaderPack = configLoader.getString("shaders.shader_pack", "internal");
+        if (!"internal".equalsIgnoreCase(shaderPack) && !shaderPack.isEmpty()) {
+            try {
+                var spLayer = com.ranecc.renderium.feature.shader.pack.ShaderPackCompatLayer.getInstance();
+                spLayer.loadPack(shaderPack, new java.util.HashMap<>());
+                LOGGER.info("ShaderPack 已加载: " + shaderPack);
+            } catch (Exception e) {
+                LOGGER.warning("ShaderPack 加载失败 [" + shaderPack + "]: " + e.getMessage());
+            }
+        }
+
+        try {
+            var shaderCfg = com.ranecc.renderium.feature.shader.settings.ShaderGraphicsConfig.getInstance();
+            boolean renderiumEnabled = configLoader.getBoolean("renderium.enabled", true);
+            if (!renderiumEnabled) {
+                shaderCfg.applyPreset(com.ranecc.renderium.feature.shader.settings.ShaderPreset.OFF);
+            } else {
+                String preset = configLoader.getString("renderium.preset", "BALANCED");
+                switch (preset.toUpperCase()) {
+                    case "OFF" -> shaderCfg.applyPreset(com.ranecc.renderium.feature.shader.settings.ShaderPreset.OFF);
+                    case "MINIMAL" -> shaderCfg.applyPreset(com.ranecc.renderium.feature.shader.settings.ShaderPreset.MINIMAL);
+                    case "BALANCED" -> shaderCfg.applyPreset(com.ranecc.renderium.feature.shader.settings.ShaderPreset.BALANCED);
+                    case "CINEMATIC" -> shaderCfg.applyPreset(com.ranecc.renderium.feature.shader.settings.ShaderPreset.CINEMATIC);
+                    case "ULTRA" -> shaderCfg.applyPreset(com.ranecc.renderium.feature.shader.settings.ShaderPreset.ULTRA);
+                    default -> shaderCfg.applyPreset(com.ranecc.renderium.feature.shader.settings.ShaderPreset.BALANCED);
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.warning("ShaderGraphicsConfig 注入失败: " + e.getMessage());
+        }
+
         registry.registerBuiltinNodes();
         for (String id : registry.getAllNodeIds()) {
             try {

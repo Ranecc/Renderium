@@ -441,10 +441,10 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
             }
             writeFloatArrayToBuffer(device, normalSSBOMemory, normals, vertexCount * 3);
 
-            // 构造颜色数据（默认 (0.8,0.8,0.8,1.0)）
+            // 构造颜色数据（默认 (0.8,0.8,0.8,0.0)，alpha=metallic，默认绝缘体）
             float[] colors = new float[vertexCount * 4];
             for (int i = 0; i < vertexCount * 4; i++) {
-                colors[i] = (i % 4 == 3) ? 1.0f : 0.8f;
+                colors[i] = (i % 4 == 3) ? 0.0f : 0.8f;
             }
             writeFloatArrayToBuffer(device, colorSSBOMemory, colors, vertexCount * 4);
 
@@ -665,7 +665,7 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
     private static void releaseGpuImage(VulkanGPUResourceManager mgr, long image, int w, int h) {
         if (image != 0L) {
             try {
-                mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(image, 0, w, h, 0, null));
+                mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(image, 0, w, h, 0, VulkanGPUResourceManager.ResourceType.IMAGE));
             } catch (Throwable ignored) {}
         }
     }

@@ -16,6 +16,7 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
+import com.ranecc.renderium.feature.config.RenderiumConfigLoader;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
@@ -197,8 +198,13 @@ public class TemporalAANode extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        // 短路：禁用时直接传递输入
-        if (!enabled) return passThrough(inputResources);
+        var cfg = RenderiumConfigLoader.getInstance();
+        var sectionCfg = cfg.section("temporal_aa");
+        float curJitterStrength = sectionCfg.getFloat("jitter_strength", this.sharpness);
+        float curBlendFactor = sectionCfg.getFloat("blend_factor", this.blendWeight);
+        float curHistoryDecay = sectionCfg.getFloat("history_decay", 0.95f);
+        boolean nodeEnabled = sectionCfg.getBoolean("enabled", this.enabled) && cfg.getBoolean("renderium.enabled", true);
+        if (!nodeEnabled) return passThrough(inputResources);
 
         // 输入校验
         if (inputResources == null || inputResources.length < 1) {
@@ -209,9 +215,8 @@ public class TemporalAANode extends AbstractPipelineNode {
 
         long startTimeNanos = System.nanoTime();
 
-        // 快照读取 volatile 参数（一次读取，避免多次读不一致）
-        float   curSharpness   = this.sharpness;
-        float   curBlendWeight = this.blendWeight;
+        float curSharpness = curJitterStrength;
+        float curBlendWeight = curBlendFactor;
         boolean curClamp       = this.neighborhoodClamp;
         boolean curVelReject   = this.velocityRejection;
 
@@ -454,11 +459,11 @@ public class TemporalAANode extends AbstractPipelineNode {
             try { mgr.destroyView(outputImageView); } catch (Throwable ignored) {}
             outputImageView = 0L;
         }
+        int format = 87;
         if (outputImage != 0L) {
-            try { mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+            try { mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastOutputWidth, lastOutputHeight, format, com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
             outputImage = 0L;
         }
-        int format = 87;
         int usage = 0x20 | 0x10;
         var res = mgr.createImage(w, h, format, usage,
                 com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET);

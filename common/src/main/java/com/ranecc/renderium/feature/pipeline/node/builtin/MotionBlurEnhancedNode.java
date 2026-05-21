@@ -20,6 +20,7 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 
+import com.ranecc.renderium.feature.config.RenderiumConfigLoader;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 
@@ -207,8 +208,13 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        // 短路：禁用时直接传递输入
-        if (!enabled) return passThrough(inputResources);
+        var cfg = com.ranecc.renderium.feature.config.RenderiumConfigLoader.getInstance();
+        var mbCfg = cfg.section("motion_blur");
+        float curStrength = mbCfg.getFloat("strength", this.intensity);
+        int curSampleCount = mbCfg.getInt("sample_count", this.samples);
+        float curVelocityScale = mbCfg.getFloat("velocity_scale", 1.0f);
+        boolean nodeEnabled = mbCfg.getBoolean("enabled", this.enabled) && cfg.getBoolean("renderium.enabled", true);
+        if (!nodeEnabled) return passThrough(inputResources);
 
         // 输入校验
         if (inputResources == null || inputResources.length < 1) {
@@ -219,15 +225,10 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
 
         long startTimeNanos = System.nanoTime();
 
-        // 快照读取 volatile 参数（一次读取，避免多次读不一致）
-        float curIntensity = this.intensity;
-        int   curSamples   = this.samples;
-        float curMaxVel    = this.maxVelocity;
-
         MemorySegment params = PerFrameArena.allocate(32L);
-        params.set(ValueLayout.JAVA_FLOAT, 0, curIntensity);
-        params.set(ValueLayout.JAVA_INT, 4, curSamples);
-        params.set(ValueLayout.JAVA_FLOAT, 8, curMaxVel);
+        params.set(ValueLayout.JAVA_FLOAT, 0, curStrength);
+        params.set(ValueLayout.JAVA_INT, 4, curSampleCount);
+        params.set(ValueLayout.JAVA_FLOAT, 8, this.maxVelocity * curVelocityScale);
         params.set(ValueLayout.JAVA_INT, 12, context.getWidth());
         params.set(ValueLayout.JAVA_INT, 16, context.getHeight());
         params.set(ValueLayout.JAVA_INT, 20, objectMotion ? 1 : 0);
@@ -271,8 +272,8 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
 
         long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
-                "[MotionBlur] 完成 | intensity=%.2f samples=%d maxVel=%.1f | pipeline=0x%X | %.1fμs",
-                curIntensity, curSamples, curMaxVel, computePipeline, elapsedMicros
+                "[MotionBlur] 完成 | strength=%.2f sampleCount=%d velocityScale=%.2f | pipeline=0x%X | %.1fμs",
+                curStrength, curSampleCount, curVelocityScale, computePipeline, elapsedMicros
         ));
 
         // 返回 Compute Shader 写入的输出纹理（outputImageView）
@@ -321,7 +322,7 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
             }
             var mgr2 = com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.getInstance();
             if (outputImage != 0L) {
-                try { mgr2.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+                try { mgr2.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastOutputWidth, lastOutputHeight, 87, com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
             }
             LOGGER.fine(String.format("[MotionBlur] 释放输出资源 image=0x%X view=0x%X",
                     outputImage, outputImageView));
@@ -480,12 +481,12 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
                 try { mgr.destroyView(outputImageView); } catch (Throwable ignored) {}
                 outputImageView = 0L;
             }
+            int format = 87;
             if (outputImage != 0L) {
-                try { mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+                try { mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastOutputWidth, lastOutputHeight, format, com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
                 outputImage = 0L;
             }
 
-            int format = 87;
             int usageFlags = 0x20 | 0x10;
 
             com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource resource =

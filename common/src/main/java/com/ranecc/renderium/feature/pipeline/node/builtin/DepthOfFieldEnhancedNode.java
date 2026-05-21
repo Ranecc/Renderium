@@ -14,6 +14,7 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
+import com.ranecc.renderium.feature.config.RenderiumConfigLoader;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
@@ -209,8 +210,14 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        // 短路：禁用时直接传递输入
-        if (!enabled) return passThrough(inputResources);
+        var cfg = com.ranecc.renderium.feature.config.RenderiumConfigLoader.getInstance();
+        var dofCfg = cfg.section("depth_of_field");
+        float curFocalDist = dofCfg.getFloat("focal_distance", this.focalDistance);
+        float curAperture = dofCfg.getFloat("aperture", this.aperture);
+        int curSamples = dofCfg.getInt("bokeh_samples", this.bokehSamples);
+        float curFocalLen = dofCfg.getFloat("focal_length", this.focalLength);
+        boolean nodeEnabled = dofCfg.getBoolean("enabled", this.enabled) && cfg.getBoolean("renderium.enabled", true);
+        if (!nodeEnabled) return passThrough(inputResources);
 
         // 输入校验
         if (inputResources == null || inputResources.length < 2) {
@@ -220,12 +227,6 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
         }
 
         long startTimeNanos = System.nanoTime();
-
-        // 快照读取 volatile 参数
-        float curFocalDist = this.focalDistance;
-        float curAperture  = this.aperture;
-        int   curSamples   = this.bokehSamples;
-        float curFocalLen  = this.focalLength;
 
         // 构建参数 UBO：focalDist, aperture, samples, focalLen, screenWidth, screenHeight
         MemorySegment params = PerFrameArena.allocate(32L);
@@ -328,7 +329,7 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
                 outputImageView = 0L;
             }
             if (outputImage != 0L) {
-                try { mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+                try { mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastOutputWidth, lastOutputHeight, 87, com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
                 outputImage = 0L;
             }
             lastOutputWidth = 0;
@@ -473,11 +474,12 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
                 try { mgr.destroyView(outputImageView); } catch (Throwable ignored) {}
                 outputImageView = 0L;
             }
+            int format = 87;
             if (outputImage != 0L) {
-                try { mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+                try { mgr.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastOutputWidth, lastOutputHeight, format, com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
                 outputImage = 0L;
             }
-            int format = 87;
+
             int usage = 0x20 | 0x10;
             var res = mgr.createImage(w, h, format, usage,
                     com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET);

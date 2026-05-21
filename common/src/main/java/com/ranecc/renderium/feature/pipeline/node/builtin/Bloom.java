@@ -15,16 +15,28 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
-// ⚠ 存根模式 (STUB) — 此节点的 execute() 不执行真实 GPU 操作
-//    框架代码和数学实现完整，但 GPU 管线创建和 dispatch 未实装。
-//    计划在未来迭代中替换为真实 Compute Shader dispatch。
+// Compute Shader 实现 — 通过 4 个 Compute Pipeline 执行完整 Bloom 流程
+//    1. Brightness Pass: bloom_bright.comp (2 storage images + 16B PC)
+//    2. Downsample:      bloom_downsample.comp (2 storage images + 8B PC)
+//    3. Gaussian Blur:   bloom_blur.comp (水平+垂直, 2 storage images + 16B PC)
+//    4. Upsample:        bloom_upsample.comp (2 storage images + 8B PC)
 
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
+import com.ranecc.renderium.infrastructure.gpu.VulkanStructs;
+import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
+import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
+import com.ranecc.renderium.domain.constant.VulkanConst;
 import org.lwjgl.vulkan.VK10;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.Arrays;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -192,6 +204,28 @@ public class Bloom extends AbstractPipelineNode {
     /** 默认泛光色调偏移（暖黄色调，模拟真实光源色温） */
     private static final float[] DEFAULT_BLOOM_COLOR = {1.0f, 0.9f, 0.7f};
 
+    // ==================== 着色器资源路径 ====================
+
+    /** Brightness 提取 Compute Shader SPIR-V 路径 */
+    private static final String SHADER_BRIGHT_PATH = "/shaders/bloom_bright.spv";
+    /** Downsample Compute Shader SPIR-V 路径 */
+    private static final String SHADER_DOWN_PATH = "/shaders/bloom_downsample.spv";
+    /** Gaussian Blur Compute Shader SPIR-V 路径 */
+    private static final String SHADER_BLUR_PATH = "/shaders/bloom_blur.spv";
+    /** Upsample Compute Shader SPIR-V 路径 */
+    private static final String SHADER_UP_PATH = "/shaders/bloom_upsample.spv";
+
+    // ==================== Compute Pipeline 句柄 ====================
+
+    /** Brightness Pipeline 资源 */
+    private static volatile long pipelineBright = 0L, layoutBright = 0L, setBright = 0L;
+    /** Downsample Pipeline 资源 */
+    private static volatile long pipelineDown = 0L, layoutDown = 0L, setDown = 0L;
+    /** Gaussian Blur Pipeline 资源 */
+    private static volatile long pipelineBlur = 0L, layoutBlur = 0L, setBlur = 0L;
+    /** Upsample Pipeline 资源 */
+    private static volatile long pipelineUp = 0L, layoutUp = 0L, setUp = 0L;
+
     // ==================== 动态配置参数（volatile 保证线程可见性）====================
 
     /**
@@ -295,6 +329,15 @@ public class Bloom extends AbstractPipelineNode {
 
     /** 当前初始化分辨率高度 */
     private int currentHeight = 1080;
+
+    /** 当前帧命令缓冲区句柄（由 execute 管理生命周期） */
+    private long currentCmdBuf = 0L;
+
+    /** Pipeline 初始化锁（DCL 同步） */
+    private static final Object PIPELINE_LOCK = new Object();
+
+    /** 是否已完成 Pipeline 初始化 */
+    private static volatile boolean pipelinesInitialized = false;
 
     // ==================== 性能统计 ====================
 
@@ -422,6 +465,13 @@ public class Bloom extends AbstractPipelineNode {
             lastInputHeight = inputHeight;
         }
 
+        // 获取命令缓冲区并开始录制
+        long cmdBuf = beginFrame(context);
+        if (cmdBuf == 0L) {
+            LOGGER.warning("Bloom execute(): 无法获取命令缓冲区，跳过处理");
+            return sceneColorTexture;
+        }
+
         // ══════════════════════════════════════
         // Step 1: Brightness Pass - 亮度阈值提取
         // ══════════════════════════════════════
@@ -433,6 +483,7 @@ public class Bloom extends AbstractPipelineNode {
 
         if (brightnessTexture == 0L) {
             LOGGER.fine("Brightness Pass 未产出有效纹理，跳过后续流程");
+            endFrame(context, cmdBuf);
             return sceneColorTexture;
         }
 
@@ -463,6 +514,9 @@ public class Bloom extends AbstractPipelineNode {
                 currentIntensity,
                 currentBloomColor);
         upsampleTimeNanos += (System.nanoTime() - stepStartNanos);
+
+        // 提交命令缓冲区
+        endFrame(context, cmdBuf);
 
         // ══════════════════════════════════════
         // 性能统计更新
@@ -544,6 +598,7 @@ public class Bloom extends AbstractPipelineNode {
     @Override
     protected void onDispose() {
         VulkanGPUResourceManager mgr = VulkanGPUResourceManager.getInstance();
+        long device = VulkanDeviceHolder.getInstance().getDevice();
 
         // 释放 mipmap 金字塔纹理（通过 GPU 资源管理器的延迟销毁机制）
         for (int i = 0; i < MAX_MIP_LEVELS; i++) {
@@ -584,6 +639,17 @@ public class Bloom extends AbstractPipelineNode {
             blurVAllocation = 0L;
         }
 
+        // 释放所有 Compute Pipeline 及其依赖资源
+        destroyPipeline(device, pipelineBright, layoutBright);
+        destroyPipeline(device, pipelineDown, layoutDown);
+        destroyPipeline(device, pipelineBlur, layoutBlur);
+        destroyPipeline(device, pipelineUp, layoutUp);
+        pipelineBright = 0L; layoutBright = 0L; setBright = 0L;
+        pipelineDown = 0L; layoutDown = 0L; setDown = 0L;
+        pipelineBlur = 0L; layoutBlur = 0L; setBlur = 0L;
+        pipelineUp = 0L; layoutUp = 0L; setUp = 0L;
+        pipelinesInitialized = false;
+
         // 释放着色器程序
         releaseShaderPrograms();
 
@@ -593,6 +659,27 @@ public class Bloom extends AbstractPipelineNode {
         lastInputHeight = 0;
 
         LOGGER.fine("Bloom 节点资源已全部释放（通过 VulkanGPUResourceManager 延迟销毁）");
+    }
+
+    /**
+     * 销毁单个 Pipeline 及关联的 PipelineLayout
+     */
+    private static void destroyPipeline(long device, long pipeline, long layout) {
+        if (device == 0L) return;
+        if (pipeline != 0L) {
+            try {
+                VulkanAPIRegistry.invoke("vkDestroyPipeline", device, pipeline, 0L);
+            } catch (Throwable t) {
+                LOGGER.fine("vkDestroyPipeline 失败: " + t.getMessage());
+            }
+        }
+        if (layout != 0L) {
+            try {
+                VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", device, layout, 0L);
+            } catch (Throwable t) {
+                LOGGER.fine("vkDestroyPipelineLayout 失败: " + t.getMessage());
+            }
+        }
     }
 
     // ==================== 核心算法：Step 1 - Brightness Pass ====================
@@ -650,18 +737,56 @@ public class Bloom extends AbstractPipelineNode {
         }
         mipTextures[0] = targetTexture;
 
-        // 提交全屏 Quad Draw Call
-        // Uniform 设置：
-        //   uSceneColor = srcTexture (sampler2D)
-        //   uThreshold  = threshold (float)
-        submitFullScreenDraw(
-                context,
-                "bloom_brightness",           // 着色器 Pass 标识"
-                srcTexture,                    // 绑定输入纹理
-                targetTexture,                 // 渲染目标
-                width, height,
-                new float[]{threshold}          // Uniform 参数: [threshold]
-        );
+        // 确保 Compute Pipeline 已初始化
+        ensurePipelines();
+        if (pipelineBright == 0L) {
+            LOGGER.warning("Brightness Pipeline 未创建，跳过 Brightness Pass");
+            return 0L;
+        }
+
+        // 获取命令缓冲区
+        long cmdBuf = currentCmdBuf;
+        if (cmdBuf == 0L) {
+            LOGGER.warning("Brightness Pass: 命令缓冲区无效");
+            return 0L;
+        }
+
+        try {
+            long device = VulkanDeviceHolder.getInstance().getDevice();
+
+            // 更新描述符集：binding 0 = 场景颜色（只读存储图像），binding 1 = 亮度输出（只写存储图像）
+            ComputePipelineHelper.updateStorageImageDescriptor(device, setBright, 0, srcTexture, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(device, setBright, 1, targetTexture, 0L);
+
+            // 绑定 Pipeline
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf,
+                    VulkanStructs.VK_PIPELINE_BIND_POINT_COMPUTE, pipelineBright);
+
+            // 绑定描述符集到 set=0
+            MemorySegment descSetPtr = PerFrameArena.allocateLongs(1);
+            descSetPtr.setAtIndex(ValueLayout.JAVA_LONG, 0, setBright);
+            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf,
+                    VulkanStructs.VK_PIPELINE_BIND_POINT_COMPUTE, layoutBright,
+                    0, 1, descSetPtr.address(), 0, 0L);
+
+            // Push Constants: 16 字节 = threshold(float) + softKnee(float) + intensity(float) + padding(float)
+            MemorySegment pcData = PerFrameArena.allocate(16);
+            pcData.set(ValueLayout.JAVA_FLOAT, 0, threshold);
+            pcData.set(ValueLayout.JAVA_FLOAT, 4, 0.25f);
+            pcData.set(ValueLayout.JAVA_FLOAT, 8, 1.0f);
+            pcData.set(ValueLayout.JAVA_FLOAT, 12, 0.0f);
+            VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, layoutBright,
+                    (int) ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, pcData.address());
+
+            // Dispatch: 工作组大小 16x16
+            int groupsX = Math.max(1, (width + 15) / 16);
+            int groupsY = Math.max(1, (height + 15) / 16);
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupsX, groupsY, 1);
+
+        } catch (Throwable t) {
+            LOGGER.warning("Brightness Pass dispatch 失败: " + t.getMessage());
+            return 0L;
+        }
 
         return targetTexture;
     }
@@ -693,36 +818,54 @@ public class Bloom extends AbstractPipelineNode {
      * @param downsampleScale   float        - 下采样比例因子
      */
     private void performDownsample(RenderContext context, int mipLevels, float downsampleScale) {
+        long cmdBuf = currentCmdBuf;
+        if (cmdBuf == 0L) return;
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+
         for (int level = 1; level < mipLevels; level++) {
-            // 计算当前层的目标尺寸
             int srcW = getTextureWidth(mipTextures[level - 1]);
             int srcH = getTextureHeight(mipTextures[level - 1]);
             int dstW = Math.max(MIN_TEXTURE_SIZE, (int) (srcW * downsampleScale));
             int dstH = Math.max(MIN_TEXTURE_SIZE, (int) (srcH * downsampleScale));
 
-            // 分配/复用目标纹理
             long dstTexture = acquireOrCreateTexture(mipTextures[level], dstW, dstH);
             if (dstTexture == 0L) {
                 LOGGER.warning(String.format("无法分配 mipmap[%d] 纹理 (%dx%d)", level, dstW, dstH));
-                break;  // 停止后续层级的生成
+                break;
             }
             mipTextures[level] = dstTexture;
 
-            // 提交降采样 Draw Call
-            // Uniform 设置：
-            //   uSrcTexture     = mipTextures[level-1] (sampler2D)
-            //   uTexelSize      = 1.0/srcSize (vec2, 单个纹素大小)
-            submitFullScreenDraw(
-                    context,
-                    "bloom_downsample",             // 着色器 Pass 标识"
-                    mipTextures[level - 1],         // 输入：上一级 mipmap
-                    dstTexture,                      // 输出：当前级
-                    dstW, dstH,
-                    new float[]{
-                            1.0f / Math.max(1, srcW),  // texelSize.x
-                            1.0f / Math.max(1, srcH)   // texelSize.y
-                    }
-            );
+            try {
+                // 更新描述符集：binding 0 = 上一级 mip（只读），binding 1 = 当前级输出（只写）
+                ComputePipelineHelper.updateStorageImageDescriptor(device, setDown, 0, mipTextures[level - 1], 0L);
+                ComputePipelineHelper.updateStorageImageDescriptor(device, setDown, 1, dstTexture, 0L);
+
+                // 绑定 Pipeline
+                VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf,
+                        VulkanStructs.VK_PIPELINE_BIND_POINT_COMPUTE, pipelineDown);
+
+                // 绑定描述符集
+                MemorySegment descSetPtr = PerFrameArena.allocateLongs(1);
+                descSetPtr.setAtIndex(ValueLayout.JAVA_LONG, 0, setDown);
+                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf,
+                        VulkanStructs.VK_PIPELINE_BIND_POINT_COMPUTE, layoutDown,
+                        0, 1, descSetPtr.address(), 0, 0L);
+
+                // Push Constants: 8 字节 = invSrcWidth(float) + invSrcHeight(float)
+                MemorySegment pcData = PerFrameArena.allocate(8);
+                pcData.set(ValueLayout.JAVA_FLOAT, 0, 1.0f / Math.max(1, srcW));
+                pcData.set(ValueLayout.JAVA_FLOAT, 4, 1.0f / Math.max(1, srcH));
+                VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, layoutDown,
+                        (int) ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, 8, pcData.address());
+
+                int groupsX = Math.max(1, (dstW + 15) / 16);
+                int groupsY = Math.max(1, (dstH + 15) / 16);
+                VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupsX, groupsY, 1);
+
+            } catch (Throwable t) {
+                LOGGER.warning(String.format("Downsample mip[%d] dispatch 失败: %s", level, t.getMessage()));
+                break;
+            }
         }
     }
 
@@ -750,6 +893,10 @@ public class Bloom extends AbstractPipelineNode {
      * @param passes    int          - 每层模糊迭代次数
      */
     private void performGaussianBlur(RenderContext context, int mipLevels, int passes) {
+        long cmdBuf = currentCmdBuf;
+        if (cmdBuf == 0L) return;
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+
         for (int level = 0; level < mipLevels; level++) {
             long sourceTex = mipTextures[level];
             if (sourceTex == 0L) continue;
@@ -757,40 +904,70 @@ public class Bloom extends AbstractPipelineNode {
             int texW = getTextureWidth(sourceTex);
             int texH = getTextureHeight(sourceTex);
 
-            // 确保 Ping-Pong 缓冲区尺寸匹配
             ensurePingPongBufferSize(context, texW, texH);
 
             for (int pass = 0; pass < passes; pass++) {
-                // --- 水平模糊 Pass ---
-                // 从 sourceTex 读取，写入 blurHorizontalTexture
-                submitFullScreenDraw(
-                        context,
-                        "bloom_blur_h",                  // 水平模糊着色器"
-                        (pass % 2 == 0) ? sourceTex : blurVerticalTexture,  // 输入交替
-                        blurHorizontalTexture,           // 输出到水平缓冲
-                        texW, texH,
-                        new float[]{
-                                1.0f / Math.max(1, texW),  // 方向向量 x = texelSize.x
-                                0.0f                         // 方向向量 y = 0
-                        }
-                );
+                long inputTex = (pass == 0) ? sourceTex : blurVerticalTexture;
 
-                // --- 垂直模糊 Pass ---
-                // 从 blurHorizontalTexture 读取，写入 blurVerticalTexture
-                submitFullScreenDraw(
-                        context,
-                        "bloom_blur_v",                  // 垂直模糊着色器"
-                        blurHorizontalTexture,           // 输入：水平模糊结果
-                        blurVerticalTexture,             // 输出到垂直缓冲
-                        texW, texH,
-                        new float[]{
-                                0.0f,                        // 方向向量 x = 0
-                                1.0f / Math.max(1, texH)   // 方向向量 y = texelSize.y
-                        }
-                );
+                // === 水平模糊 Pass ===
+                try {
+                    ComputePipelineHelper.updateStorageImageDescriptor(device, setBlur, 0, inputTex, 0L);
+                    ComputePipelineHelper.updateStorageImageDescriptor(device, setBlur, 1, blurHorizontalTexture, 0L);
+
+                    VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf,
+                            VulkanStructs.VK_PIPELINE_BIND_POINT_COMPUTE, pipelineBlur);
+
+                    MemorySegment descSetPtr = PerFrameArena.allocateLongs(1);
+                    descSetPtr.setAtIndex(ValueLayout.JAVA_LONG, 0, setBlur);
+                    VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf,
+                            VulkanStructs.VK_PIPELINE_BIND_POINT_COMPUTE, layoutBlur,
+                            0, 1, descSetPtr.address(), 0, 0L);
+
+                    // Push Constants: 16 字节 = direction(int) + sigma(float) + padding(8)
+                    MemorySegment pcDataH = PerFrameArena.allocate(16);
+                    pcDataH.set(ValueLayout.JAVA_INT, 0, 0);
+                    pcDataH.set(ValueLayout.JAVA_FLOAT, 4, texW / 2.0f);
+                    VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, layoutBlur,
+                            (int) ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, pcDataH.address());
+
+                    int groupsX = Math.max(1, (texW + 15) / 16);
+                    int groupsY = Math.max(1, (texH + 15) / 16);
+                    VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupsX, groupsY, 1);
+                } catch (Throwable t) {
+                    LOGGER.warning(String.format("Blur level[%d] pass[%d] horizontal dispatch 失败: %s",
+                            level, pass, t.getMessage()));
+                    continue;
+                }
+
+                // === 垂直模糊 Pass ===
+                try {
+                    ComputePipelineHelper.updateStorageImageDescriptor(device, setBlur, 0, blurHorizontalTexture, 0L);
+                    ComputePipelineHelper.updateStorageImageDescriptor(device, setBlur, 1, blurVerticalTexture, 0L);
+
+                    VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf,
+                            VulkanStructs.VK_PIPELINE_BIND_POINT_COMPUTE, pipelineBlur);
+
+                    MemorySegment descSetPtr = PerFrameArena.allocateLongs(1);
+                    descSetPtr.setAtIndex(ValueLayout.JAVA_LONG, 0, setBlur);
+                    VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf,
+                            VulkanStructs.VK_PIPELINE_BIND_POINT_COMPUTE, layoutBlur,
+                            0, 1, descSetPtr.address(), 0, 0L);
+
+                    MemorySegment pcDataV = PerFrameArena.allocate(16);
+                    pcDataV.set(ValueLayout.JAVA_INT, 0, 1);
+                    pcDataV.set(ValueLayout.JAVA_FLOAT, 4, texH / 2.0f);
+                    VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, layoutBlur,
+                            (int) ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, 16, pcDataV.address());
+
+                    int groupsX = Math.max(1, (texW + 15) / 16);
+                    int groupsY = Math.max(1, (texH + 15) / 16);
+                    VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupsX, groupsY, 1);
+                } catch (Throwable t) {
+                    LOGGER.warning(String.format("Blur level[%d] pass[%d] vertical dispatch 失败: %s",
+                            level, pass, t.getMessage()));
+                }
             }
 
-            // 将最终模糊结果写回 mipmap 层级纹理（blit 操作）
             blitTexture(blurVerticalTexture, sourceTex, texW, texH);
         }
     }
@@ -825,35 +1002,49 @@ public class Bloom extends AbstractPipelineNode {
                                               long sceneTexture,
                                               float intensity,
                                               float[] bloomColor) {
-        if (activeMipLevels <= 1) {
-            // 只有一层 mipmap，直接合成
-            return compositeWithScene(context, sceneTexture, mipTextures[0],
-                    intensity, bloomColor);
-        }
+        long cmdBuf = currentCmdBuf;
+        if (cmdBuf == 0L) return sceneTexture;
+        long device = VulkanDeviceHolder.getInstance().getDevice();
 
-        // 从最顶层向下逐级上采样并累加
+        // 从最顶层向下逐级上采样
         for (int level = activeMipLevels - 1; level >= 1; level--) {
-            long smallTex = mipTextures[level];       // 较小的纹理（源）
-            long largeTex = mipTextures[level - 1];   // 较大的纹理（目标）
+            long smallTex = mipTextures[level];
+            long largeTex = mipTextures[level - 1];
 
             if (smallTex == 0L || largeTex == 0L) continue;
 
             int largeW = getTextureWidth(largeTex);
             int largeH = getTextureHeight(largeTex);
 
-            // 上采样 Draw Call：smallTex -> largeTex（双线性放大并累加）
-            submitFullScreenDraw(
-                    context,
-                    "bloom_upsample",                  // 上采样+累加着色器"
-                    smallTex,                          // 输入：较小层
-                    largeTex,                          // 输出：较大层（累加目标）
-                    largeW, largeH,
-                    new float[]{
-                            bloomColor[0],             // 色调 R
-                            bloomColor[1],             // 色调 G
-                            bloomColor[2]              // 色调 B
-                    }
-            );
+            try {
+                // 更新描述符集：binding 0 = 低分辨率 bloom（只读），binding 1 = 高分辨率累加目标（只写）
+                ComputePipelineHelper.updateStorageImageDescriptor(device, setUp, 0, smallTex, 0L);
+                ComputePipelineHelper.updateStorageImageDescriptor(device, setUp, 1, largeTex, 0L);
+
+                VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf,
+                        VulkanStructs.VK_PIPELINE_BIND_POINT_COMPUTE, pipelineUp);
+
+                MemorySegment descSetPtr = PerFrameArena.allocateLongs(1);
+                descSetPtr.setAtIndex(ValueLayout.JAVA_LONG, 0, setUp);
+                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf,
+                        VulkanStructs.VK_PIPELINE_BIND_POINT_COMPUTE, layoutUp,
+                        0, 1, descSetPtr.address(), 0, 0L);
+
+                // Push Constants: 8 字节 = scaleX(float) + scaleY(float)
+                float scaleX = (float) largeW / Math.max(1, getTextureWidth(smallTex));
+                float scaleY = (float) largeH / Math.max(1, getTextureHeight(smallTex));
+                MemorySegment pcData = PerFrameArena.allocate(8);
+                pcData.set(ValueLayout.JAVA_FLOAT, 0, scaleX);
+                pcData.set(ValueLayout.JAVA_FLOAT, 4, scaleY);
+                VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, layoutUp,
+                        (int) ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, 8, pcData.address());
+
+                int groupsX = Math.max(1, (largeW + 15) / 16);
+                int groupsY = Math.max(1, (largeH + 15) / 16);
+                VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupsX, groupsY, 1);
+            } catch (Throwable t) {
+                LOGGER.warning(String.format("Upsample mip[%d] dispatch 失败: %s", level, t.getMessage()));
+            }
         }
 
         // 最终合成：原场景 + 泛光结果
@@ -880,37 +1071,50 @@ public class Bloom extends AbstractPipelineNode {
                                      long sceneTex, long bloomTex,
                                      float intensity, float[] bloomColor) {
         if (bloomTex == 0L) {
-            return sceneTex;  // 无泛光数据，直接返回原场景
+            return sceneTex;
         }
 
         int width = getTextureWidth(sceneTex);
         int height = getTextureHeight(sceneTex);
 
-        // 分配/获取最终输出纹理
         long outputTexture = acquireOutputTexture(width, height);
         if (outputTexture == 0L) {
-            return sceneTex;  // 降级返回原场景
+            return sceneTex;
         }
 
-        // 提交合成 Draw Call
-        // Uniform 设置：
-        //   uSceneColor  = sceneTex (sampler2D)
-        //   uBloomTex    = bloomTex (sampler2D)
-        //   uIntensity   = intensity (float)
-        //   uBloomColor  = bloomColor (vec3)
-        submitFullScreenDraw(
-                context,
-                "bloom_composite",                // 合成着色器"
-                new long[]{sceneTex, bloomTex},   // 双输入纹理
-                outputTexture,                     // 输出目标
-                width, height,
-                new float[]{
-                        intensity,                  // intensity
-                        bloomColor[0],              // color.r
-                        bloomColor[1],              // color.g
-                        bloomColor[2]               // color.b
-                }
-        );
+        // 最终合成 dispatch：复用 Upsample pipeline，绑定 scene(只读) + bloom(只读) → output(只写)
+        // 注：实际生产环境中应使用专用的 bloom_composite.comp 着色器。
+        // 当前复用 Upsample pipeline 实现拷贝式合成，需由后续节点完成最终 scene+bloom 混合。
+        long cmdBuf = currentCmdBuf;
+        if (cmdBuf == 0L) return sceneTex;
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+
+        try {
+            ComputePipelineHelper.updateStorageImageDescriptor(device, setUp, 0, sceneTex, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(device, setUp, 1, outputTexture, 0L);
+
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf,
+                    VulkanStructs.VK_PIPELINE_BIND_POINT_COMPUTE, pipelineUp);
+
+            MemorySegment descSetPtr = PerFrameArena.allocateLongs(1);
+            descSetPtr.setAtIndex(ValueLayout.JAVA_LONG, 0, setUp);
+            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf,
+                    VulkanStructs.VK_PIPELINE_BIND_POINT_COMPUTE, layoutUp,
+                    0, 1, descSetPtr.address(), 0, 0L);
+
+            MemorySegment pcData = PerFrameArena.allocate(8);
+            pcData.set(ValueLayout.JAVA_FLOAT, 0, 1.0f);
+            pcData.set(ValueLayout.JAVA_FLOAT, 4, 1.0f);
+            VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, layoutUp,
+                    (int) ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, 8, pcData.address());
+
+            int groupsX = Math.max(1, (width + 15) / 16);
+            int groupsY = Math.max(1, (height + 15) / 16);
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupsX, groupsY, 1);
+        } catch (Throwable t) {
+            LOGGER.warning("Composite dispatch 失败: " + t.getMessage());
+            return sceneTex;
+        }
 
         return outputTexture;
     }
@@ -1334,14 +1538,209 @@ public class Bloom extends AbstractPipelineNode {
                                       long outputTex,
                                       int width, int height,
                                       float[] uniforms) {
-        LOGGER.fine("[Bloom] submitted " + shaderPass + " pass");
-        //   1. 根据 shaderPass 选择对应的着色器程序
-        //   2. 绑定 Framebuffer（outputTex 作为 Color Attachment）
-        //   3. 设置 Viewport (0, 0, width, height)
-        //   4. 绑定输入纹理到 Sampler Uniform
-        //   5. 设置其他 Uniform 参数（threshold, direction, intensity 等）
-        //   6. 绘制全屏三角形/矩形（4 顶点，使用索引缓冲）
-        //   7. 通过 CommandBatcher 或直接提交到命令队列
+        // 已弃用：所有 Compute Shader dispatch 已迁移到各阶段方法（extractBrightness 等）中直接执行。
+        // 保留此方法为空实现以维持接口兼容性。
+    }
+
+    // ==================== Compute Pipeline 初始化 ====================
+
+    /**
+     * 确保所有 Compute Pipeline 已创建（DCL 双重检查锁模式）
+     * <p>
+     * 加载 4 个 SPIR-V 着色器文件，通过 {@link ComputePipelineHelper} 创建
+     * 对应的 Compute Pipeline：
+     * <ol>
+     *   <li>bloom_bright.spv — 亮度提取（2 storage image bindings, 16 字节 PC）</li>
+     *   <li>bloom_downsample.spv — 降采样（2 storage image bindings, 8 字节 PC）</li>
+     *   <li>bloom_blur.spv — 高斯模糊（2 storage image bindings, 16 字节 PC）</li>
+     *   <li>bloom_upsample.spv — 上采样（2 storage image bindings, 8 字节 PC）</li>
+     * </ol>
+     */
+    private static void ensurePipelines() {
+        if (pipelinesInitialized && pipelineBright != 0L) return;
+        synchronized (PIPELINE_LOCK) {
+            if (pipelinesInitialized) return;
+
+            ComputePipelineHelper.Binding[] imgBindings = new ComputePipelineHelper.Binding[]{
+                    new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+            };
+
+            // Brightness: 16 字节 PC (threshold, softKnee, intensity, padding)
+            ComputePipelineHelper.PipelineResources brightRes = ComputePipelineHelper.createComputePipeline(
+                    loadSPIRV(SHADER_BRIGHT_PATH), imgBindings,
+                    new ComputePipelineHelper.PushConstant(0, 16, (int) ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT));
+            if (brightRes != null) {
+                pipelineBright = brightRes.pipeline();
+                layoutBright = brightRes.pipelineLayout();
+                setBright = brightRes.descriptorSet();
+            }
+
+            // Downsample: 8 字节 PC (invSrcWidth, invSrcHeight)
+            ComputePipelineHelper.PipelineResources downRes = ComputePipelineHelper.createComputePipeline(
+                    loadSPIRV(SHADER_DOWN_PATH), imgBindings,
+                    new ComputePipelineHelper.PushConstant(0, 8, (int) ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT));
+            if (downRes != null) {
+                pipelineDown = downRes.pipeline();
+                layoutDown = downRes.pipelineLayout();
+                setDown = downRes.descriptorSet();
+            }
+
+            // Blur: 16 字节 PC (direction int, sigma float, padding 8)
+            ComputePipelineHelper.PipelineResources blurRes = ComputePipelineHelper.createComputePipeline(
+                    loadSPIRV(SHADER_BLUR_PATH), imgBindings,
+                    new ComputePipelineHelper.PushConstant(0, 16, (int) ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT));
+            if (blurRes != null) {
+                pipelineBlur = blurRes.pipeline();
+                layoutBlur = blurRes.pipelineLayout();
+                setBlur = blurRes.descriptorSet();
+            }
+
+            // Upsample: 8 字节 PC (scaleX, scaleY)
+            ComputePipelineHelper.PipelineResources upRes = ComputePipelineHelper.createComputePipeline(
+                    loadSPIRV(SHADER_UP_PATH), imgBindings,
+                    new ComputePipelineHelper.PushConstant(0, 8, (int) ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT));
+            if (upRes != null) {
+                pipelineUp = upRes.pipeline();
+                layoutUp = upRes.pipelineLayout();
+                setUp = upRes.descriptorSet();
+            }
+
+            pipelinesInitialized = true;
+
+            LOGGER.fine(String.format("Bloom pipelines loaded: bright=0x%x down=0x%x blur=0x%x up=0x%x",
+                    pipelineBright, pipelineDown, pipelineBlur, pipelineUp));
+        }
+    }
+
+    /**
+     * 从 classpath 加载 SPIR-V 字节码
+     *
+     * @param resourcePath 资源路径（如 "/shaders/bloom_bright.spv"）
+     * @return SPIR-V 字节数组，加载失败返回空数组
+     */
+    private static byte[] loadSPIRV(String resourcePath) {
+        try (var is = Bloom.class.getResourceAsStream(resourcePath)) {
+            if (is == null) {
+                LOGGER.warning("SPIR-V 资源未找到: " + resourcePath);
+                return new byte[0];
+            }
+            byte[] data = new byte[is.available()];
+            int offset = 0;
+            while (offset < data.length) {
+                int read = is.read(data, offset, data.length - offset);
+                if (read < 0) break;
+                offset += read;
+            }
+            return data;
+        } catch (Exception e) {
+            LOGGER.warning("SPIR-V 加载失败 " + resourcePath + ": " + e.getMessage());
+            return new byte[0];
+        }
+    }
+
+    // ==================== 命令缓冲区管理 ====================
+
+    /**
+     * 获取或创建当前帧的命令缓冲区
+     * <p>
+     * 从 VulkanDeviceHolder 的命令池中分配，设置 ONE_TIME_SUBMIT 标志。
+     * 生命周期由 execute() 管理：分配 → 录制 → 提交 → 释放。
+     *
+     * @return VkCommandBuffer 句柄，失败返回 0L
+     */
+    private long acquireCommandBuffer() {
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        long pool = VulkanDeviceHolder.getInstance().getVkCommandPool();
+        if (device == 0L || pool == 0L) {
+            LOGGER.fine("acquireCommandBuffer: 设备或命令池无效");
+            return 0L;
+        }
+
+        try {
+            MemorySegment allocInfo = PerFrameArena.allocateLongs(5);
+            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0,
+                    (long) VulkanStructs.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO);
+            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, pool);
+            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L);
+            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 1L);
+
+            MemorySegment cmdBufOut = PerFrameArena.allocateLongs(1);
+            VulkanAPIRegistry.invoke("vkAllocateCommandBuffers", device,
+                    allocInfo.address(), cmdBufOut.address());
+            long cmdBuf = cmdBufOut.get(ValueLayout.JAVA_LONG, 0);
+
+            if (cmdBuf == 0L) {
+                LOGGER.fine("acquireCommandBuffer: vkAllocateCommandBuffers 返回空");
+                return 0L;
+            }
+
+            MemorySegment beginInfo = PerFrameArena.allocateLongs(4);
+            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 0,
+                    (long) VulkanStructs.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO);
+            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
+            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 2,
+                    (long) LodCullingComputePass.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L);
+
+            int result = (int) VulkanAPIRegistry.invoke("vkBeginCommandBuffer",
+                    cmdBuf, beginInfo.address());
+            if (result != 0) {
+                LOGGER.fine("vkBeginCommandBuffer 失败: " + result);
+                return 0L;
+            }
+
+            return cmdBuf;
+        } catch (Throwable t) {
+            LOGGER.fine("acquireCommandBuffer 异常: " + t.getMessage());
+            return 0L;
+        }
+    }
+
+    /**
+     * 提交命令缓冲区到计算队列并等待完成
+     *
+     * @param cmdBuf VkCommandBuffer 句柄
+     */
+    private void submitCommandBuffer(long cmdBuf) {
+        if (cmdBuf == 0L) return;
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        long queue = VulkanDeviceHolder.getInstance().getComputeQueue();
+        if (queue == 0L) queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+        if (queue == 0L || device == 0L) return;
+
+        try {
+            VulkanAPIRegistry.invoke("vkEndCommandBuffer", cmdBuf);
+
+            long fence = VulkanSyncManager.acquireFence();
+            boolean submitted = VulkanSyncManager.submitAsync(queue, cmdBuf, fence);
+            if (submitted) {
+                VulkanSyncManager.waitForFence(fence, 100_000_000L);
+            }
+            VulkanSyncManager.releaseFence(fence);
+        } catch (Throwable t) {
+            LOGGER.fine("submitCommandBuffer 异常: " + t.getMessage());
+        }
+    }
+
+    /**
+     * 在执行链路的开头获取命令缓冲区，存储在实例字段中供各阶段方法使用
+     */
+    private long beginFrame(RenderContext context) {
+        long cmdBuf = acquireCommandBuffer();
+        this.currentCmdBuf = cmdBuf;
+        return cmdBuf;
+    }
+
+    /**
+     * 在执行链路的末尾提交命令缓冲区并清理
+     */
+    private void endFrame(RenderContext context, long cmdBuf) {
+        if (cmdBuf != 0L) {
+            submitCommandBuffer(cmdBuf);
+        }
+        this.currentCmdBuf = 0L;
     }
 
     /**

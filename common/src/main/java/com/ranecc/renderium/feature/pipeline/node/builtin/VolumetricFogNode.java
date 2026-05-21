@@ -18,6 +18,7 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
+import com.ranecc.renderium.feature.config.RenderiumConfigLoader;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
@@ -226,8 +227,15 @@ public class VolumetricFogNode extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        // 短路：禁用时直接传递输入
-        if (!enabled) return passThrough(inputResources);
+        var cfg = RenderiumConfigLoader.getInstance();
+        var sectionCfg = cfg.section("volumetric_fog");
+        float curDensity = sectionCfg.getFloat("density", this.fogDensity);
+        float curScattering = sectionCfg.getFloat("scattering", this.scatteringAnisotropy);
+        float curAbsorption = sectionCfg.getFloat("absorption", 0.0f);
+        float curLightIntensity = sectionCfg.getFloat("light_intensity", 1.0f);
+        int curMarchSteps = sectionCfg.getInt("march_steps", this.raySteps);
+        boolean nodeEnabled = sectionCfg.getBoolean("enabled", this.enabled) && cfg.getBoolean("renderium.enabled", true);
+        if (!nodeEnabled) return passThrough(inputResources);
 
         // 输入校验（需要颜色纹理 + 深度纹理至少 2 张）
         if (inputResources == null || inputResources.length < 2) {
@@ -238,11 +246,9 @@ public class VolumetricFogNode extends AbstractPipelineNode {
 
         long startTimeNanos = System.nanoTime();
 
-        // 快照读取 volatile 参数（一次读取，避免多次读不一致）
-        float curDensity = this.fogDensity;
         float curFalloff = this.fogHeightFalloff;
-        int   curSteps   = this.raySteps;
-        float curAniso   = this.scatteringAnisotropy;
+        int curSteps = curMarchSteps;
+        float curAniso = curScattering;
 
         MemorySegment params = PerFrameArena.allocate(32L);
         params.set(ValueLayout.JAVA_FLOAT, 0, curDensity);

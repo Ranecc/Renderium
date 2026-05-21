@@ -5,6 +5,8 @@
 
 package com.ranecc.renderium.feature.blaze3d.device;
 
+import com.ranecc.renderium.feature.blaze3d.memory.MemoryOptimizer;
+
 /**
  * GpuDeviceMixin 存根类（已废弃）。
  *

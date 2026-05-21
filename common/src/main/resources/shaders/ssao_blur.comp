@@ -1,0 +1,44 @@
+#version 460
+// Renderium - SSAO 双边滤波去噪
+// 输入: raw AO + position, 输出: 滤波后 AO
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, r8) uniform readonly image2D uAORaw;
+layout(binding = 1, rgba32f) uniform readonly image2D uPositionImage;
+layout(binding = 2, r8) uniform writeonly image2D uAOBlurred;
+
+layout(push_constant) uniform PushConstants {
+    float threshold;
+    int kernelSize;
+} pc;
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 imgSize = imageSize(uAOBlurred);
+    if (texel.x >= int(imgSize.x) || texel.y >= int(imgSize.y)) return;
+
+    float centerAO = imageLoad(uAORaw, texel).r;
+    vec3 centerPos = imageLoad(uPositionImage, texel).xyz;
+    int halfK = max(1, min(pc.kernelSize, 16)) / 2;
+    float totalW = 0.0;
+    float sum = 0.0;
+
+    for (int dy = -halfK; dy <= halfK; dy++) {
+        for (int dx = -halfK; dx <= halfK; dx++) {
+            ivec2 st = texel + ivec2(dx, dy);
+            if (st.x < 0 || st.x >= int(imgSize.x) || st.y < 0 || st.y >= int(imgSize.y)) continue;
+
+            float w = exp(-float(dx * dx + dy * dy) * 0.159);
+            vec3 sp = imageLoad(uPositionImage, st).xyz;
+            float depthDiff = length(sp - centerPos);
+            w *= exp(-depthDiff * depthDiff / max(pc.threshold * pc.threshold, 0.0001));
+            sum += imageLoad(uAORaw, st).r * w;
+            totalW += w;
+        }
+    }
+
+    float result = totalW > 0.001 ? sum / totalW : centerAO;
+    imageStore(uAOBlurred, texel, vec4(result));
+}

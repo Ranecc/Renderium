@@ -1,0 +1,38 @@
+#version 460
+// Renderium - Bloom 亮度提取
+// 输入: HDR scene color, 输出: bright pass
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform readonly image2D uSceneColor;
+layout(binding = 1, rgba16f) uniform writeonly image2D uBrightPass;
+
+layout(push_constant) uniform PushConstants {
+    float threshold;
+    float softKnee;
+    float intensity;
+} pc;
+
+float luminance(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uBrightPass);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec3 color = imageLoad(uSceneColor, texel).rgb;
+    float luma = luminance(color);
+
+    float amount = luma - pc.threshold;
+    if (amount <= 0.0) {
+        imageStore(uBrightPass, texel, vec4(0.0));
+        return;
+    }
+
+    float knee = pc.softKnee;
+    amount = smoothstep(0.0, knee, amount) * amount;
+    imageStore(uBrightPass, texel, vec4(color * amount * pc.intensity, 1.0));
+}

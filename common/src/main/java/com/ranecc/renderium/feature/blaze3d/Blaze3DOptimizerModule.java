@@ -18,6 +18,10 @@ import com.ranecc.renderium.feature.blaze3d.diagnostic.RenderiumProfiler;
 import com.ranecc.renderium.feature.blaze3d.diagnostic.ResourceStats;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
+import com.ranecc.renderium.feature.blaze3d.pipeline.FrameGraphOptimizer;
+import com.ranecc.renderium.feature.blaze3d.command.VulkanCommandOptimizer;
+import com.ranecc.renderium.feature.blaze3d.memory.MemoryOptimizer;
+import com.ranecc.renderium.feature.blaze3d.shader.ShaderPipelineOptimizer;
 
 import java.util.List;
 import java.util.Map;
@@ -1075,7 +1079,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - 综合压缩率: ~50%
         try {
             boolean compressionEnabled = config.getAggressiveConfig().isVertexCompressionEnabled();
-            com.ranecc.renderium.feature.blaze3d.aggressive.VertexFormatCompressor.getInstance().setEnabled(compressionEnabled);
+            com.ranecc.renderium.feature.blaze3d.render.VertexFormatCompressor.getInstance().setEnabled(compressionEnabled);
             mixinRegistrationStatus.put("VertexFormatCompressor",
                     compressionEnabled ? "✓ 已启用 (压缩模式)" : "○ 已禁用");
             LOGGER.info(String.format("│  ✓ VertexFormatCompressor: %s          │",
@@ -1095,7 +1099,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - Level 4: 跨帧合并（静态几何体缓存）
         try {
             boolean batchingEnabled = config.getAggressiveConfig().isAggressiveBatchingEnabled();
-            com.ranecc.renderium.feature.blaze3d.aggressive.AggressiveBatchRenderer.getInstance().setEnabled(batchingEnabled);
+            com.ranecc.renderium.feature.blaze3d.render.AggressiveBatchRenderer.getInstance().setEnabled(batchingEnabled);
             mixinRegistrationStatus.put("AggressiveBatchRenderer",
                     batchingEnabled ? "✓ 已启用 (MultiDrawIndirect)" : "○ 已禁用");
             LOGGER.info(String.format("│  ✓ AggressiveBatchRenderer: %s           │",
@@ -1114,7 +1118,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - Fence 信号量确保上传完成后再渲染
         try {
             boolean asyncUploadEnabled = config.getAggressiveConfig().isAsyncUploadEnabled();
-            com.ranecc.renderium.feature.blaze3d.aggressive.AsyncChunkUploader.getInstance().setEnabled(asyncUploadEnabled);
+            com.ranecc.renderium.feature.blaze3d.render.AsyncChunkUploader.getInstance().setEnabled(asyncUploadEnabled);
             mixinRegistrationStatus.put("AsyncChunkUploader",
                     asyncUploadEnabled ? "✓ 已启用 (Transfer Queue)" : "○ 已禁用");
             LOGGER.info(String.format("│  ✓ AsyncChunkUploader: %s                │",
@@ -1133,7 +1137,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - Pass 3: 并行压缩生成 Indirect Draw 命令
         // - CPU 开销: <0.1ms（vs 传统 2-5ms）
         try {
-            com.ranecc.renderium.feature.blaze3d.aggressive.GPUCullingSystem.getInstance();
+            com.ranecc.renderium.feature.blaze3d.render.GPUCullingSystem.getInstance();
             mixinRegistrationStatus.put("GPUCullingSystem", "✓ 已初始化 (Compute Shader)");
             LOGGER.info("│  ✓ GPUCullingSystem: Compute Shader 就绪   │");
 
@@ -1209,7 +1213,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         try {
             // init() 需要 (gpuDevice, hiZWidth, hiZHeight) 三个参数
             // hiZSize 作为正方形 Hi-Z 缓冲区的边长
-            com.ranecc.renderium.feature.blaze3d.modern.GPUDrivenVisibilitySystem.getInstance()
+            com.ranecc.renderium.feature.blaze3d.render.GPUDrivenVisibilitySystem.getInstance()
                     .init(gpuDevice, hiZSize, hiZSize);
             mixinRegistrationStatus.put("GPUDrivenVisibilitySystem",
                     String.format("✓ 已初始化 (HiZ: %dx%d)", hiZSize, hiZSize));
@@ -1230,7 +1234,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - 支持运行时纹理注册/注销/更新
         int maxTextures = config.getModernConfig().getBindlessMaxTextures();
         try {
-            com.ranecc.renderium.feature.blaze3d.modern.BindlessResourceManager.getInstance().init(maxTextures);
+            com.ranecc.renderium.feature.blaze3d.render.BindlessResourceManager.getInstance().init(maxTextures);
             mixinRegistrationStatus.put("BindlessResourceManager",
                     String.format("✓ 已初始化 (最大 %d 纹理)", maxTextures));
             LOGGER.info(String.format("│  ✓ BindlessResourceManager: %d 纹理槽位    │",
@@ -1250,7 +1254,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - Data stored continuously, cache-friendly (SoA layout)
         // - Supports multi-threaded System execution
         try {
-            com.ranecc.renderium.feature.blaze3d.modern.ECSSceneGraph.getInstance();
+            com.ranecc.renderium.feature.blaze3d.render.ECSSceneGraph.getInstance();
             mixinRegistrationStatus.put("ECSSceneGraph", "✓ 已初始化 (ECS 架构)");
             LOGGER.info("│  ✓ ECSSceneGraph: ECS 架构就绪             │");
 
@@ -1317,7 +1321,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - 消除 CPU 端数百万次矩阵乘法
         int maxChunks = config.getTransformConfig().getMaxChunks();
         try {
-            com.ranecc.renderium.feature.blaze3d.transform.GPUVertexTransformSystem.getInstance().init(gpuDevice, maxChunks);
+            com.ranecc.renderium.feature.blaze3d.render.GPUVertexTransformSystem.getInstance().init(gpuDevice, maxChunks);
             mixinRegistrationStatus.put("GPUVertexTransformSystem",
                     String.format("✓ 已初始化 (最大 %d Chunks)", maxChunks));
             LOGGER.info(String.format("│  ✓ GPUVertexTransformSystem: %d Chunks      │",
@@ -1335,8 +1339,8 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - 将 Draw Calls 从 N 个 Chunk 降低到 ~4 层
         // - TRANSLUCENT 层自动执行深度排序
         try {
-            com.ranecc.renderium.feature.blaze3d.transform.LayerBatchMerger layerMerger =
-                    new com.ranecc.renderium.feature.blaze3d.transform.LayerBatchMerger();
+            com.ranecc.renderium.feature.blaze3d.render.LayerBatchMerger layerMerger =
+                    new com.ranecc.renderium.feature.blaze3d.render.LayerBatchMerger();
             layerMerger.init(gpuDevice);
             mixinRegistrationStatus.put("LayerBatchMerger", "✓ 已初始化 (5 渲染层)");
             LOGGER.info("│  ✓ LayerBatchMerger: 5 渲染层已就绪      │");
@@ -1354,8 +1358,8 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - 支持最多 4096 纹理的 Bindless 描述符数组
         try {
             int maxTextures = config.getModernConfig().getBindlessMaxTextures();
-            com.ranecc.renderium.feature.blaze3d.transform.MaterialMergedRenderer materialRenderer =
-                    new com.ranecc.renderium.feature.blaze3d.transform.MaterialMergedRenderer(
+            com.ranecc.renderium.feature.blaze3d.render.MaterialMergedRenderer materialRenderer =
+                    new com.ranecc.renderium.feature.blaze3d.render.MaterialMergedRenderer(
                             maxTextures, 512);
             materialRenderer.init(gpuDevice);
             mixinRegistrationStatus.put("MaterialMergedRenderer",
@@ -1379,7 +1383,7 @@ public class Blaze3DOptimizerModule implements RenderiumModule {
         // - Reduces 70-80% of CPU-GPU transfer bandwidth (for static scenes)
         try {
             boolean staticCacheEnabled = config.getTransformConfig().isStaticGeometryCacheEnabled();
-            com.ranecc.renderium.feature.blaze3d.transform.StaticGeometryCache.getInstance().setEnabled(staticCacheEnabled);
+            com.ranecc.renderium.feature.blaze3d.render.StaticGeometryCache.getInstance().setEnabled(staticCacheEnabled);
             mixinRegistrationStatus.put("StaticGeometryCache",
                     staticCacheEnabled ? "✓ 已启用 (自动提升)" : "○ 已禁用");
             LOGGER.info(String.format("│  ✓ StaticGeometryCache: %s                  │",

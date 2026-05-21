@@ -56,6 +56,8 @@ void main() {
     imageStore(uNormalImage,   texel, vec4(normal.xy * 0.5 + 0.5, 0, 0));
     imageStore(uAlbedoImage,   texel, vec4(albedo.rgb, 1.0));
 
-    // Material: r = metallic, g = roughness, b = ao, a = specular
-    imageStore(uMaterialImage, texel, vec4(0.5, 0.5, 1.0, 0.04));
+    // Material: r = metallic (从 colBuf.a 读取), g = roughness, b = ao, a = specular
+    float metallic = albedo.a;
+    float roughness = 1.0 - metallic * 0.7;
+    imageStore(uMaterialImage, texel, vec4(metallic, roughness, 1.0, 0.04));
 }

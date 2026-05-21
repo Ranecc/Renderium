@@ -28,37 +28,37 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class RenderPassNode {
     /** 唯一标识符（由 RenderPassMixin 分配） */
-    final long passId;
+    public final long passId;
 
     /** 人类可读的 Pass 名称 */
-    final String passName;
+    public final String passName;
 
     /** 当前绑定的 Pipeline 配置哈希 */
-    volatile long pipelineHash;
+    public volatile long pipelineHash;
 
     /** 输入资源集合：此 Pass 读取的资源（只读依赖） */
-    final Set<Long> inputResources;
+    public final Set<Long> inputResources;
 
     /** 输出资源集合：此 Pass 写入的资源（写依赖） */
-    final Set<Long> outputResources;
+    public final Set<Long> outputResources;
 
     /** 依赖的 Pass ID 集合（必须在当前 Pass 之前执行） */
-    final Set<Long> dependencies;
+    public final Set<Long> dependencies;
 
     /** 被依赖的 Pass ID 集合（必须在当前 Pass 之后执行） */
-    final Set<Long> dependents;
+    public final Set<Long> dependents;
 
     /** 拓扑排序后的执行顺序索引（-1 表示未分配） */
-    int topologyIndex;
+    public int topologyIndex;
 
     /** Pass 类型分类（用于状态切换优化） */
-    PassType passType;
+    public PassType passType;
 
     /**
      * Pass 类型枚举
      * <p>用于状态切换优化：相同类型的 Pass 相邻时可减少切换开销
      */
-    enum PassType {
+    public enum PassType {
         /** 几何渲染（不透明物体） */
         GEOMETRY_OPAQUE,
         /** 几何渲染（透明/半透明物体） */

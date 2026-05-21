@@ -1,0 +1,40 @@
+#version 460
+// Renderium - Bloom 上采样 + 合成 (手动双线性)
+// 输入: low-res bloom blur, 输出: full-res accumulation
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform readonly image2D uLowRes;
+layout(binding = 1, rgba16f) uniform image2D uAccum;
+
+layout(push_constant) uniform PushConstants {
+    float scaleX;  // lowResWidth / thisWidth
+    float scaleY;  // lowResHeight / thisHeight
+} pc;
+
+vec4 sampleBilinear(ivec2 texel) {
+    vec2 uv = (vec2(texel) + 0.5) * vec2(pc.scaleX, pc.scaleY) - 0.5;
+    ivec2 lowSize = imageSize(uLowRes);
+    ivec2 st = ivec2(floor(uv));
+    vec2 f = fract(uv);
+    ivec2 st1 = clamp(st + ivec2(1, 0), ivec2(0), lowSize - 1);
+    ivec2 st2 = clamp(st + ivec2(0, 1), ivec2(0), lowSize - 1);
+    ivec2 st3 = clamp(st + ivec2(1, 1), ivec2(0), lowSize - 1);
+    st = max(st, ivec2(0));
+    vec4 a = imageLoad(uLowRes, st);
+    vec4 b = imageLoad(uLowRes, st1);
+    vec4 c = imageLoad(uLowRes, st2);
+    vec4 d = imageLoad(uLowRes, st3);
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uAccum);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec4 low = sampleBilinear(texel);
+    vec4 current = imageLoad(uAccum, texel);
+    imageStore(uAccum, texel, current + low);
+}

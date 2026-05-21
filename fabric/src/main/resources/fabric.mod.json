@@ -14,6 +14,9 @@
   "entrypoints": {
     "main": [
       "com.ranecc.renderium.fabric.RenderiumFabricMod"
+    ],
+    "client": [
+      "com.ranecc.renderium.platform.lifecycle.RenderiumPlatformInitializer"
     ]
   },
   "mixins": [

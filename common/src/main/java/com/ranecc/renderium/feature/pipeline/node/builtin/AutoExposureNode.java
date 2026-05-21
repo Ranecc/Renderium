@@ -17,6 +17,7 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
+import com.ranecc.renderium.feature.config.RenderiumConfigLoader;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
@@ -248,8 +249,13 @@ public class AutoExposureNode extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        // 短路：禁用时直接传递输入
-        if (!enabled) return passThrough(inputResources);
+        var cfg = RenderiumConfigLoader.getInstance();
+        var sectionCfg = cfg.section("auto_exposure");
+        float curAdaptationSpeed = sectionCfg.getFloat("adaptation_speed", this.adaptationRate);
+        float curMinLuminance = sectionCfg.getFloat("min_luminance", this.minExposure);
+        float curMaxLuminance = sectionCfg.getFloat("max_luminance", this.maxExposure);
+        boolean nodeEnabled = sectionCfg.getBoolean("enabled", this.enabled) && cfg.getBoolean("renderium.enabled", true);
+        if (!nodeEnabled) return passThrough(inputResources);
 
         // 输入校验
         if (inputResources == null || inputResources.length < 1) {
@@ -260,11 +266,10 @@ public class AutoExposureNode extends AbstractPipelineNode {
 
         long startTimeNanos = System.nanoTime();
 
-        // 快照读取 volatile 参数（一次读取，避免多次读不一致）
         float curTargetLuminance = this.targetLuminance;
-        float curAdaptationRate = this.adaptationRate;
-        float curMinExposure = this.minExposure;
-        float curMaxExposure = this.maxExposure;
+        float curAdaptationRate = curAdaptationSpeed;
+        float curMinExposure = curMinLuminance;
+        float curMaxExposure = curMaxLuminance;
         int curMeteringMode = this.meteringMode;
         float curPrevExposure = this.prevExposure;
         int curFrameCount = this.frameCount;

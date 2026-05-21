@@ -1,0 +1,34 @@
+#version 460
+// Renderium - Bloom 分离式高斯模糊 (Ping-Pong 单方向)
+// 输入: source, 输出: blurred
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform readonly image2D uSource;
+layout(binding = 1, rgba16f) uniform writeonly image2D uDest;
+
+layout(push_constant) uniform PushConstants {
+    int direction; // 0=horizontal, 1=vertical
+    float sigma;
+} pc;
+
+const float WEIGHTS[7] = float[7](0.05, 0.09, 0.12, 0.14, 0.12, 0.09, 0.05);
+const int HALF = 3;
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uDest);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec4 sum = vec4(0.0);
+    for (int i = -HALF; i <= HALF; i++) {
+        ivec2 st = texel;
+        if (pc.direction == 0) st.x += i;
+        else st.y += i;
+        if (st.x < 0 || st.x >= int(sz.x) || st.y < 0 || st.y >= int(sz.y)) continue;
+        sum += imageLoad(uSource, st) * WEIGHTS[i + HALF];
+    }
+
+    imageStore(uDest, texel, sum);
+}

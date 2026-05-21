@@ -1,31 +1,21 @@
 package com.ranecc.renderium.platform.bridge.video;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.options.VideoSettingsScreen;
 
 /**
  * 独立模式视频设置提供者
- * <p>
- * 作为 {@link VideoSettingsProvider} 的默认实现，提供完全独立的视频设置界面。
- * 在没有第三方渲染模组（如 Sodium）的环境中使用此提供者。
- * <p>
- * 行为特征：
+ *
+ * <p>在没有 Sodium 的环境中使用。直接打开原版 VideoSettingsScreen，
+ * Mixin 会自动追加 Renderium 选项到原版界面底部。
+ *
+ * <h3>设计说明：</h3>
  * <ul>
- *   <li>完全替换原版 VideoSettingsScreen</li>
- *   <li>通过 OptionsScreenRedirectMixin 拦截"视频设置"按钮</li>
- *   <li>返回完整的 AbstractRendererSettingsScreen 实例</li>
+ *   <li>不再创建独立的 RenderiumVideoOptionsScreen</li>
+ *   <li>通过 Mixin 注入方式在原版界面追加 Renderium 选项</li>
+ *   <li>减少了维护独立 UI 的复杂度</li>
  * </ul>
- *
- * <h3>使用场景：</h3>
- * <pre>
- * 环境检测流程：
- * 1. 检测 Sodium 是否存在
- *    ├── 存在 → 使用 SodiumCompatibleProvider
- *    └── 不存在（默认）→ 使用 StandaloneProvider（本类）
- * </pre>
- *
- * @see VideoSettingsProvider
- * @see VideoSettingsBridge#getActiveProvider()
- * @since 1.0.0
  */
 public final class StandaloneProvider implements VideoSettingsProvider {
 
@@ -35,35 +25,25 @@ public final class StandaloneProvider implements VideoSettingsProvider {
     private StandaloneProvider() {}
 
     /**
-     * 打开独立模式的视频设置界面
-     * <p>
-     * 创建并返回完整的 {@code AbstractRendererSettingsScreen} 实例。
-     * 此界面将完全替换原版 VideoSettingsScreen，包含：
-     * <ul>
-     *   <li>左侧页面导航栏（PageListWidget）</li>
-     *   <li>顶部搜索栏（SearchWidget）</li>
-     *   <li>主区域选项列表（OptionListWidget）</li>
-     *   <li>底部操作按钮（Apply/Undo/Done）</li>
-     * </ul>
+     * 打开原版视频设置界面
+     *
+     * <p>直接打开原版 VideoSettingsScreen，
+     * Mixin 会自动追加 Renderium 选项到原版界面底部。
      *
      * @param parent 父级 Screen（通常为 OptionsScreen）
-     * @return AbstractRendererSettingsScreen 实例；当前阶段返回 null（Task 3.1 实现）
+     * @return 原版 VideoSettingsScreen 实例
      */
     @Override
     public Screen openSettings(Screen parent) {
-        try {
-            var screenClass = Class.forName("com.ranecc.renderium.presentation.ui.RenderiumSettingsScreen");
-            var constructor = screenClass.getConstructor(Screen.class);
-            return (Screen) constructor.newInstance(parent);
-        } catch (Exception e) {
-            return parent;
-        }
+        // 直接打开原版 VideoSettingsScreen
+        // Mixin 会自动追加 Renderium 选项
+        return new VideoSettingsScreen(parent, Minecraft.getInstance(), Minecraft.getInstance().options);
     }
 
     /**
      * 检查独立模式是否可用
-     * <p>
-     * 独立模式始终可用，作为所有其他提供者的降级选项。
+     *
+     * <p>独立模式始终可用，作为所有其他提供者的降级选项。
      *
      * @return 始终返回 true
      */

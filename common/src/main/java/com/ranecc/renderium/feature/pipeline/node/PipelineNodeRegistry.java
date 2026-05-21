@@ -201,6 +201,9 @@ public final class PipelineNodeRegistry {
 
         // ===== 后处理阶段 (POST_PROCESS) =====
         registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.FilmGrainNode");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.SSAO");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.Bloom");
+        registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.Tonemap");
         registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.DepthOfFieldEnhancedNode");
         registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.MotionBlurEnhancedNode");
         registerBuiltinNode("com.ranecc.renderium.feature.pipeline.node.builtin.SSRNode");

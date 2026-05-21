@@ -115,7 +115,7 @@ public final class LodCullingComputePass {
     private static final int VK_PIPELINE_BIND_POINT_COMPUTE = 1;
 
     /** Vulkan 命令缓冲区使用：一次性提交 */
-    private static final int VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT = 0x00000001;
+    public static final int VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT = 0x00000001;
 
     /** Vulkan Pipeline 阶段标志：计算着色器 (VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT = 0x00000800) */
     private static final int VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT = 0x00000800;

@@ -18,6 +18,7 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
+import com.ranecc.renderium.feature.config.RenderiumConfigLoader;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
@@ -231,8 +232,13 @@ public class SSRNode extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        // 短路：禁用时直接传递输入
-        if (!enabled) return passThrough(inputResources);
+        var cfg = RenderiumConfigLoader.getInstance();
+        var sectionCfg = cfg.section("screen_space_reflection");
+        int curMaxStepsCfg = sectionCfg.getInt("max_steps", this.maxSteps);
+        float curRayStride = sectionCfg.getFloat("ray_stride", this.thickness);
+        float curReflectionStrength = sectionCfg.getFloat("reflection_strength", 0.6f);
+        boolean nodeEnabled = sectionCfg.getBoolean("enabled", this.enabled) && cfg.getBoolean("renderium.enabled", true);
+        if (!nodeEnabled) return passThrough(inputResources);
 
         // 短路：RT 反射可用时跳过 SSR
         if (rtReflections > 0) return passThrough(inputResources);
@@ -246,10 +252,9 @@ public class SSRNode extends AbstractPipelineNode {
 
         long startTimeNanos = System.nanoTime();
 
-        // 快照读取 volatile 参数（一次读取，避免多次读不一致）
         int curQuality = this.quality;
-        int curMaxSteps = this.maxSteps;
-        float curThickness = this.thickness;
+        int curMaxSteps = curMaxStepsCfg;
+        float curThickness = curRayStride;
         float curBruteForceBias = this.bruteForceBias;
         boolean curHalfResolution = this.halfResolution;
         int curFrameIdx = this.frameIndex;
@@ -529,7 +534,7 @@ public class SSRNode extends AbstractPipelineNode {
                     outputImageView = 0L;
                 }
                 if (outputImage != 0L) {
-                    try { mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+                    try { mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastOutputWidth, lastOutputHeight, format, VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
                     outputImage = 0L;
                 }
                 var resource = mgr.createImage(w, h, format, usageFlags,

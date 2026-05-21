@@ -13,6 +13,7 @@ import com.ranecc.renderium.presentation.ui.tabs.InterceptionSettingsTab;
 import com.ranecc.renderium.presentation.ui.tabs.PerformanceSettingsTab;
 import com.ranecc.renderium.presentation.ui.tabs.ReflexSettingsTab;
 import com.ranecc.renderium.presentation.ui.tabs.SuperResolutionSettingsTab;
+import com.ranecc.renderium.presentation.ui.tabs.ShaderSettingsTab;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -110,6 +111,7 @@ public class RenderiumSettingsScreen extends Screen {
         tabs.add(new TabInfo("renderium.config.category.interception", this::createInterceptionTab));  // Phase 7 新增
         tabs.add(new TabInfo("renderium.config.category.performance", this::createPerformanceTab));
         tabs.add(new TabInfo("renderium.config.category.debug", this::createDebugTab));
+        tabs.add(new TabInfo("renderium.config.category.shader", this::createShaderTab));
     }
 
     @Override
@@ -369,6 +371,10 @@ public class RenderiumSettingsScreen extends Screen {
      */
     private Screen createDebugTab() {
         return new DebugSettingsTab(this, config);
+    }
+
+    private Screen createShaderTab() {
+        return new ShaderSettingsTab(this, config);
     }
 
     // ==================== 配置操作方法 ====================

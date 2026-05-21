@@ -1,0 +1,39 @@
+#version 460
+// Renderium - Bloom 降采样 (13-tap tent filter, 手动采样)
+// 输入: source image, 输出: half-res image
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform readonly image2D uSource;
+layout(binding = 1, rgba16f) uniform writeonly image2D uDest;
+
+layout(push_constant) uniform PushConstants {
+    float invSrcWidth;
+    float invSrcHeight;
+} pc;
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uDest);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec2 srcUV = (vec2(texel) + 0.5) * 2.0;
+    vec4 sum = vec4(0.0);
+    float totalW = 0.0;
+
+    for (int dy = -3; dy <= 3; dy++) {
+        for (int dx = -3; dx <= 3; dx++) {
+            vec2 off = vec2(float(dx), float(dy));
+            float w = exp(-dot(off, off) * 0.1);
+            ivec2 st = ivec2(srcUV + off);
+            uvec2 srcSize = imageSize(uSource);
+            if (st.x >= 0 && st.x < int(srcSize.x) && st.y >= 0 && st.y < int(srcSize.y)) {
+                sum += imageLoad(uSource, st) * w;
+                totalW += w;
+            }
+        }
+    }
+
+    imageStore(uDest, texel, totalW > 0.0 ? sum / totalW : vec4(0.0));
+}

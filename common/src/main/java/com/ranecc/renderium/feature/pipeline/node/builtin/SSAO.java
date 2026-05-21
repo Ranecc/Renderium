@@ -13,10 +13,6 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
-// ⚠ 存根模式 (STUB) — 此节点的 execute() 不执行真实 GPU 操作
-//    框架代码和数学实现完整，但 GPU 管线创建和 dispatch 未实装。
-//    计划在未来迭代中替换为真实 Compute Shader dispatch。
-
 import org.lwjgl.vulkan.VK10;
 
 import java.util.logging.Level;
@@ -26,8 +22,15 @@ import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 import com.ranecc.renderium.domain.constant.VulkanConst;
-import com.ranecc.renderium.platform.bridge.mc.CommandBatcher;
-import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
+import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
+import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
+import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 
 /**
  * 屏幕空间环境光遮蔽 (Screen Space Ambient Occlusion) 节点
@@ -38,54 +41,28 @@ import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
  *
  * <h2>算法流程：</h2>
  * <pre>
- * ┌──────────────────────────────────────────────────────────────┐
- * │ execute() 入口                                                │
- *     ↓                                                          │
- * ├─ Step 1: 参数校验与输入验证                                    │
- * │   - 校验 inputResources 至少包含 Position 和 Normal 两张纹理    │
- *     ↓                                                          │
- * ├─ Step 2: 提取 G-Buffer 数据                                   │
- * │   - inputResources[0] → Position 纹理 (RGB32F, 视图空间位置)    │
- * │   - inputResources[1] → Normal 纹理   (RGB16F, 视图空间法线)    │
- *     ↓                                                          │
- * ├─ Step 3: 生成半球采样核                                       │
- * │   - 基于 sampleCount 在单位半球上均匀分布采样方向               │
- * │   - 使用随机旋转噪声纹理避免带状伪影                            │
- *     ↓                                                          │
- * ├─ Step 4: 执行 SSAO Compute Shader                             │
- * │   对每个像素执行：                                              │
- * │   a) 从 Position/Normal 纹理读取当前像素的几何信息              │
- * │   b) 将每个采样方向从切线空间变换到视图空间                     │
- * │   c) 计算采样点在视图空间的预期深度                             │
- * │   d) 从 Position 纹理读取实际深度并比较                         │
- * │   e) 累积遮挡因子 (occlusion += step(z_compare))               │
- * │   f) 最终 AO = 1.0 - (occlusion / sampleCount) × intensity    │
- *     ↓                                                          │
- * ├─ Step 5: 可选双边滤波后处理                                    │
- * │   - enableBlur=true 时执行                                     │
- * │   - 基于法线和深度的边缘保持模糊                                │
- *     ↓                                                          │
- * └─ Step 6: 返回 AO 纹理句柄 (单通道 R8 格式)                      │
- * └──────────────────────────────────────────────────────────────┘
+ * execute() 入口
+ *   Step 1: 参数校验与输入验证
+ *     - 校验 inputResources 至少包含 Position 和 Normal 两张纹理
+ *   Step 2: 提取 G-Buffer 数据
+ *     - inputResources[0] → Position 纹理 (RGB32F, 视图空间位置)
+ *     - inputResources[1] → Normal 纹理   (RGB16F, 视图空间法线)
+ *   Step 3: 生成半球采样核
+ *     - 基于 sampleCount 在单位半球上均匀分布采样方向
+ *     - 使用随机旋转噪声纹理避免带状伪影
+ *   Step 4: 执行 SSAO Compute Shader
+ *     对每个像素执行：
+ *     a) 从 Position/Normal 纹理读取当前像素的几何信息
+ *     b) 将每个采样方向从切线空间变换到视图空间
+ *     c) 计算采样点在视图空间的预期深度
+ *     d) 从 Position 纹理读取实际深度并比较
+ *     e) 累积遮挡因子 (occlusion += step(z_compare))
+ *     f) 最终 AO = 1.0 - (occlusion / sampleCount) × intensity
+ *   Step 5: 可选双边滤波后处理
+ *     - enableBlur=true 时执行
+ *     - 基于法线和深度的边缘保持模糊
+ *   Step 6: 返回 AO 纹理句柄 (单通道 R8 格式)
  * </pre>
- *
- * <h2>数学原理：</h2>
- * <p>
- * 对于片元 p 及其法线 N，在半径 r 的球体内均匀采样 n 个方向 {s_i}。
- * 对每个采样方向 s_i，构造采样点 q = p + r * TBN(s_i)，其中 TBN 为
- * 切线-副切线-法线矩阵。比较 q 的 z 分量与 G-Buffer 中该位置的
- * 实际深度 z_buffer(q.xy)。若 z_buffer > q.z + bias，则认为被遮挡。
- * </p>
- *
- * <h2>参数调优建议：</h2>
- * <table border="1">
- *   <tr><th>参数</th><th>默认值</th><th>效果</th></tr>
- *   <tr><td>sampleCount</td><td>32</td><td>越高越平滑但越慢（8~64）</td></tr>
- *   <tr><td>radius</td><td>0.5</td><td>越大阴影范围越广但可能产生漏光（0.1~2.0）</td></tr>
- *   <tr><td>intensity</td><td>1.5</td><td>控制 AO 强度（0.5~3.0）</td></tr>
- *   <tr><td>bias</td><td>0.01</td><td>防止自遮挡伪影（0.001~0.05）</td></tr>
- *   <tr><td>enableBlur</td><td>true</td><td>开启后处理滤波减少噪点</td></tr>
- * </table>
  *
  * @see AbstractPipelineNode
  * @see GBufferGeometryNode
@@ -143,6 +120,27 @@ public class SSAO extends AbstractPipelineNode {
     /** 预生成的噪声纹理尺寸（N x N） */
     private static final int NOISE_TEXTURE_SIZE = 4;
 
+    /** SSAO Compute Shader SPIR-V 路径 */
+    private static final String SHADER_PATH = "/shaders/ssao.spv";
+
+    /** 双边滤波 Compute Shader SPIR-V 路径 */
+    private static final String SHADER_BLUR_PATH = "/shaders/ssao_blur.spv";
+
+    /** SSAO PushConstant 大小（半径+强度+偏差+样本数+inv宽+inv高 = 24字节 → 对齐32） */
+    private static final int PC_SSAO_SIZE = 32;
+
+    /** Blur PushConstant 大小（阈值+核大小+填充 = 16字节） */
+    private static final int PC_BLUR_SIZE = 16;
+
+    /** R8_UNORM 格式值 */
+    private static final int VK_FORMAT_R8_UNORM = 9;
+
+    /** 工作组线程数（X 维度） */
+    private static final int WORKGROUP_SIZE_X = 8;
+
+    /** 工作组线程数（Y 维度） */
+    private static final int WORKGROUP_SIZE_Y = 8;
+
     // ==================== 动态参数（volatile 字段，支持运行时热更新） ====================
 
     /**
@@ -197,6 +195,56 @@ public class SSAO extends AbstractPipelineNode {
      * 默认值: true
      */
     private volatile boolean enableBlur = true;
+
+    // ==================== Vulkan GPU 资源句柄 ====================
+
+    /** SSAO Compute Pipeline 句柄 */
+    private volatile long computePipeline = 0L;
+
+    /** SSAO Pipeline Layout 句柄 */
+    private volatile long pipelineLayout = 0L;
+
+    /** SSAO DescriptorSet 句柄 */
+    private volatile long descriptorSet = 0L;
+
+    /** Blur Compute Pipeline 句柄 */
+    private volatile long blurComputePipeline = 0L;
+
+    /** Blur Pipeline Layout 句柄 */
+    private volatile long blurPipelineLayout = 0L;
+
+    /** Blur DescriptorSet 句柄 */
+    private volatile long blurDescriptorSet = 0L;
+
+    /** SSAO 输出 Image 句柄 */
+    private volatile long outputAOImage = 0L;
+
+    /** SSAO 输出 ImageView 句柄 */
+    private volatile long outputAOView = 0L;
+
+    /** Blur 输出 Image 句柄 */
+    private volatile long blurOutputImage = 0L;
+
+    /** Blur 输出 ImageView 句柄 */
+    private volatile long blurOutputView = 0L;
+
+    /** 上一次 SSAO 输出宽度（用于尺寸变更检测） */
+    private volatile int lastAOWidth = 0;
+
+    /** 上一次 SSAO 输出高度（用于尺寸变更检测） */
+    private volatile int lastAOHeight = 0;
+
+    /** SSAO 输出纹理的 VMA allocation 句柄 */
+    private volatile long outputAOAllocation = 0L;
+
+    /** Blur 输出纹理的 VMA allocation 句柄 */
+    private volatile long blurOutputAllocation = 0L;
+
+    /** SSAO 输出纹理 GpuResource（用于延迟释放） */
+    private VulkanGPUResourceManager.GpuResource outputAOResource = null;
+
+    /** Blur 输出纹理 GpuResource（用于延迟释放） */
+    private VulkanGPUResourceManager.GpuResource blurOutputResource = null;
 
     // ==================== 内部状态（采样核与噪声纹理缓存） ====================
 
@@ -268,9 +316,7 @@ public class SSAO extends AbstractPipelineNode {
     public long execute(RenderContext context, long... inputResources) {
         long startTimeNanos = System.nanoTime();
 
-        // ══════════════════════════════════════════════
         // Step 1: 输入校验
-        // ══════════════════════════════════════════════
         if (inputResources == null || inputResources.length < 2) {
             LOGGER.warning("[SSAO] 输入资源不足: 需要 Position 和 Normal 共 2 张纹理, "
                     + "实际收到 " + (inputResources == null ? 0 : inputResources.length) + " 张");
@@ -286,14 +332,10 @@ public class SSAO extends AbstractPipelineNode {
             return 0L;
         }
 
-        // ══════════════════════════════════════════════
         // Step 2: 采样核脏检查与重建
-        // ══════════════════════════════════════════════
         ensureSampleKernelCurrent();
 
-        // ══════════════════════════════════════════════
         // Step 3: 提取渲染上下文参数
-        // ══════════════════════════════════════════════
         int screenWidth  = context.getWidth();
         int screenHeight = context.getHeight();
 
@@ -309,69 +351,7 @@ public class SSAO extends AbstractPipelineNode {
         float currentBias      = this.bias;
         boolean currentEnableBlur = this.enableBlur;
 
-        // ══════════════════════════════════════════════
         // Step 4: 执行 SSAO Compute Shader
-        // ══════════════════════════════════════════════
-        // 【实际实现说明】
-        // 此处应通过 Vulkan Compute Pipeline 执行以下着色器逻辑:
-        //
-        // #version 450
-        // layout(local_size_x = 8, local_size_y = 8) in;
-        // layout(binding = 0) uniform sampler2D uPosition;   // 视图空间位置
-        // layout(binding = 1) uniform sampler2D uNormal;      // 视图空间法线
-        // layout(binding = 2) uniform sampler2D uNoise;       // 随机旋转噪声
-        // layout(binding = 0, rgba8) uniform image2D uOutput; // AO 输出
-        // layout(std140, binding = 3) uniform SSAOParams {
-        //     vec2  uScreenSize;       // 屏幕尺寸
-        //     float uRadius;           // 采样半径
-        //     float uBias;             // 深度偏差
-        //     float uIntensity;        // AO 强度
-        //     int   uSampleCount;      // 采样数量
-        // };
-        // layout(std140, binding = 4) uniform SampleKernel {
-        //     vec4 uSamples[64];       // 半球采样核（最多64个）
-        // };
-        //
-        // void main() {
-        //     ivec2 screenPos = ivec2(gl_GlobalInvocationID.xy);
-        //     vec2 texCoord = vec2(screenPos) / uScreenSize;
-        //
-        //     // 读取当前像素的几何信息
-        //     vec3 fragPos  = texture(uPosition, texCoord).xyz;
-        //     vec3 normal   = normalize(texture(uNormal, texCoord).xyz);
-        //
-        //     // 构造 TBN 矩阵（切线空间 -> 视图空间）
-        //     vec3 noise   = texture(uNoise, texCoord * (uScreenSize / 4.0)).xyz * 2.0 - 1.0;
-        //     vec3 tangent = normalize(noise - dot(noise, normal) * normal);
-        //     vec3 bitangent = cross(normal, tangent);
-        //     mat3 TBN = mat3(tangent, bitangent, normal);
-        //
-        //     // 累积遮挡
-        //     float occlusion = 0.0;
-        //     for (int i = 0; i < uSampleCount; i++) {
-        //         // 将采样方向变换到视图空间
-        //         vec3 sampleDir = TBN * uSamples[i].xyz;
-        //         vec3 samplePos = fragPos + sampleDir * uRadius;
-        //
-        //         // 变换到屏幕空间进行采样
-        //         vec4 offset = vec4(samplePos, 1.0);
-        //         offset = uProjection * offset;          // 裁剪空间
-        //         offset.xyz /= offset.w;                  // NDC
-        //         offset.xyz = offset.xyz * 0.5 + 0.5;     // [0,1]
-        //
-        //         float sampleDepth = texture(uPosition, offset.xy).z;
-        //
-        //         // 范围检查 + 深度比较
-        //         float rangeCheck = smoothstep(0.0, 1.0, uRadius / abs(fragPos.z - sampleDepth));
-        //         occlusion += (sampleDepth >= samplePos.z + uBias ? 1.0 : 0.0) * rangeCheck;
-        //     }
-        //
-        //     float ao = 1.0 - (occlusion / float(uSampleCount)) * uIntensity;
-        //     ao = clamp(ao, 0.0, 1.0);
-        //
-        //     imageStore(uOutput, screenPos, vec4(ao, ao, ao, 1.0));
-        // }
-        //
         long aoTextureHandle = dispatchSSAOCompute(
                 context,
                 positionTextureHandle,
@@ -389,9 +369,7 @@ public class SSAO extends AbstractPipelineNode {
             return 0L;
         }
 
-        // ══════════════════════════════════════════════
         // Step 5: 可选双边滤波后处理
-        // ══════════════════════════════════════════════
         if (currentEnableBlur) {
             long blurredHandle = dispatchBilateralFilter(
                     context,
@@ -410,9 +388,7 @@ public class SSAO extends AbstractPipelineNode {
             }
         }
 
-        // ══════════════════════════════════════════════
         // 性能日志
-        // ══════════════════════════════════════════════
         long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
                 "[SSAO] 完成 | samples=%d radius=%.2f intensity=%.2f bias=%.4f blur=%b | "
@@ -467,13 +443,75 @@ public class SSAO extends AbstractPipelineNode {
     /**
      * 节点资源释放钩子
      * <p>
-     * 清空采样核和噪声纹理缓存，协助 GC 回收。
+     * 清理所有 Vulkan GPU 资源（Pipeline、PipelineLayout、ImageView、Image），
+     * 以及 CPU 端采样核与噪声纹理缓存。
      */
     @Override
     protected void onDispose() {
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+
+        if (device != 0L) {
+            // 销毁 SSAO Compute Pipeline
+            if (computePipeline != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipeline", device, computePipeline, 0L); } catch (Throwable ignored) {}
+                computePipeline = 0L;
+            }
+            // 销毁 SSAO Pipeline Layout
+            if (pipelineLayout != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", device, pipelineLayout, 0L); } catch (Throwable ignored) {}
+                pipelineLayout = 0L;
+            }
+            // 销毁 Blur Compute Pipeline
+            if (blurComputePipeline != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipeline", device, blurComputePipeline, 0L); } catch (Throwable ignored) {}
+                blurComputePipeline = 0L;
+            }
+            // 销毁 Blur Pipeline Layout
+            if (blurPipelineLayout != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", device, blurPipelineLayout, 0L); } catch (Throwable ignored) {}
+                blurPipelineLayout = 0L;
+            }
+            // 销毁 SSAO Output ImageView
+            if (outputAOView != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyImageView", device, outputAOView, 0L); } catch (Throwable ignored) {}
+                outputAOView = 0L;
+            }
+            // 销毁 Blur Output ImageView
+            if (blurOutputView != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyImageView", device, blurOutputView, 0L); } catch (Throwable ignored) {}
+                blurOutputView = 0L;
+            }
+        }
+
+        // 释放 Image 资源（通过 VulkanGPUResourceManager 延迟释放）
+        VulkanGPUResourceManager mgr = null;
+        try {
+            mgr = VulkanGPUResourceManager.getInstance();
+        } catch (Exception ignored) {}
+
+        if (mgr != null && mgr.isInitialized()) {
+            if (outputAOResource != null) {
+                mgr.releaseResource(outputAOResource);
+                outputAOResource = null;
+            }
+            if (blurOutputResource != null) {
+                mgr.releaseResource(blurOutputResource);
+                blurOutputResource = null;
+            }
+        }
+
+        outputAOImage = 0L;
+        outputAOAllocation = 0L;
+        blurOutputImage = 0L;
+        blurOutputAllocation = 0L;
+        lastAOWidth = 0;
+        lastAOHeight = 0;
+
+        // 清空 CPU 端缓存
         this.sampleKernel = null;
         this.noiseTexture = null;
         this.lastSampleCount = -1;
+
         LOGGER.fine("[SSAO] 资源已释放");
     }
 
@@ -482,11 +520,11 @@ public class SSAO extends AbstractPipelineNode {
     /**
      * 调度 SSAO Compute Shader 执行
      * <p>
-     * 将预计算的采样核和噪声纹理连同 G-Buffer 数据一起提交给 GPU，
      * 通过 Vulkan Compute Pipeline 并行计算每个像素的 AO 值。
+     * 使用预创建的 pipeline + descriptorSet，每帧仅更新 image 描述符和 push constants。
      *
      * 【方法参数】
-     * @param context         RenderContext - 渲染上下文（含投影矩阵等）
+     * @param context         RenderContext - 渲染上下文
      * @param positionHandle  long        - G-Buffer Position 纹理句柄 (RGB32F)
      * @param normalHandle    long        - G-Buffer Normal 纹理句柄 (RGB16F)
      * @param screenWidth     int         - 屏幕宽度（像素）
@@ -514,53 +552,63 @@ public class SSAO extends AbstractPipelineNode {
         }
 
         try {
-            // ====== Step 1: 创建输出 AO 纹理（通过 VulkanGPUResourceManager）======
-            VulkanGPUResourceManager mgr = VulkanGPUResourceManager.getInstance();
-            if (!mgr.isInitialized()) {
-                LOGGER.warning("[SSAO] VulkanGPUResourceManager 未初始化，无法执行 Compute Dispatch");
-                return 0L;
-            }
+            long device = VulkanDeviceHolder.getInstance().getDevice();
+            if (device == 0L) return 0L;
 
-            // 创建 R8_UNORM 格式的 Storage Image 作为 AO 输出
-            // 使用 RENDER_TARGET 池（支持 STORAGE_BIT）
-            VulkanGPUResourceManager.GpuResource aoOutput = mgr.createImage(
-                    screenWidth, screenHeight,
-                    VK10.VK_FORMAT_R8_UNORM,
-                    VulkanConst.IMAGE_USAGE_STORAGE_BIT | VulkanConst.IMAGE_USAGE_SAMPLED_BIT,
-                    com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET
-            );
+            // 创建或更新输出 AO 纹理（尺寸变化时重建）
+            ensureOutputImage(screenWidth, screenHeight);
 
-            if (!aoOutput.isValid()) {
-                LOGGER.warning(String.format("SSAO output texture invalid: %dx%d", screenWidth, screenHeight));
-                return 0L;
-            }
+            // 确保 Compute Pipeline 已创建
+            ensurePipeline();
+            if (computePipeline == 0L || descriptorSet == 0L) return 0L;
 
-            // ====== Step 2: 准备 Compute Dispatch 参数 ======
-            // 计算工作组数量（每个工作组处理 8x8 像素）
-            int workGroupCountX = (screenWidth + 7) / 8;
-            int workGroupCountY = (screenHeight + 7) / 8;
+            // 更新 DescriptorSet：position (binding 0), normal (binding 1), AO output (binding 2)
+            ComputePipelineHelper.updateImageDescriptor(device, descriptorSet, 0, positionHandle, 0L, 0L);
+            ComputePipelineHelper.updateImageDescriptor(device, descriptorSet, 1, normalHandle, 0L, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(device, descriptorSet, 2, outputAOView, 0L);
 
-            // 通过 CommandBatcher 提交 Compute Dispatch 命令
+            // 构建 PushConstants: radius, intensity, bias, sampleCount, invWidth, invHeight (32 bytes)
+            float invWidth = 1.0f / screenWidth;
+            float invHeight = 1.0f / screenHeight;
+            MemorySegment params = PerFrameArena.allocate(PC_SSAO_SIZE);
+            params.set(ValueLayout.JAVA_FLOAT, 0, radius);
+            params.set(ValueLayout.JAVA_FLOAT, 4, intensity);
+            params.set(ValueLayout.JAVA_FLOAT, 8, bias);
+            params.set(ValueLayout.JAVA_INT, 12, sampleCount);
+            params.set(ValueLayout.JAVA_FLOAT, 16, invWidth);
+            params.set(ValueLayout.JAVA_FLOAT, 20, invHeight);
+            // 剩余 12 bytes 保持 0（对齐填充）
 
-            CommandBatcher batcher = MCRenderBridge.getCommandBatcher();
-            if (batcher != null) {
-                batcher.enqueueComputeDispatch(
-                        0L,  // pipeline handle（由 Shader 系统填充）
-                        workGroupCountX, workGroupCountY, 1
-                );
+            // Vulkan compute dispatch
+            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
+            if (cmdBuf == 0L) return 0L;
+
+            LodCullingComputePass.beginCommandBuffer(cmdBuf);
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
+            MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
+            dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
+            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1, pipelineLayout, 0, 1, dsPtr.address(), 0, 0L);
+            VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, pipelineLayout,
+                    ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, PC_SSAO_SIZE, params.address());
+
+            int workGroupCountX = (screenWidth + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X;
+            int workGroupCountY = (screenHeight + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y;
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, workGroupCountX, workGroupCountY, 1);
+            LodCullingComputePass.endCommandBuffer(cmdBuf);
+
+            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+            if (queue != 0L) {
+                VulkanSyncManager.submitAndWait(queue, cmdBuf);
             }
 
             LOGGER.fine(String.format("[SSAO] dispatch 'ssao_main' (%dx%d, samples=%d, radius=%.2f) " +
-                    "→ aoOutput=0x%X, workgroups=(%d,%d)",
+                    "→ aoOutputView=0x%X, workgroups=(%d,%d)",
                     screenWidth, screenHeight, sampleCount, radius,
-                    aoOutput.handle, workGroupCountX, workGroupCountY));
+                    outputAOView, workGroupCountX, workGroupCountY));
 
-            return aoOutput.handle;
+            return outputAOView;
 
-        } catch (IllegalStateException e) {
-            LOGGER.warning("[SSAO] dispatchSSAOCompute 降级: %s".formatted(e.getMessage()));
-            return 0L;
-        } catch (Exception e) {
+        } catch (Throwable e) {
             LOGGER.log(Level.WARNING, "[SSAO] dispatchSSAOCompute 异常", e);
             return 0L;
         }
@@ -570,18 +618,8 @@ public class SSAO extends AbstractPipelineNode {
      * 调度双边滤波 (Bilateral Filter) 后处理
      * <p>
      * 对原始 AO 纹理执行基于法线和深度的边缘保持模糊。
-     * 与普通高斯滤波不同，双边滤波会根据相邻像素的法线/深度差异
-     * 动态调整权重，从而在平滑噪点的同时保留物体边缘。
-     *
-     * <h3>滤波公式：</h3>
-     * <pre>
-     * output(p) = Σ w_spatial(p,q) × w_range(p,q) × AO(q) / Σ w_total
-     *
-     * 其中:
-     *   w_spatial = exp(-|p-q|² / (2σ²_spatial))     -- 空间高斯权重
-     *   w_range   = exp(-|normalDiff|² / (2σ²_normal))  -- 法线域权重
-     *              × exp(-|depthDiff|² / (2σ²_depth))   -- 深度域权重
-     * </pre>
+     * 使用独立的 Compute Pipeline，以原始 AO、法线、位置纹理为输入，
+     * 输出滤波后的 AO 纹理。
      *
      * 【方法参数】
      * @param context      RenderContext - 渲染上下文
@@ -606,48 +644,267 @@ public class SSAO extends AbstractPipelineNode {
         }
 
         try {
-            // 创建双边滤波输出纹理（通过 VulkanGPUResourceManager）
-            VulkanGPUResourceManager mgr = VulkanGPUResourceManager.getInstance();
-            if (!mgr.isInitialized()) {
-                LOGGER.warning("[SSAO] VulkanGPUResourceManager 未初始化，跳过双边滤波");
-                return aoInput;  // 降级：返回未滤波的 AO 纹理
-            }
+            long device = VulkanDeviceHolder.getInstance().getDevice();
+            if (device == 0L) return 0L;
 
-            // R8_UNORM 格式，支持 Storage 和 Sampled
-            VulkanGPUResourceManager.GpuResource blurOutput = mgr.createImage(
-                    screenWidth, screenHeight,
-                    VK10.VK_FORMAT_R8_UNORM,
-                    VulkanConst.IMAGE_USAGE_STORAGE_BIT | VulkanConst.IMAGE_USAGE_SAMPLED_BIT,
-                    com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools.PoolType.RENDER_TARGET
-            );
+            // 确保 Blur Compute Pipeline 已创建
+            ensureBlurPipeline();
+            if (blurComputePipeline == 0L || blurDescriptorSet == 0L) return 0L;
 
-            if (!blurOutput.isValid()) {
-                LOGGER.warning("[SSAO] 双边滤波输出纹理创建失败，返回原始 AO");
-                return aoInput;
-            }
+            // 确保 blur 输出纹理有效（尺寸变化时重建）
+            if (blurOutputImage == 0L || lastAOWidth != screenWidth || lastAOHeight != screenHeight) {
+                // 销毁旧 ImageView
+                if (blurOutputView != 0L) {
+                    try { VulkanAPIRegistry.invoke("vkDestroyImageView", device, blurOutputView, 0L); } catch (Throwable ignored) {}
+                    blurOutputView = 0L;
+                }
+                // 释放旧 Image
+                VulkanGPUResourceManager mgr = VulkanGPUResourceManager.getInstance();
+                if (mgr != null && mgr.isInitialized()) {
+                    if (blurOutputResource != null) {
+                        mgr.releaseResource(blurOutputResource);
+                        blurOutputResource = null;
+                    }
+                }
+                blurOutputImage = 0L;
+                blurOutputAllocation = 0L;
 
-            // 计算工作组数量
-            int workGroupCountX = (screenWidth + 7) / 8;
-            int workGroupCountY = (screenHeight + 7) / 8;
+                // 创建新的 Blur 输出纹理（独立的 R8 UNORM storage image）
+                if (mgr == null || !mgr.isInitialized()) return 0L;
 
-            // 通过 CommandBatcher 提交 Compute Dispatch
-            CommandBatcher batcher = MCRenderBridge.getCommandBatcher();
-            if (batcher != null) {
-                batcher.enqueueComputeDispatch(
-                        0L,  // pipeline handle（由 Shader 系统填充）
-                        workGroupCountX, workGroupCountY, 1
+                VulkanGPUResourceManager.GpuResource blurRes = mgr.createImage(
+                        screenWidth, screenHeight,
+                        VK_FORMAT_R8_UNORM,
+                        VulkanConst.IMAGE_USAGE_STORAGE_BIT | VulkanConst.IMAGE_USAGE_SAMPLED_BIT,
+                        VmaMemoryPools.PoolType.RENDER_TARGET
                 );
+
+                if (!blurRes.isValid()) return 0L;
+
+                blurOutputImage = blurRes.handle;
+                blurOutputAllocation = blurRes.allocation;
+                blurOutputResource = blurRes;
+
+                blurOutputView = mgr.createView(blurOutputImage, VK_FORMAT_R8_UNORM,
+                        VulkanConst.IMAGE_ASPECT_COLOR_BIT);
+                if (blurOutputView == 0L) return 0L;
+            }
+
+            // 更新 Blur DescriptorSet：AO input (binding 0), position (binding 1), AO output (binding 2)
+            ComputePipelineHelper.updateImageDescriptor(device, blurDescriptorSet, 0, aoInput, 0L, 0L);
+            ComputePipelineHelper.updateImageDescriptor(device, blurDescriptorSet, 1, posHandle, 0L, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(device, blurDescriptorSet, 2, blurOutputView, 0L);
+
+            // 构建 PushConstants: threshold, kernelSize (16 bytes)
+            MemorySegment params = PerFrameArena.allocate(PC_BLUR_SIZE);
+            params.set(ValueLayout.JAVA_FLOAT, 0, 0.05f); // 法线/深度差异阈值
+            params.set(ValueLayout.JAVA_INT, 4, BLUR_KERNEL_SIZE);
+            // 剩余 8 bytes 保持 0
+
+            // Vulkan compute dispatch
+            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
+            if (cmdBuf == 0L) return 0L;
+
+            LodCullingComputePass.beginCommandBuffer(cmdBuf);
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, blurComputePipeline);
+            MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
+            dsPtr.set(ValueLayout.JAVA_LONG, 0, blurDescriptorSet);
+            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1, blurPipelineLayout, 0, 1, dsPtr.address(), 0, 0L);
+            VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, blurPipelineLayout,
+                    ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, PC_BLUR_SIZE, params.address());
+
+            int workGroupCountX = (screenWidth + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X;
+            int workGroupCountY = (screenHeight + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y;
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, workGroupCountX, workGroupCountY, 1);
+            LodCullingComputePass.endCommandBuffer(cmdBuf);
+
+            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+            if (queue != 0L) {
+                VulkanSyncManager.submitAndWait(queue, cmdBuf);
             }
 
             LOGGER.fine(String.format(
-                    "[SSAO] dispatch 'ssao_blur' (%dx%d) → blurOutput=0x%X",
-                    screenWidth, screenHeight, blurOutput.handle));
+                    "[SSAO] dispatch 'ssao_blur' (%dx%d) → blurOutputView=0x%X",
+                    screenWidth, screenHeight, blurOutputView));
 
-            return blurOutput.handle;
+            return blurOutputView;
 
-        } catch (Exception e) {
+        } catch (Throwable e) {
             LOGGER.log(Level.WARNING, "[SSAO] dispatchBilateralFilter 异常，返回原始 AO", e);
             return aoInput;  // 降级返回输入
+        }
+    }
+
+    // ==================== Pipeline 懒加载 ====================
+
+    /**
+     * 确保 SSAO Compute Pipeline 已创建
+     * <p>
+     * 懒加载模式：首次 dispatchSSAOCompute() 时加载 SPIR-V 并创建 Pipeline。
+     * 线程安全：双重检查锁定（DCL），synchronized 确保单次创建。
+     *
+     * SSAO Binding 配置:
+     *   binding 0 = COMBINED_IMAGE_SAMPLER (Position 纹理)
+     *   binding 1 = COMBINED_IMAGE_SAMPLER (Normal 纹理)
+     *   binding 2 = STORAGE_IMAGE (AO 输出纹理)
+     * PushConstant: size=32, offset=0, stage=COMPUTE
+     */
+    private void ensurePipeline() {
+        if (computePipeline != 0L) return;
+        synchronized (this) {
+            if (computePipeline != 0L) return;
+            try {
+                byte[] spirv = loadSPIRV(SHADER_PATH);
+                if (spirv == null || spirv.length == 0) {
+                    LOGGER.warning("SPIR-V 着色器加载失败: " + SHADER_PATH);
+                    return;
+                }
+                ComputePipelineHelper.Binding[] bindings = {
+                    new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+                    new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+                    new ComputePipelineHelper.Binding(2, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                };
+                ComputePipelineHelper.PushConstant pc = new ComputePipelineHelper.PushConstant(
+                        0, PC_SSAO_SIZE, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
+                ComputePipelineHelper.PipelineResources r = ComputePipelineHelper.createComputePipeline(spirv, bindings, pc);
+                if (r != null) {
+                    computePipeline = r.pipeline();
+                    pipelineLayout = r.pipelineLayout();
+                    descriptorSet = r.descriptorSet();
+                    LOGGER.fine("SSAO Compute Pipeline 创建成功: " + SHADER_PATH);
+                }
+            } catch (Exception e) {
+                LOGGER.warning("SSAO Pipeline 创建异常: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 确保 Blur Compute Pipeline 已创建
+     * <p>
+     * 懒加载模式：首次 dispatchBilateralFilter() 时加载 SPIR-V 并创建 Pipeline。
+     * 线程安全：双重检查锁定（DCL），synchronized 确保单次创建。
+     *
+     * Blur Binding 配置:
+     *   binding 0 = COMBINED_IMAGE_SAMPLER (AO 输入纹理)
+     *   binding 1 = COMBINED_IMAGE_SAMPLER (Position 纹理，用于边缘检测)
+     *   binding 2 = STORAGE_IMAGE (Blur 输出纹理)
+     * PushConstant: size=16, offset=0, stage=COMPUTE
+     */
+    private void ensureBlurPipeline() {
+        if (blurComputePipeline != 0L) return;
+        synchronized (this) {
+            if (blurComputePipeline != 0L) return;
+            try {
+                byte[] spirv = loadSPIRV(SHADER_BLUR_PATH);
+                if (spirv == null || spirv.length == 0) {
+                    LOGGER.warning("SPIR-V 着色器加载失败: " + SHADER_BLUR_PATH);
+                    return;
+                }
+                ComputePipelineHelper.Binding[] bindings = {
+                    new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+                    new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
+                    new ComputePipelineHelper.Binding(2, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                };
+                ComputePipelineHelper.PushConstant pc = new ComputePipelineHelper.PushConstant(
+                        0, PC_BLUR_SIZE, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
+                ComputePipelineHelper.PipelineResources r = ComputePipelineHelper.createComputePipeline(spirv, bindings, pc);
+                if (r != null) {
+                    blurComputePipeline = r.pipeline();
+                    blurPipelineLayout = r.pipelineLayout();
+                    blurDescriptorSet = r.descriptorSet();
+                    LOGGER.fine("SSAO Blur Compute Pipeline 创建成功: " + SHADER_BLUR_PATH);
+                }
+            } catch (Exception e) {
+                LOGGER.warning("SSAO Blur Pipeline 创建异常: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 确保 SSAO 输出纹理已创建（尺寸变化时重建）
+     * <p>
+     * 创建 R8_UNORM 格式的 Storage Image + ImageView，用于 Compute Shader 写入 AO 结果。
+     * 当屏幕分辨率发生变化时自动销毁旧资源并创建新纹理。
+     *
+     * 【方法参数】
+     * @param width  int - 屏幕宽度（像素）
+     * @param height int - 屏幕高度（像素）
+     */
+    private void ensureOutputImage(int width, int height) {
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L) return;
+
+        // 如果尺寸未变且纹理已存在，无需重建
+        if (outputAOImage != 0L && lastAOWidth == width && lastAOHeight == height) return;
+
+        // 销毁旧资源
+        if (outputAOView != 0L) {
+            try { VulkanAPIRegistry.invoke("vkDestroyImageView", device, outputAOView, 0L); } catch (Throwable ignored) {}
+            outputAOView = 0L;
+        }
+        VulkanGPUResourceManager mgr = VulkanGPUResourceManager.getInstance();
+        if (mgr != null && mgr.isInitialized()) {
+            if (outputAOResource != null) {
+                mgr.releaseResource(outputAOResource);
+                outputAOResource = null;
+            }
+        }
+        outputAOImage = 0L;
+        outputAOAllocation = 0L;
+
+        // 创建新的 Storage Image（R8_UNORM，支持 STORAGE_BIT 和 SAMPLED_BIT）
+        if (mgr == null || !mgr.isInitialized()) return;
+
+        VulkanGPUResourceManager.GpuResource aoOutput = mgr.createImage(
+                width, height,
+                VK_FORMAT_R8_UNORM,
+                VulkanConst.IMAGE_USAGE_STORAGE_BIT | VulkanConst.IMAGE_USAGE_SAMPLED_BIT,
+                VmaMemoryPools.PoolType.RENDER_TARGET
+        );
+
+        if (!aoOutput.isValid()) {
+            LOGGER.warning(String.format("SSAO output texture 创建失败: %dx%d", width, height));
+            return;
+        }
+
+        outputAOImage = aoOutput.handle;
+        outputAOAllocation = aoOutput.allocation;
+        outputAOResource = aoOutput;
+
+        // 创建 ImageView
+        outputAOView = mgr.createView(outputAOImage, VK_FORMAT_R8_UNORM,
+                VulkanConst.IMAGE_ASPECT_COLOR_BIT);
+
+        lastAOWidth = width;
+        lastAOHeight = height;
+
+        LOGGER.fine(String.format("SSAO output 纹理已创建: %dx%d → image=0x%X view=0x%X",
+                width, height, outputAOImage, outputAOView));
+    }
+
+    /**
+     * 从 classpath 加载 SPIR-V 二进制资源
+     * <p>
+     * 通过 ClassLoader 的 getResourceAsStream 加载预编译的 .spv 文件。
+     * SPIR-V 着色器由外部 GLSL 编译工具链生成，存放在资源目录的 shaders/ 路径下。
+     *
+     * 【方法参数】
+     * @param path String - 资源路径（如 "/shaders/ssao.spv"）
+     *
+     * 【返回值】
+     * @return byte[] - SPIR-V 字节数组，加载失败返回 null
+     */
+    private static byte[] loadSPIRV(String path) {
+        try (var is = SSAO.class.getResourceAsStream(path)) {
+            if (is == null) {
+                LOGGER.warning("SPIR-V 资源未找到: " + path);
+                return null;
+            }
+            return is.readAllBytes();
+        } catch (Exception e) {
+            LOGGER.warning("SPIR-V 加载异常: " + path + " - " + e.getMessage());
+            return null;
         }
     }
 
@@ -666,12 +923,6 @@ public class SSAO extends AbstractPipelineNode {
      *   <li>在单位球体内均匀生成随机点（拒绝采样法保证均匀性）</li>
      *   <li>将 z &lt; 0 的点翻折到上半球（z = abs(z)）</li>
      *   <li>对每个采样点应用加速插值函数使其聚集在半球顶部:</li>
-     *   <pre>
-     *       sample = random_point_in_unit_sphere()
-     *       sample.z = abs(sample.z)                        // 仅上半球
-     *       sample = sample / length(sample)                 // 归一化到单位球面
-     *       sample *= lerp(0.1f, 1.0f, (i / N)²)           // 非线性缩放
-     *   </pre>
      * </ol>
      *
      * 【方法参数】
@@ -687,7 +938,7 @@ public class SSAO extends AbstractPipelineNode {
         float[][] kernel = new float[count][3];
 
         for (int i = 0; i < count; i++) {
-            // ---- 步骤 1: 在单位立方体中生成随机点，然后映射到单位球 ----
+            // 步骤 1: 在单位立方体中生成随机点，然后映射到单位球
             // 使用确定性伪随机种子（基于索引 i 保证可重现性）
             float x = (float) pseudoRandom(i * 4 + 0);
             float y = (float) pseudoRandom(i * 4 + 1);
@@ -698,7 +949,7 @@ public class SSAO extends AbstractPipelineNode {
             y = y * 2.0f - 1.0f;
             z = z * 2.0f - 1.0f;
 
-            // ---- 步骤 2: 拒绝采样至单位球内，然后归一化到球面 ----
+            // 步骤 2: 拒绝采样至单位球内，然后归一化到球面
             float lenSq = x * x + y * y + z * z;
             if (lenSq < 1.0e-10f || lenSq > 1.0f) {
                 // 超出单位球，重置为单位长度上的均匀分布点
@@ -715,17 +966,17 @@ public class SSAO extends AbstractPipelineNode {
             y *= invLen;
             z *= invLen;
 
-            // ---- 步骤 3: 仅保留上半球（z >= 0）----
+            // 步骤 3: 仅保留上半球（z >= 0）
             z = Math.abs(z);
 
-            // ---- 步骤 4: 重新归一化（翻折后不再是单位长度）----
+            // 步骤 4: 重新归一化（翻折后不再是单位长度）
             lenSq = x * x + y * y + z * z;
             invLen = 1.0f / (float) Math.sqrt(lenSq);
             x *= invLen;
             y *= invLen;
             z *= invLen;
 
-            // ---- 步骤 5: 应用非线性缩放使采样点聚集在半球顶部 ----
+            // 步骤 5: 应用非线性缩放使采样点聚集在半球顶部
             // 使用平方插值：(i/N)^2 使得大部分采样集中在法线附近
             float scale = lerp(0.1f, 1.0f, ((float) i / (float) count) * ((float) i / (float) count));
 
@@ -776,7 +1027,7 @@ public class SSAO extends AbstractPipelineNode {
     /**
      * 确保采样核与当前 sampleCount 参数一致
      * <p>
-     * 当用户通过 setter 修改 sampleCount 后，下次 execute 时自动重建采样核。
+     * 当用户通过 setter 修改 sampleCount 后，下次 execute() 时自动重建采样核。
      * 采用懒加载策略，避免频繁修改参数时的不必要的重建开销。
      */
     private void ensureSampleKernelCurrent() {

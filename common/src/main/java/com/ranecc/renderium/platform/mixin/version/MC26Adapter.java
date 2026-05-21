@@ -32,4 +32,7 @@ public final class MC26Adapter {
 
     /** DeltaTracker 获取帧时间的方法名 */
     public static final String GET_REALTIME_DELTA = "getRealtimeDeltaTicks";
+
+    /** VideoSettingsScreen 的 addOptions 方法名（snapshot-3 和 snapshot-7 完全一致） */
+    public static final String ADD_OPTIONS = "addOptions";
 }

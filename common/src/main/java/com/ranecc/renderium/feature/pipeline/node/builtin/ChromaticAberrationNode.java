@@ -13,6 +13,7 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
+import com.ranecc.renderium.feature.config.RenderiumConfigLoader;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
@@ -185,8 +186,12 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        // 短路：禁用时直接传递输入
-        if (!enabled) return passThrough(inputResources);
+        var cfg = RenderiumConfigLoader.getInstance();
+        var sectionCfg = cfg.section("chromatic_aberration");
+        float curStrength = sectionCfg.getFloat("strength", this.strength);
+        float curRadialStrength = sectionCfg.getFloat("radial_strength", 1.0f);
+        boolean nodeEnabled = sectionCfg.getBoolean("enabled", this.enabled) && cfg.getBoolean("renderium.enabled", true);
+        if (!nodeEnabled) return passThrough(inputResources);
 
         // 短路：强度为 0 时无效果
         if (strength == 0.0f) return passThrough(inputResources);
@@ -200,8 +205,6 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
 
         long startTimeNanos = System.nanoTime();
 
-        // 快照读取 volatile 参数（一次读取，避免多次读不一致）
-        float curStrength = this.strength;
         boolean curRadial = this.radial;
         float curCenterOffsetX = this.centerOffsetX;
         float curCenterOffsetY = this.centerOffsetY;
@@ -422,11 +425,11 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
                 try { mgr.destroyView(outputImageView); } catch (Throwable ignored) {}
                 outputImageView = 0L;
             }
+            int format = 87;
             if (outputImage != 0L) {
-                try { mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, 0L)); } catch (Throwable ignored) {}
+                try { mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastOutputWidth, lastOutputHeight, format, VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
                 outputImage = 0L;
             }
-            int format = 87;
             int usageFlags = 0x20 | 0x10;
             var res = mgr.createImage(w, h, format, usageFlags, VmaMemoryPools.PoolType.RENDER_TARGET);
             if (res != null && res.isValid()) {

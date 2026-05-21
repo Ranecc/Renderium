@@ -8,6 +8,9 @@ import com.ranecc.renderium.domain.model.config.FrameGraphConfig;
 
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 
+import com.ranecc.renderium.feature.blaze3d.DescriptorSetManager;
+import com.ranecc.renderium.feature.blaze3d.command.DependencyGraphAnalyzer;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;

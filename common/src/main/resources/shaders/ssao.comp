@@ -1,0 +1,66 @@
+#version 460
+// Renderium - SSAO Compute Shader (屏幕空间法)
+// 输入: position + normal storage images
+// 输出: R8_UNORM AO 纹理
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba32f) uniform readonly image2D uPositionImage;
+layout(binding = 1, rgba16f) uniform readonly image2D uNormalImage;
+layout(binding = 2, r8) uniform writeonly image2D uOutputAO;
+
+layout(push_constant) uniform PushConstants {
+    float radius;
+    float intensity;
+    float bias;
+    int sampleCount;
+    float invWidth;
+    float invHeight;
+} pc;
+
+float hash(uint i) {
+    return fract(sin(float(i) * 127.1 + float(i * 37) * 311.7) * 43758.5453123);
+}
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 imgSize = imageSize(uOutputAO);
+    if (texel.x >= int(imgSize.x) || texel.y >= int(imgSize.y)) return;
+
+    vec3 worldPos = imageLoad(uPositionImage, texel).xyz;
+    vec3 normal = normalize(imageLoad(uNormalImage, texel).xyz);
+    if (length(worldPos) < 0.001 || length(normal) < 0.001) {
+        imageStore(uOutputAO, texel, vec4(1.0));
+        return;
+    }
+
+    int samples = max(1, min(pc.sampleCount, 64));
+    float ao = 0.0;
+
+    for (int i = 0; i < samples; i++) {
+        float angle = hash(uint(i)) * 6.2831853;
+        float dist = hash(uint(i * 7 + 13)) * pc.radius;
+
+        vec2 offset = vec2(cos(angle), sin(angle)) * dist;
+        offset.x *= pc.invWidth;
+        offset.y *= pc.invHeight;
+
+        vec2 sampleUV = (vec2(texel) + 0.5) * vec2(pc.invWidth, pc.invHeight) + offset;
+        ivec2 sampleTexel = ivec2(sampleUV * vec2(imgSize));
+
+        if (sampleTexel.x < 0 || sampleTexel.x >= int(imgSize.x) ||
+            sampleTexel.y < 0 || sampleTexel.y >= int(imgSize.y)) continue;
+
+        vec3 samplePos = imageLoad(uPositionImage, sampleTexel).xyz;
+        vec3 diff = samplePos - worldPos;
+        float d2 = dot(diff, diff);
+
+        float rangeCheck = smoothstep(0.0, pc.radius * pc.radius, d2);
+        float nd = max(dot(normal, normalize(diff)), 0.0);
+        ao += (nd * pc.bias / max(d2, 0.0001)) * rangeCheck;
+    }
+
+    ao = 1.0 - clamp(ao * pc.intensity / float(samples), 0.0, 1.0);
+    imageStore(uOutputAO, texel, vec4(ao));
+}

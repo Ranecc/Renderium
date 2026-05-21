@@ -349,6 +349,11 @@ public class ShadowMapNode extends AbstractPipelineNode {
         // 获取 V3 批处理引擎（用于获取 buffer capacity 上限）
         BatchTransformEngineV3 v3Engine = MCRenderBridge.getBatchTransformerV3();
         BatchTransformEngine fallbackEngine = MCRenderBridge.getBatchTransformer();
+        boolean useV3 = (v3Engine != null);
+        if (!useV3 && fallbackEngine == null) {
+            LOGGER.warning("批处理引擎不可用，跳过阴影渲染");
+            return 0L;
+        }
 
         // ══════════════════════════════════════
         // Step 2: 从 FrameDataSnapshot 提取相机数据

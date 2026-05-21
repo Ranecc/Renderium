@@ -146,8 +146,8 @@ public final class VideoSettingsBridge {
                     activeProvider.getName());
         }
 
-        // 创建选项注册表
-        optionsRegistry = null;
+        // 创建选项注册表（实例化，线程安全）
+        optionsRegistry = new VideoOptionsRegistry();
 
         LOGGER.info("Video settings system initialized successfully. " +
                 "Provider={}, CompatibleMode={}",

@@ -1,15 +1,35 @@
 // Renderium - 光影系统 v2.0
 // Tonemap 节点 - HDR 色调映射后处理（ACES / Reinhard / Uncharted 2）
+//
+// 核心算法:
+//   1. 曝光调整 color = hdrColor * exposure
+//   2. 色调映射 根据 ToneMapType 压缩至 [0,1]
+//   3. 饱和度调整 在 LDR 空间调整色彩饱和度
+//   4. 对比度调整 围绕中灰点 (0.5) 进行对比度缩放
+//   5. 暗角效果 基于屏幕坐标的径向衰减
+//   6. Gamma 校正 output = pow(color, 1.0/gamma)
+//
+// 性能预算:
+//   - 1080p 目标: < 0.3ms (Compute Shader)
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
-// ⚠ 存根模式 (STUB) — 此节点的 execute() 不执行真实 GPU 操作
-//    框架代码和数学实现完整，但 GPU 管线创建和 dispatch 未实装。
-//    计划在未来迭代中替换为真实 Compute Shader dispatch。
-
+import com.ranecc.renderium.domain.constant.VulkanConst;
+import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
+import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
+import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
+import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
+
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+import java.util.logging.Logger;
 
 /**
  * 色调映射 (Tonemapping) 后处理节点
@@ -86,8 +106,10 @@ import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
  */
 public class Tonemap extends AbstractPipelineNode {
 
-    private static final java.util.logging.Logger LOGGER =
-            java.util.logging.Logger.getLogger(Tonemap.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(Tonemap.class.getName());
+
+    /** SPIR-V 着色器资源路径 */
+    private static final String SHADER_PATH = "/shaders/tonemap.spv";
 
     // ==================== 常量定义 ====================
 
@@ -156,6 +178,17 @@ public class Tonemap extends AbstractPipelineNode {
 
     /** Uncharted 2: 白点值 (用于归一化) */
     private static final float UC2_WHITE_SCALE = uc2Curve(11.2f);
+
+    // ==================== GPU Pipeline 资源 ====================
+
+    /** Vulkan Compute Pipeline 句柄，0 表示未创建 */
+    private volatile long computePipeline = 0L;
+    private volatile long pipelineLayout = 0L;
+    private volatile long descriptorSet = 0L;
+    private volatile long outputImage = 0L;
+    private volatile long outputImageView = 0L;
+    private volatile int lastOutputWidth = 0;
+    private volatile int lastOutputHeight = 0;
 
     // ==================== 动态参数 (volatile, 支持热修改) ====================
 
@@ -443,86 +476,235 @@ public class Tonemap extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        // ---------- 步骤 1: 输入校验 ----------
+        // 输入校验
         if (inputResources == null || inputResources.length == 0) {
-            LOGGER.warning("Tonemap execute(): 输入资源为空，跳过处理");
+            LOGGER.warning("[Tonemap] 输入资源为空，跳过处理");
             return 0L;
         }
 
         long hdrTexture = inputResources[0];
         if (hdrTexture == 0L) {
-            LOGGER.warning("Tonemap execute(): HDR 纹理句柄无效 (0)");
+            LOGGER.warning("[Tonemap] HDR 纹理句柄无效 (0)");
             return 0L;
         }
 
-        /*
-         * ========== 着色器伪代码 (GLSL) ==========
-         *
-         * 以下为 GPU 着色器中的实际执行逻辑描述。
-         * 实际实现通过 Vulkan Compute Shader 或 Fragment Shader 完成。
-         */
+        long startTimeNanos = System.nanoTime();
 
-        // ---------- 步骤 2: 采样 HDR 输入纹理 ----------
-        // vec3 hdrColor = texture(u_HdrTexture, uv).rgb;
+        // 快照读取 volatile 参数（一次读取，避免多次读不一致）
+        float curExposure = this.exposure;
+        float curGamma = this.gamma;
+        int curTonemapType = this.tonemapType.ordinal();
+        float curSaturation = this.saturation;
+        float curContrast = this.contrast;
+        float curVignetteStrength = this.vignetteStrength;
 
-        // ---------- 步骤 3: 曝光调整 ----------
-        // 将 HDR 线性颜色乘以曝光系数
-        // 公式: exposed = hdrColor * u_Exposure
-        // vec3 exposed = hdrColor * u_exposure;
+        ensurePipeline();
+        if (computePipeline == 0L) return hdrTexture;
 
-        // ---------- 步骤 4: 色调映射 (HDR → LDR 压缩) ----------
-        // 根据当前选择的曲线类型分别处理每个通道
-        // vec3 mapped;
-        // switch (u_tonemapType) {
-        //     case 0: // ACES
-        //         mapped = acesFilmic(exposed);
-        //         break;
-        //     case 1: // REINHARD
-        //         mapped = reinhard(exposed);
-        //         break;
-        //     case 2: // UNCHARTED2
-        //         mapped = uncharted2Filmic(exposed);
-        //         break;
-        // }
+        ensureOutputImage(context);
+        if (outputImage == 0L || outputImageView == 0L) return hdrTexture;
 
-        // ---------- 步骤 5: 饱和度调整 ----------
-        // 计算 RGB 的亮度分量 (Rec.709 亮度系数)
-        // float luminance = dot(mapped, vec3(0.2126, 0.7152, 0.0722));
-        // 在原色与灰度之间按 saturation 因子插值
-        // vec3 saturated = mix(vec3(luminance), mapped, u_saturation);
+        try {
+            long dev = VulkanDeviceHolder.getInstance().getDevice();
+            if (dev == 0L || descriptorSet == 0L) return hdrTexture;
 
-        // ---------- 步骤 6: 对比度调整 ----------
-        // 围绕中灰点 (0.5) 缩放偏离量
-        // 公式: result = (color - 0.5) * contrast + 0.5
-        // vec3 contrasted = (saturated - 0.5) * u_contrast + 0.5;
+            // 更新 descriptor: binding 0 = HDR 输入 (readonly), binding 1 = 输出 (writeonly)
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 0, hdrTexture, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputImageView, 0L);
 
-        // ---------- 步骤 7: 暗角效果 (Vignette) ----------
-        // 计算当前像素到屏幕中心的归一化距离
-        // vec2 centeredUv = uv * 2.0 - 1.0;       // [-1, 1]
-        // float dist = length(centeredUv);          // [0, ~1.414]
-        // 使用 smoothstep 在内外半径之间插值产生平滑衰减
-        // float innerRadius = 0.4;                  // 暗角起始距离
-        // float outerRadius = 1.0;                  // 暗角完全生效距离
-        // float vignetteMask = 1.0 - u_vignetteStrength
-        //                      * smoothstep(innerRadius, outerRadius, dist);
-        // vec3 vignetteApplied = contrasted * vignetteMask;
+            // 构建 PushConstants: 32 bytes
+            //   offset 0:   exposure       (float)
+            //   offset 4:   gamma          (float)
+            //   offset 8:   tonemapType    (int)
+            //   offset 12:  saturation     (float)
+            //   offset 16:  contrast       (float)
+            //   offset 20:  vignetteStrength (float)
+            //   offset 24:  pad0           (float)
+            //   offset 28:  pad1           (float)
+            MemorySegment params = PerFrameArena.allocate(32L);
+            params.set(ValueLayout.JAVA_FLOAT, 0, curExposure);
+            params.set(ValueLayout.JAVA_FLOAT, 4, curGamma);
+            params.set(ValueLayout.JAVA_INT, 8, curTonemapType);
+            params.set(ValueLayout.JAVA_FLOAT, 12, curSaturation);
+            params.set(ValueLayout.JAVA_FLOAT, 16, curContrast);
+            params.set(ValueLayout.JAVA_FLOAT, 20, curVignetteStrength);
+            // pad0 (offset 24) 和 pad1 (offset 28) 保持 0
 
-        // ---------- 步骤 8: Gamma 校正 ----------
-        // 从线性空间转换到 sRGB 非线性显示空间
-        // 公式: output = pow(clamp(color, 0.0, 1.0), 1.0 / u_gamma)
-        // vec3 finalColor = pow(clamp(vignetteApplied, 0.0, 1.0),
-        //                       vec3(1.0 / u_gamma));
+            // Vulkan compute dispatch
+            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+            if (cmdBuf != 0L) {
+                LodCullingComputePass.beginCommandBuffer(cmdBuf);
+                VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
+                MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
+                dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
+                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1, pipelineLayout, 0, 1, dsPtr.address(), 0, 0L);
+                VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, pipelineLayout, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT, 0, 32, params.address());
 
-        // 输出到 LDR 纹理
-        // imageStore(u_OutputImage, ivec2(gl_GlobalInvocationID), vec4(finalColor, 1.0));
+                int w = (context.getWidth() + 7) / 8;
+                int h = (context.getHeight() + 7) / 8;
+                VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
+                LodCullingComputePass.endCommandBuffer(cmdBuf);
 
+                long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+                if (queue != 0L) {
+                    VulkanSyncManager.submitAndWait(queue, cmdBuf);
+                }
+            }
+        } catch (Throwable t) {
+            LOGGER.fine("[Tonemap] dispatch 失败: " + t.getMessage());
+        }
+
+        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
         LOGGER.fine(String.format(
-                "Tonemap execute(): type=%s, exp=%.2f, gamma=%.2f, sat=%.2f, con=%.2f, vig=%.2f",
-                tonemapType.name(), exposure, gamma, saturation, contrast, vignetteStrength));
+                "[Tonemap] 完成 | type=%s exp=%.2f gamma=%.2f sat=%.2f con=%.2f vig=%.2f | %.1f\u00b5s",
+                tonemapType.name(), curExposure, curGamma, curSaturation,
+                curContrast, curVignetteStrength, elapsedMicros
+        ));
 
-        // 返回处理后的 LDR 纹理句柄
-        // （实际实现中此处应为新创建/复用的输出纹理 handle）
-        return hdrTexture;
+        return outputImageView;
+    }
+
+    // ==================== 初始化与释放钩子 ====================
+
+    @Override
+    protected boolean onInitialize(RenderContext context) {
+        LOGGER.info(String.format(
+                "[Tonemap] 初始化成功 | type=%s exp=%.2f gamma=%.2f",
+                this.tonemapType.name(), this.exposure, this.gamma
+        ));
+        return true;
+    }
+
+    @Override
+    protected void onDispose() {
+        long dev = VulkanDeviceHolder.getInstance().getDevice();
+        if (dev != 0L) {
+            if (computePipeline != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipeline", dev, computePipeline, 0L); } catch (Throwable ignored) {}
+                computePipeline = 0L;
+            }
+            if (pipelineLayout != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", dev, pipelineLayout, 0L); } catch (Throwable ignored) {}
+                pipelineLayout = 0L;
+            }
+            if (outputImageView != 0L) {
+                try { VulkanAPIRegistry.invoke("vkDestroyImageView", dev, outputImageView, 0L); } catch (Throwable ignored) {}
+                outputImageView = 0L;
+            }
+            if (outputImage != 0L) {
+                var mgr = VulkanGPUResourceManager.getInstance();
+                mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
+                        outputImage, 0L, lastOutputWidth, lastOutputHeight,
+                        VulkanConst.FORMAT_R8G8B8A8_UNORM, VulkanGPUResourceManager.ResourceType.IMAGE));
+                outputImage = 0L;
+            }
+        }
+        lastOutputWidth = 0;
+        lastOutputHeight = 0;
+        LOGGER.fine("[Tonemap] 资源已释放");
+    }
+
+    // ==================== 辅助方法 ====================
+
+    /**
+     * 确保 Compute Pipeline 已创建
+     * <p>
+     * 双重检查锁定（DCL），synchronized 确保单次创建。
+     * Tonemap Binding 配置:
+     *   binding 0 = STORAGE_IMAGE (HDR 输入, readonly)
+     *   binding 1 = STORAGE_IMAGE (输出纹理, writeonly)
+     * PushConstant: size=32, offset=0
+     */
+    private void ensurePipeline() {
+        if (computePipeline != 0L) return;
+        synchronized (this) {
+            if (computePipeline != 0L) return;
+            try {
+                byte[] spirv = loadSPIRV(SHADER_PATH);
+                if (spirv == null || spirv.length == 0) {
+                    LOGGER.warning("[Tonemap] SPIR-V 着色器加载失败: " + SHADER_PATH);
+                    return;
+                }
+                var bindings = new ComputePipelineHelper.Binding[]{
+                    new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                };
+                var pc = new ComputePipelineHelper.PushConstant(0, 32, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
+                var r = ComputePipelineHelper.createComputePipeline(spirv, bindings, pc);
+                if (r != null) {
+                    computePipeline = r.pipeline();
+                    pipelineLayout = r.pipelineLayout();
+                    descriptorSet = r.descriptorSet();
+                    LOGGER.fine("[Tonemap] Compute Pipeline 创建成功: " + SHADER_PATH);
+                }
+            } catch (Exception e) {
+                LOGGER.warning("[Tonemap] Pipeline 创建异常: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 确保输出存储图像已创建
+     * <p>
+     * 当窗口尺寸变化时自动重建 RGBA8 存储图像。
+     * 使用 VulkanGPUResourceManager 创建和管理资源生命周期。
+     */
+    private void ensureOutputImage(RenderContext ctx) {
+        int w = ctx.getWidth();
+        int h = ctx.getHeight();
+        if (w == lastOutputWidth && h == lastOutputHeight && outputImage != 0L) return;
+
+        long dev = VulkanDeviceHolder.getInstance().getDevice();
+        if (dev == 0L) return;
+
+        // 销毁旧资源（如有）
+        if (outputImageView != 0L) {
+            try { VulkanAPIRegistry.invoke("vkDestroyImageView", dev, outputImageView, 0L); } catch (Throwable ignored) {}
+            outputImageView = 0L;
+        }
+        if (outputImage != 0L) {
+            var mgr = VulkanGPUResourceManager.getInstance();
+            mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
+                    outputImage, 0L, lastOutputWidth, lastOutputHeight,
+                    VulkanConst.FORMAT_R8G8B8A8_UNORM, VulkanGPUResourceManager.ResourceType.IMAGE));
+            outputImage = 0L;
+        }
+
+        // 创建新的 RGBA8 存储图像
+        var mgr = VulkanGPUResourceManager.getInstance();
+        int usage = VulkanConst.IMAGE_USAGE_STORAGE_BIT | VulkanConst.IMAGE_USAGE_SAMPLED_BIT;
+        var resource = mgr.createImage(w, h, VulkanConst.FORMAT_R8G8B8A8_UNORM, usage, VmaMemoryPools.PoolType.RENDER_TARGET);
+        if (resource == null || !resource.isValid()) {
+            LOGGER.warning("[Tonemap] 输出图像创建失败 [" + w + "x" + h + "]");
+            return;
+        }
+        outputImage = resource.handle;
+
+        // 创建 ImageView
+        long view = mgr.createView(outputImage, VulkanConst.FORMAT_R8G8B8A8_UNORM, VulkanConst.IMAGE_ASPECT_COLOR_BIT);
+        if (view == 0L) {
+            LOGGER.warning("[Tonemap] ImageView 创建失败");
+            mgr.releaseResource(resource);
+            outputImage = 0L;
+            return;
+        }
+        outputImageView = view;
+
+        lastOutputWidth = w;
+        lastOutputHeight = h;
+        LOGGER.fine("[Tonemap] 输出图像已创建 [" + w + "x" + h + "]");
+    }
+
+    /**
+     * 从 classpath 加载 SPIR-V 二进制资源
+     */
+    private static byte[] loadSPIRV(String path) {
+        try (var is = Tonemap.class.getResourceAsStream(path)) {
+            if (is == null) return null;
+            return is.readAllBytes();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     // ==================== 色调映射曲线算法 (CPU 端参考实现) ====================

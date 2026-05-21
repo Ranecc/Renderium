@@ -16,6 +16,7 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
+import com.ranecc.renderium.feature.config.RenderiumConfigLoader;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
@@ -210,8 +211,13 @@ public class LensFlareNode extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        // 短路：禁用时直接传递输入
-        if (!enabled) return passThrough(inputResources);
+        var cfg = RenderiumConfigLoader.getInstance();
+        var sectionCfg = cfg.section("lens_flare");
+        int curGhostCount = sectionCfg.getInt("ghost_count", this.ghostCount);
+        float curIntensity = sectionCfg.getFloat("intensity", this.intensity);
+        float curThreshold = sectionCfg.getFloat("threshold", this.threshold);
+        boolean nodeEnabled = sectionCfg.getBoolean("enabled", this.enabled) && cfg.getBoolean("renderium.enabled", true);
+        if (!nodeEnabled) return passThrough(inputResources);
 
         // 输入校验
         if (inputResources == null || inputResources.length < 1) {
@@ -222,11 +228,7 @@ public class LensFlareNode extends AbstractPipelineNode {
 
         long startTimeNanos = System.nanoTime();
 
-        // 快照读取 volatile 参数（一次读取，避免多次读不一致）
-        float curIntensity = this.intensity;
-        int curGhostCount = this.ghostCount;
         float curStreakLength = this.streakLength;
-        float curThreshold = this.threshold;
 
         long colorTexture = inputResources[0];
 
