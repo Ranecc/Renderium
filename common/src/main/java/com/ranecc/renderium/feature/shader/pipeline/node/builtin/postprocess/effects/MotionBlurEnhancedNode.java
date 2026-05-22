@@ -27,6 +27,7 @@ import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
@@ -278,10 +279,12 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
 
         RenderiumProfiler.recordEnd(13);
         if (LOGGER.isLoggable(Level.FINE)) {
+            double elapsedMicros = RenderiumProfiler.getNodeTime(13) / 1000.0;
             LOGGER.fine(String.format(
                     "[MotionBlur] 完成 | strength=%.2f sampleCount=%d velocityScale=%.2f | pipeline=0x%X | %.1f\u00b5s",
                 curStrength, curSampleCount, curVelocityScale, computePipeline, elapsedMicros
-        ));
+            ));
+        }
 
         // 返回 Compute Shader 写入的输出纹理（outputImageView）
         return outputImageView != 0L ? outputImageView : passThrough(inputResources);
@@ -332,8 +335,10 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
                 try { mgr2.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastOutputWidth, lastOutputHeight, 87, com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
             }
             if (LOGGER.isLoggable(Level.FINE)) {
+                double elapsedMicros2 = RenderiumProfiler.getNodeTime(13) / 1000.0;
                 LOGGER.fine(String.format("[MotionBlur] 释放输出资源 image=0x%X view=0x%X",
                     outputImage, outputImageView));
+            }
             outputImage = 0L;
             outputImageView = 0L;
             lastOutputWidth = 0;
@@ -517,6 +522,7 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
             if (LOGGER.isLoggable(Level.FINE)) {
                 LOGGER.fine(String.format("[MotionBlur] 输出 Image 已创建 [%dx%d] image=0x%X view=0x%X",
                     w, h, resource.handle, view));
+            }
         }
     }
 

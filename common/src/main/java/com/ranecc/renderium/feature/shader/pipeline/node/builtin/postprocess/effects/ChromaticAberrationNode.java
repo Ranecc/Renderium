@@ -214,6 +214,7 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
             return 0L;
         }
 
+        long startTimeNanos = System.nanoTime();
         RenderiumProfiler.recordStart(12);
 
         boolean curRadial = this.radial;
@@ -264,11 +265,13 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
         }
 
         RenderiumProfiler.recordEnd(12);
+        double elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000.0;
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format(
                     "[ChromaticAberration] 完成 | strength=%.4f radial=%b center=(%.2f,%.2f) | %.1f\u00b5s",
                 curStrength, curRadial, curCenterOffsetX, curCenterOffsetY, elapsedMicros
         ));
+        }
 
         return outputImageView != 0L ? outputImageView : passThrough(inputResources);
     }

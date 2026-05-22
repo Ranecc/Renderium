@@ -15,6 +15,7 @@
 package com.ranecc.renderium.feature.shader.pipeline.node.builtin;
 
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
+import com.ranecc.renderium.feature.shader.ShaderPathResolver;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import java.util.logging.Logger;
@@ -63,12 +64,13 @@ public class ReflectionNode extends AbstractPipelineNode {
 
     private static final int NODE_ID = 21;
 
-    // ==================== 着色器资源路径 ====================
+    // ==================== Shader Key 常量 ====================
 
-    private static final String SHADER_SSR_MARCH = "/shaders/reflection_ssr_march.spv";
-    private static final String SHADER_SSR_RESOLVE = "/shaders/reflection_ssr_resolve.spv";
-    private static final String SHADER_PLANAR = "/shaders/reflection_planar.spv";
-    private static final String SHADER_HYBRID = "/shaders/reflection_hybrid.spv";
+    /** 子 shader key 常量（通过 ShaderPathResolver 解析为实际 SPV 路径） */
+    private static final String KEY_SSR_MARCH = "pipeline/postprocess/reflection/reflection_ssr_march";
+    private static final String KEY_SSR_RESOLVE = "pipeline/postprocess/reflection/reflection_ssr_resolve";
+    private static final String KEY_PLANAR = "pipeline/postprocess/reflection/reflection_planar";
+    private static final String KEY_HYBRID = "pipeline/postprocess/reflection/reflection_hybrid";
 
     /** 反射类型枚举 */
     public enum ReflectionType {
@@ -484,8 +486,8 @@ public class ReflectionNode extends AbstractPipelineNode {
         synchronized (this) {
             if (pipelineSSRMarch != 0L) return;
             try {
-                byte[] spirv = loadSPIRVResource(SHADER_SSR_MARCH);
-                if (spirv == null) { LOGGER.warning("SPIR-V 加载失败: " + SHADER_SSR_MARCH); return; }
+                byte[] spirv = ShaderPathResolver.resolveSPIRV(KEY_SSR_MARCH);
+                if (spirv == null) { LOGGER.warning("SPIR-V 加载失败: " + KEY_SSR_MARCH); return; }
                 var bindings = new ComputePipelineHelper.Binding[]{
                     new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
                     new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
@@ -511,8 +513,8 @@ public class ReflectionNode extends AbstractPipelineNode {
         synchronized (this) {
             if (pipelineSSRResolve != 0L) return;
             try {
-                byte[] spirv = loadSPIRVResource(SHADER_SSR_RESOLVE);
-                if (spirv == null) { LOGGER.warning("SPIR-V 加载失败: " + SHADER_SSR_RESOLVE); return; }
+                byte[] spirv = ShaderPathResolver.resolveSPIRV(KEY_SSR_RESOLVE);
+                if (spirv == null) { LOGGER.warning("SPIR-V 加载失败: " + KEY_SSR_RESOLVE); return; }
                 var bindings = new ComputePipelineHelper.Binding[]{
                     new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
                     new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
@@ -537,8 +539,8 @@ public class ReflectionNode extends AbstractPipelineNode {
         synchronized (this) {
             if (pipelinePlanar != 0L) return;
             try {
-                byte[] spirv = loadSPIRVResource(SHADER_PLANAR);
-                if (spirv == null) { LOGGER.warning("SPIR-V 加载失败: " + SHADER_PLANAR); return; }
+                byte[] spirv = ShaderPathResolver.resolveSPIRV(KEY_PLANAR);
+                if (spirv == null) { LOGGER.warning("SPIR-V 加载失败: " + KEY_PLANAR); return; }
                 var bindings = new ComputePipelineHelper.Binding[]{
                     new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
                     new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
@@ -562,8 +564,8 @@ public class ReflectionNode extends AbstractPipelineNode {
         synchronized (this) {
             if (pipelineHybrid != 0L) return;
             try {
-                byte[] spirv = loadSPIRVResource(SHADER_HYBRID);
-                if (spirv == null) { LOGGER.warning("SPIR-V 加载失败: " + SHADER_HYBRID); return; }
+                byte[] spirv = ShaderPathResolver.resolveSPIRV(KEY_HYBRID);
+                if (spirv == null) { LOGGER.warning("SPIR-V 加载失败: " + KEY_HYBRID); return; }
                 var bindings = new ComputePipelineHelper.Binding[]{
                     new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
                     new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),

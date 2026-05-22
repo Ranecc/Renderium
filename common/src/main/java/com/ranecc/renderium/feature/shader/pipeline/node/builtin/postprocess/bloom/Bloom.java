@@ -212,12 +212,12 @@ public class Bloom extends AbstractPipelineNode {
     // ==================== Shader Key ====================
 
     /**
-     * Shader key（主 key），镜像 shaders-src/ 目录结构
+     * Bloom 无主 shader（它只有 4 个子 shader），返回 null
      * @see com.ranecc.renderium.feature.shader.ShaderPathResolver#resolveSPIRV(String)
      */
     @Override
     protected String shaderKey() {
-        return "pipeline/postprocess/bloom";
+        return null;
     }
 
     /** Bloom 子 shader key 常量 */
@@ -392,6 +392,7 @@ public class Bloom extends AbstractPipelineNode {
                     "Bloom 节点已创建: threshold=%.2f, intensity=%.2f, blurPasses=%d, " +
                 "downsampleScale=%.2f, priority=%d",
                 threshold, intensity, blurPasses, downsampleScale, 160));
+        }
     }
 
     // ==================== PipelineNode 接口实现 ====================
@@ -1168,6 +1169,7 @@ public class Bloom extends AbstractPipelineNode {
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format("Bloom mipmap 链重建: %dx%d -> %d 层 (scale=%.2f)",
                 baseWidth, baseHeight, levels, downsampleScale));
+        }
     }
 
     /**
@@ -1621,6 +1623,7 @@ public class Bloom extends AbstractPipelineNode {
             if (LOGGER.isLoggable(Level.FINE)) {
                 LOGGER.fine(String.format("Bloom pipelines loaded: bright=0x%x down=0x%x blur=0x%x up=0x%x",
                     pipelineBright, pipelineDown, pipelineBlur, pipelineUp));
+            }
         }
     }
 

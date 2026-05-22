@@ -259,12 +259,15 @@ public class ExposureNode extends AbstractPipelineNode {
             VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1L, computePipeline);
             VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1L, pipelineLayout, 0L, 1, descriptorSet, 0, 0L);
 
-            MemorySegment pcData = Arena.global().allocate(32);
-            pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 0, exposure);
-            pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 1, minExp);
-            pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 2, maxExp);
-            pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 3, whitePoint);
-            VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, pipelineLayout, 0x20L, 0L, 32, pcData);
+            // 使用 confined arena 管理 push constant 内存
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment pcData = arena.allocate(32);
+                pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 0, exposure);
+                pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 1, minExp);
+                pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 2, maxExp);
+                pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 3, whitePoint);
+                VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, pipelineLayout, 0x20L, 0L, 32, pcData);
+            }
 
             int w = Math.max(1, (ctx.getWidth() + 7) / 8);
             int h = Math.max(1, (ctx.getHeight() + 7) / 8);

@@ -28,6 +28,7 @@ import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
@@ -497,6 +498,7 @@ public class Tonemap extends AbstractPipelineNode {
             return 0L;
         }
 
+        long startTimeNanos = System.nanoTime();
         RenderiumProfiler.recordStart(5);
 
         // 快照读取 volatile 参数（一次读取，避免多次读不一致）
@@ -558,12 +560,14 @@ public class Tonemap extends AbstractPipelineNode {
         }
 
         RenderiumProfiler.recordEnd(5);
+        double elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000.0;
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format(
                     "[Tonemap] 完成 | type=%s exp=%.2f gamma=%.2f sat=%.2f con=%.2f vig=%.2f | %.1f\u00b5s",
                 tonemapType.name(), curExposure, curGamma, curSaturation,
                 curContrast, curVignetteStrength, elapsedMicros
         ));
+        }
 
         return outputImageView;
     }

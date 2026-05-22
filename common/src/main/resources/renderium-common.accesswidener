@@ -3,11 +3,12 @@ accessWidener v2 official
 # 暴露 OptionsSubScreen.list 字段，以便 Mixin 追加 Renderium 选项
 accessible field net/minecraft/client/gui/screens/options/OptionsSubScreen list Lnet/minecraft/client/gui/components/OptionsList;
 
+# MC 26.2: OptionInstance 已从 net.minecraft.world.option 迁移到 net.minecraft.client
 # 暴露 OptionsList.addSmall 方法（接受 OptionInstance 可变参数）
-accessible method net/minecraft/client/gui/components/OptionsList addSmall ([Lnet/minecraft/world/option/OptionInstance;)V
+accessible method net/minecraft/client/gui/components/OptionsList addSmall ([Lnet/minecraft/client/OptionInstance;)V
 
 # 暴露 OptionsList.addHeader 方法
 accessible method net/minecraft/client/gui/components/OptionsList addHeader (Lnet/minecraft/network/chat/Component;)V
 
 # 暴露 OptionsList.addBig 方法
-accessible method net/minecraft/client/gui/components/OptionsList addBig (Lnet/minecraft/world/option/OptionInstance;)V
+accessible method net/minecraft/client/gui/components/OptionsList addBig (Lnet/minecraft/client/OptionInstance;)V

@@ -24,6 +24,7 @@ import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -170,6 +171,7 @@ public class FilmGrainNode extends AbstractPipelineNode {
             return 0L;
         }
 
+        long startTimeNanos = System.nanoTime();
         RenderiumProfiler.recordStart(9);
 
         // 快照读取 volatile 参数（一次读取，避免多次读不一致）
@@ -217,11 +219,13 @@ public class FilmGrainNode extends AbstractPipelineNode {
         }
 
         RenderiumProfiler.recordEnd(9);
+        double elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000.0;
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format(
-                    "[FilmGrain] 完成 | strength=%.4f seed=%.2f | %.1f\u00b5s",%.1fμs",
-                curStrength, curSeed, elapsedMicros
-        ));
+                    "[FilmGrain] 完成 | strength=%.4f seed=%.2f | %.1f\u00b5s",
+                    curStrength, curSeed, elapsedMicros
+            ));
+        }
 
         return outputTexture;
     }

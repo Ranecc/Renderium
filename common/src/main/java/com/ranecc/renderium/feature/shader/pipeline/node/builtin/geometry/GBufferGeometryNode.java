@@ -399,7 +399,8 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
         // 性能诊断日志（周期性输出）
         // ══════════════════════════════════════════════
         RenderiumProfiler.recordEnd(0);
-        totalTimeMicros += RenderiumProfiler.getNodeTime(0) / 1000;
+        long elapsedMicros = RenderiumProfiler.getNodeTime(0) / 1000;
+        totalTimeMicros += elapsedMicros;
         frameCount++;
 
         if (frameCount % DIAGNOSTIC_LOG_INTERVAL == 0) {
@@ -814,7 +815,7 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
                             "pos=0x%X norm=0x%X alb=0x%X mat=0x%X",
                         w, h, outputPositionView, outputNormalView,
                         outputAlbedoView, outputMaterialView));
-
+                }
             } catch (Exception e) {
                 LOGGER.warning("[GBuffer] ensureGBufferOutput 异常: " + e.getMessage());
             }
@@ -893,6 +894,7 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
                 LOGGER.fine(String.format("[GBuffer] SSBO 扩容: %d \u2192 %d floats (%.1f MB)",
                     ssboCapacity >> 1, newCap,
                     (posSize + normSize + colSize) / (1024.0 * 1024.0)));
+            }
         }
     }
 
@@ -1203,6 +1205,7 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
                 (newCap * 3L * 4 + newCap * 3L * 4 + newCap * 4L * 4 + newCap * 4L * 4)
                         / (1024.0 * 1024.0)
         ));
+        }
     }
 
     /**

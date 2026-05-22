@@ -629,8 +629,9 @@ public class ShaderSettingsTab extends Screen {
      * 简单文本标签组件（用于显示分组标题）
      *
      * MC 26.2 兼容性说明：
+     * - AbstractWidget 要求实现 extractWidgetRenderState() 方法（替代旧 renderWidget）
      * - AbstractWidget 要求实现 updateWidgetNarration() 方法
-     * - drawCenteredString() 可能已移除，改用 drawString() 手动居中
+     * - GuiGraphicsExtractor.text() 替代旧 drawString()
      */
     private static class Label extends net.minecraft.client.gui.components.AbstractWidget {
         private final String text;
@@ -640,26 +641,18 @@ public class ShaderSettingsTab extends Screen {
             this.text = text;
         }
 
-        // MC 26.2 兼容性: AbstractWidget.render() 方法签名已变更
-        // 同时 net.minecraft.client.Font 已移至 net.minecraft.client.gui.Font
-        // TODO: 适配新的 Widget 渲染 API
-        public void renderWidget(net.minecraft.client.gui.GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        /**
+         * MC 26.2 API: 提取渲染状态（替代旧 renderWidget）
+         * 使用 GuiGraphicsExtractor.text() 绘制居中文本
+         */
+        @Override
+        protected void extractWidgetRenderState(net.minecraft.client.gui.GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
             net.minecraft.client.gui.Font font = net.minecraft.client.Minecraft.getInstance().font;
             int textWidth = font.width(this.text);
             int centeredX = getX() + (width - textWidth) / 2;
-            graphics.drawString(font, this.text, centeredX, getY(), 0xFFAAAAAA, false);
+            // MC 26.2: GuiGraphicsExtractor.text() 替代旧 GuiGraphics.drawString()
+            graphics.text(font, this.text, centeredX, getY(), 0xFFAAAAAA, false);
         }
-
-        // MC 26.2 兼容性: AbstractWidget 要求实现 extractWidgetRenderState()
-        // 这是新的渲染管线的一部分
-        public void extractWidgetRenderState(net.minecraft.client.gui.GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-            // Label 组件不需要特殊的渲染状态提取
-            // 空实现即可
-        }
-
-        // MC 26.2 兼容性: AbstractWidget.onClick() 可能已变更或移除
-        // TODO: 检查是否仍需要此方法
-        public void onClickWidget(double mouseX, double mouseY) { }
 
         /**
          * MC 26.2 API: AbstractWidget 要求实现的叙述更新方法

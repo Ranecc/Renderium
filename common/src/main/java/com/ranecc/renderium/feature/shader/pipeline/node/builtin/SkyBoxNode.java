@@ -15,6 +15,7 @@
 package com.ranecc.renderium.feature.shader.pipeline.node.builtin;
 
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
+import com.ranecc.renderium.feature.shader.ShaderPathResolver;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import java.util.logging.Logger;
@@ -96,11 +97,12 @@ public class SkyBoxNode extends AbstractPipelineNode {
     public static final float MIN_EXPOSURE = 0.1f;
     public static final float MAX_EXPOSURE = 10.0f;
 
-    // ==================== SPIR-V 着色器资源路径 ====================
+    // ==================== Shader Key 常量 ====================
 
-    private static final String SHADER_PROCEDURAL = "/shaders/skybox_procedural.spv";
-    private static final String SHADER_CUBEMAP = "/shaders/skybox_hdr_cubemap.spv";
-    private static final String SHADER_ATMOSPHERIC = "/shaders/skybox_atmospheric.spv";
+    /** 子 shader key 常量（通过 ShaderPathResolver 解析为实际 SPV 路径） */
+    private static final String KEY_PROCEDURAL = "pipeline/postprocess/skybox/skybox_procedural";
+    private static final String KEY_CUBEMAP = "pipeline/postprocess/skybox/skybox_hdr_cubemap";
+    private static final String KEY_ATMOSPHERIC = "pipeline/postprocess/skybox/skybox_atmospheric";
 
     /**
      * 天空类型枚举
@@ -713,7 +715,7 @@ public class SkyBoxNode extends AbstractPipelineNode {
             try {
                 // ---- 程序化天空 Pipeline ----
                 if (pipelineProcedural == 0L) {
-                    byte[] spirvProc = loadSPIRV(SHADER_PROCEDURAL);
+                    byte[] spirvProc = ShaderPathResolver.resolveSPIRV(KEY_PROCEDURAL);
                     if (spirvProc != null && spirvProc.length > 0) {
                         var procBindings = new ComputePipelineHelper.Binding[]{
                             new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
@@ -732,7 +734,7 @@ public class SkyBoxNode extends AbstractPipelineNode {
 
                 // ---- HDR Cubemap Pipeline ----
                 if (pipelineCubemap == 0L) {
-                    byte[] spirvCube = loadSPIRV(SHADER_CUBEMAP);
+                    byte[] spirvCube = ShaderPathResolver.resolveSPIRV(KEY_CUBEMAP);
                     if (spirvCube != null && spirvCube.length > 0) {
                         var cubeBindings = new ComputePipelineHelper.Binding[]{
                             new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER),
@@ -752,7 +754,7 @@ public class SkyBoxNode extends AbstractPipelineNode {
 
                 // ---- 大气散射 Pipeline ----
                 if (pipelineAtmo == 0L) {
-                    byte[] spirvAtmo = loadSPIRV(SHADER_ATMOSPHERIC);
+                    byte[] spirvAtmo = ShaderPathResolver.resolveSPIRV(KEY_ATMOSPHERIC);
                     if (spirvAtmo != null && spirvAtmo.length > 0) {
                         var atmoBindings = new ComputePipelineHelper.Binding[]{
                             new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),

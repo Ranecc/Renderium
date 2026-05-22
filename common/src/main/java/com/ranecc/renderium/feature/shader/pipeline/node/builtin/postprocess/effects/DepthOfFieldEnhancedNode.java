@@ -285,10 +285,12 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
 
         RenderiumProfiler.recordEnd(10);
         if (LOGGER.isLoggable(Level.FINE)) {
+            double elapsedMicros = RenderiumProfiler.getNodeTime(10) / 1000.0;
             LOGGER.fine(String.format(
                     "[DOF] 完成 | focalDist=%.2f aperture=f/%.1f samples=%d focalLen=%.1fmm | pipeline=0x%X | %.1f\u00b5s",
                 curFocalDist, curAperture, curSamples, curFocalLen, computePipeline, elapsedMicros
-        ));
+            ));
+        }
 
         // 返回 Compute Shader 写入的输出纹理
         return outputImageView;
@@ -502,7 +504,8 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
                     lastOutputHeight = h;
                     if (LOGGER.isLoggable(Level.FINE)) {
                         LOGGER.fine(String.format("[DOF] 输出 Image 创建成功: %dx%d image=0x%X view=0x%X", w, h, newImage, newView));
-                } else {
+                        }
+                    } else {
                     LOGGER.warning("[DOF] createView 失败");
                 }
             } else {

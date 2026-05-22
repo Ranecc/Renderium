@@ -229,5 +229,16 @@
   "renderium.video.debug_slow_threshold.tooltip": "标记慢 FFI 调用的阈值（毫秒）。",
   "renderium.config.mode.compatibility": "兼容模式",
   "renderium.config.mode.compatibility_limited": "受限兼容模式",
-  "renderium.config.mode.aggressive": "狂暴模式"
+  "renderium.config.mode.aggressive": "狂暴模式",
+  "renderium.config.category.interception": "拦截",
+  "renderium.options.buttons.apply": "应用",
+  "renderium.options.buttons.undo": "撤销",
+  "renderium.options.search.hint": "搜索选项...",
+  "renderium.search.coming_soon": "即将推出",
+  "renderium.options.quad_splitting.safe": "安全",
+  "renderium.options.quad_splitting.fast": "快速",
+  "renderium.options.quad_splitting.fastest": "最快",
+  "renderium.options.defer_chunk_updates.always": "始终",
+  "renderium.options.defer_chunk_updates.never": "从不",
+  "renderium.options.defer_chunk_updates.on_load": "加载时"
 }

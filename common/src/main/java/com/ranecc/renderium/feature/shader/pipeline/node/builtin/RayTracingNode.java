@@ -27,6 +27,7 @@ import java.util.logging.Level;
 import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 import java.util.logging.Logger;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
+import com.ranecc.renderium.feature.shader.ShaderPathResolver;
 import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
@@ -92,11 +93,11 @@ public class RayTracingNode extends AbstractPipelineNode {
 
     public static final int DEFAULT_DENOISE_PASSES = 2;
 
-    /** 去噪着色器 SPIR-V 资源路径 */
-    private static final String SHADER_DENOISE = "/shaders/rt_denoise_atrous.spv";
+    /** 去噪着色器 shader key（通过 ShaderPathResolver 解析为实际 SPV 路径） */
+    private static final String KEY_DENOISE = "pipeline/postprocess/rt/rt_denoise_atrous";
 
-    /** 追踪着色器 SPIR-V 资源路径 */
-    private static final String SHADER_TRACE = "/shaders/rt_trace_rays.spv";
+    /** 追踪着色器 shader key（通过 ShaderPathResolver 解析为实际 SPV 路径） */
+    private static final String KEY_TRACE = "pipeline/postprocess/rt/rt_trace_rays";
 
     /** RT 功能可用性标志（volatile 保证跨线程可见性） */
     private volatile boolean rtAvailable = false;
@@ -193,6 +194,7 @@ public class RayTracingNode extends AbstractPipelineNode {
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format("RT Node: available=%b, enabled=%b, rays=%d, cache=%dx%d",
                 rtAvailable, rtEnabled, rayCount, cachedWidth, cachedHeight));
+        }
         return true;
     }
 
@@ -292,12 +294,17 @@ public class RayTracingNode extends AbstractPipelineNode {
                 long cmdBuf2 = FrameCommandContext.beginNodeCB(NODE_ID);
                 VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf2, 1L, denoisePipeline);
                 VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf2, 1L, denoiseLayout, 0L, 1, denoiseSet, 0, 0L);
-                MemorySegment pcData2 = Arena.global().allocate(32);
-                pcData2.setAtIndex(ValueLayout.JAVA_INT, 0, 1);
-                pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 1, 0.1f);
-                pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 2, 1.0f);
-                pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 3, 1.0f);
-                VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf2, denoiseLayout, 0x20L, 0L, 32, pcData2.address());
+                
+                // 使用 confined arena 管理 push constant 内存，确保及时释放
+                try (Arena arena = Arena.ofConfined()) {
+                    MemorySegment pcData2 = arena.allocate(32);
+                    pcData2.setAtIndex(ValueLayout.JAVA_INT, 0, 1);
+                    pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 1, 0.1f);
+                    pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 2, 1.0f);
+                    pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 3, 1.0f);
+                    VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf2, denoiseLayout, 0x20L, 0L, 32, pcData2.address());
+                }
+                
                 int w2 = Math.max(1, (context.getWidth() + 7) / 8);
                 int h2 = Math.max(1, (context.getHeight() + 7) / 8);
                 VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf2, w2, h2, 1);
@@ -326,20 +333,23 @@ public class RayTracingNode extends AbstractPipelineNode {
 
             VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, tracePipeline);
 
-            if (traceLayout != 0L && traceSet != 0L) {
-                MemorySegment dsPtr = Arena.global().allocate(ValueLayout.JAVA_LONG);
-                dsPtr.set(ValueLayout.JAVA_LONG, 0, traceSet);
-                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
-                        cmdBuf, 1, traceLayout, 0, 1, dsPtr.address(), 0, 0L);
-            }
-
-            if (uniforms != null && uniforms.length > 0 && traceLayout != 0L) {
-                MemorySegment pcSeg = Arena.global().allocate(32L);
-                for (int i = 0; i < Math.min(uniforms.length, 8); i++) {
-                    pcSeg.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
+            // 使用 confined arena 管理 descriptor set 和 push constant 内存
+            try (Arena arena = Arena.ofConfined()) {
+                if (traceLayout != 0L && traceSet != 0L) {
+                    MemorySegment dsPtr = arena.allocate(ValueLayout.JAVA_LONG);
+                    dsPtr.set(ValueLayout.JAVA_LONG, 0, traceSet);
+                    VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
+                            cmdBuf, 1, traceLayout, 0, 1, dsPtr.address(), 0, 0L);
                 }
-                VulkanAPIRegistry.invoke("vkCmdPushConstants",
-                        cmdBuf, traceLayout, 0x00000020L, 0, 32, pcSeg.address());
+
+                if (uniforms != null && uniforms.length > 0 && traceLayout != 0L) {
+                    MemorySegment pcSeg = arena.allocate(32L);
+                    for (int i = 0; i < Math.min(uniforms.length, 8); i++) {
+                        pcSeg.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
+                    }
+                    VulkanAPIRegistry.invoke("vkCmdPushConstants",
+                            cmdBuf, traceLayout, 0x00000020L, 0, 32, pcSeg.address());
+                }
             }
 
             int w = Math.max(1, (context.getWidth() + 7) / 8);
@@ -367,20 +377,23 @@ public class RayTracingNode extends AbstractPipelineNode {
 
             VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, denoisePipeline);
 
-            if (denoiseLayout != 0L && denoiseSet != 0L) {
-                MemorySegment dsPtr = Arena.global().allocate(ValueLayout.JAVA_LONG);
-                dsPtr.set(ValueLayout.JAVA_LONG, 0, denoiseSet);
-                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
-                        cmdBuf, 1, denoiseLayout, 0, 1, dsPtr.address(), 0, 0L);
-            }
-
-            if (uniforms != null && uniforms.length > 0 && denoiseLayout != 0L) {
-                MemorySegment pcSeg = Arena.global().allocate(32L);
-                for (int i = 0; i < Math.min(uniforms.length, 8); i++) {
-                    pcSeg.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
+            // 使用 confined arena 管理 descriptor set 和 push constant 内存
+            try (Arena arena = Arena.ofConfined()) {
+                if (denoiseLayout != 0L && denoiseSet != 0L) {
+                    MemorySegment dsPtr = arena.allocate(ValueLayout.JAVA_LONG);
+                    dsPtr.set(ValueLayout.JAVA_LONG, 0, denoiseSet);
+                    VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
+                            cmdBuf, 1, denoiseLayout, 0, 1, dsPtr.address(), 0, 0L);
                 }
-                VulkanAPIRegistry.invoke("vkCmdPushConstants",
-                        cmdBuf, denoiseLayout, 0x00000020L, 0, 32, pcSeg.address());
+
+                if (uniforms != null && uniforms.length > 0 && denoiseLayout != 0L) {
+                    MemorySegment pcSeg = arena.allocate(32L);
+                    for (int i = 0; i < Math.min(uniforms.length, 8); i++) {
+                        pcSeg.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
+                    }
+                    VulkanAPIRegistry.invoke("vkCmdPushConstants",
+                            cmdBuf, denoiseLayout, 0x00000020L, 0, 32, pcSeg.address());
+                }
             }
 
             int w = Math.max(1, (context.getWidth() + 7) / 8);
@@ -399,7 +412,7 @@ public class RayTracingNode extends AbstractPipelineNode {
         synchronized (this) {
             if (denoisePipeline != 0L) return;
             try {
-                byte[] spirv = loadSPIRV(SHADER_DENOISE);
+                byte[] spirv = ShaderPathResolver.resolveSPIRV(KEY_DENOISE);
                 if (spirv == null) return;
                 ComputePipelineHelper.Binding[] bindings = new ComputePipelineHelper.Binding[]{
                     new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
@@ -426,7 +439,7 @@ public class RayTracingNode extends AbstractPipelineNode {
         synchronized (this) {
             if (tracePipeline != 0L) return;
             try {
-                byte[] spirv = loadSPIRV(SHADER_TRACE);
+                byte[] spirv = ShaderPathResolver.resolveSPIRV(KEY_TRACE);
                 if (spirv == null) return;
                 ComputePipelineHelper.Binding[] bindings = new ComputePipelineHelper.Binding[]{
                     new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),

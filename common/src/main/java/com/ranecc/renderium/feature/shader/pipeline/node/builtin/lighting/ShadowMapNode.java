@@ -35,6 +35,7 @@ import com.ranecc.renderium.domain.constant.VulkanConst;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
@@ -405,6 +406,7 @@ public class ShadowMapNode extends AbstractPipelineNode {
             LOGGER.fine(String.format(
                     "级联分割计算完成: count=%d, near=%.2f, far=%.2f, lambda=%.2f",
                 currentCascadeCount, nearPlane, farPlane, this.cascadeSplitLambda));
+        }
 
         // ══════════════════════════════════════
         // Step 4: 为每个级联构建光空间矩阵并变换顶点

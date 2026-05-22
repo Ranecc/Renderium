@@ -27,6 +27,7 @@ import com.ranecc.renderium.infrastructure.gpu.PostProcessComputeHelper;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
@@ -273,10 +274,12 @@ public class TemporalAANode extends AbstractPipelineNode {
 
         RenderiumProfiler.recordEnd(11);
         if (LOGGER.isLoggable(Level.FINE)) {
+            double elapsedMicros = RenderiumProfiler.getNodeTime(11) / 1000.0;
             LOGGER.fine(String.format(
-                    "[TAA] 完成 | blend=%.2f sharpness=%.2f clamp=%b velReject=%b | outputView=0x%X prevHistory=0x%X | %.1f\u00b5s",%.1fμs",
-                curBlendWeight, curSharpness, curClamp, curVelReject, outputImageView, previousHistory, elapsedMicros
-        ));
+                    "[TAA] 完成 | blend=%.2f sharpness=%.2f clamp=%b velReject=%b | outputView=0x%X prevHistory=0x%X | %.1f\u00b5s",
+                    curBlendWeight, curSharpness, curClamp, curVelReject, outputImageView, previousHistory, elapsedMicros
+            ));
+        }
 
         return outputImageView != 0L ? outputImageView : passThrough(inputResources);
     }

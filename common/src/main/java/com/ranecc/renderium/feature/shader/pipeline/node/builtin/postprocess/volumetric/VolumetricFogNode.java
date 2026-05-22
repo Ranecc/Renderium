@@ -29,6 +29,7 @@ import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
@@ -298,11 +299,13 @@ public class VolumetricFogNode extends AbstractPipelineNode {
         }
 
         RenderiumProfiler.recordEnd(14);
+        double elapsedMicros = RenderiumProfiler.getNodeTime(14) / 1000.0;
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format(
                     "[VolFog] 完成 | density=%.2f falloff=%.4f steps=%d aniso=%.2f | pipeline=0x%X | %.1f\u00b5s",
                 curDensity, curFalloff, curSteps, curAniso, computePipeline, elapsedMicros
-        ));
+            ));
+        }
 
         return outputImageView != 0L ? outputImageView : passThrough(inputResources);
     }
@@ -526,7 +529,8 @@ public class VolumetricFogNode extends AbstractPipelineNode {
                     lastOutputHeight = h;
                     if (LOGGER.isLoggable(Level.FINE)) {
                         LOGGER.fine(String.format("[VolFog] 输出 Image 创建成功: %dx%d image=0x%X view=0x%X", w, h, newImage, newView));
-                } else {
+                        }
+                    } else {
                     LOGGER.warning("[VolFog] createView 失败");
                 }
             } else {

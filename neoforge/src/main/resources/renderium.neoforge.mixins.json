@@ -16,6 +16,13 @@
   "injectors": {
     "defaultRequire": 1
   },
-  "mixins": [],
+  "mixins": [
+    "VideoOptionsScreenMixin",
+    "MixinWindow",
+    "RenderiumPassInjector",
+    "StreamlineIntegration",
+    "RenderSystemAccessor",
+    "GpuDeviceAccessor"
+  ],
   "comment": "Renderium Mixins v3.1 - NeoForge (shared platform-independent mixins)"
 }

@@ -33,6 +33,7 @@ import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -326,10 +327,12 @@ public class SSRNode extends AbstractPipelineNode {
 
         RenderiumProfiler.recordEnd(7);
         if (LOGGER.isLoggable(Level.FINE)) {
+            double elapsedMicros = RenderiumProfiler.getNodeTime(7) / 1000.0;
             LOGGER.fine(String.format(
-                    "[SSR] 完成 | quality=%d maxSteps=%d thickness=%.3f bias=%.3f halfRes=%b | %.1f\u00b5s",%.1fμs",
-                curQuality, curMaxSteps, curThickness, curBruteForceBias, curHalfResolution, elapsedMicros
-        ));
+                    "[SSR] 完成 | quality=%d maxSteps=%d thickness=%.3f bias=%.3f halfRes=%b | %.1f\u00b5s",
+                    curQuality, curMaxSteps, curThickness, curBruteForceBias, curHalfResolution, elapsedMicros
+            ));
+        }
 
         return outputImageView != 0L ? outputImageView : passThrough(inputResources);
     }
@@ -562,8 +565,9 @@ public class SSRNode extends AbstractPipelineNode {
                         lastOutputHeight = h;
 
                         if (LOGGER.isLoggable(Level.FINE)) {
-                LOGGER.fine(String.format("[SSR] 输出图像已创建 [%dx%d] image=0x%X view=0x%X",
-                                w, h, outputImage, outputImageView));
+                        LOGGER.fine(String.format("[SSR] 输出图像已创建 [%dx%d] image=0x%X view=0x%X",
+                                    w, h, outputImage, outputImageView));
+                        }
                     } else {
                         LOGGER.warning("[SSR] createView 失败，回退到 passThrough");
                     }

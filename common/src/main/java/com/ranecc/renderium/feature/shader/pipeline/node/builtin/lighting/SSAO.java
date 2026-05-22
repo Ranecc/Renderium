@@ -323,6 +323,7 @@ public class SSAO extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
+        long profileStartNanos = System.nanoTime();
         RenderiumProfiler.recordStart(2);
 
         // Step 1: 输入校验
@@ -400,12 +401,14 @@ public class SSAO extends AbstractPipelineNode {
         // 性能日志
         RenderiumProfiler.recordEnd(2);
         if (LOGGER.isLoggable(Level.FINE)) {
+            long elapsedNanos = System.nanoTime() - profileStartNanos;
             LOGGER.fine(String.format(
                     "[SSAO] 完成 | samples=%d radius=%.2f intensity=%.2f bias=%.4f blur=%b | "
                 + "%dx%d | %.1fμs",
                 currentSampleCount, currentRadius, currentIntensity, currentBias,
-                currentEnableBlur, screenWidth, screenHeight, elapsedMicros
-        ));
+                currentEnableBlur, screenWidth, screenHeight, elapsedNanos / 1000.0
+            ));
+        }
 
         // 返回最终 AO 纹理句柄
         return aoTextureHandle;
@@ -610,7 +613,7 @@ public class SSAO extends AbstractPipelineNode {
                         "→ aoOutputView=0x%X, workgroups=(%d,%d)",
                     screenWidth, screenHeight, sampleCount, radius,
                     outputAOView, workGroupCountX, workGroupCountY));
-
+            }
             return outputAOView;
 
         } catch (Throwable e) {
@@ -726,7 +729,7 @@ public class SSAO extends AbstractPipelineNode {
                 LOGGER.fine(String.format(
                         "[SSAO] dispatch 'ssao_blur' (%dx%d) → blurOutputView=0x%X",
                     screenWidth, screenHeight, blurOutputView));
-
+            }
             return blurOutputView;
 
         } catch (Throwable e) {
@@ -882,6 +885,7 @@ public class SSAO extends AbstractPipelineNode {
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format("SSAO output 纹理已创建: %dx%d → image=0x%X view=0x%X",
                 width, height, outputAOImage, outputAOView));
+        }
     }
 
     /**
@@ -1039,6 +1043,7 @@ public class SSAO extends AbstractPipelineNode {
             if (LOGGER.isLoggable(Level.FINE)) {
                 LOGGER.fine(String.format("[SSAO] 采样核已重建: %d 个方向", current));
             }
+        }
     }
 
     // ==================== 动态参数配置 API ====================

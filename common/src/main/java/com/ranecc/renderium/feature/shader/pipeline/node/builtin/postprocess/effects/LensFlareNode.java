@@ -30,6 +30,7 @@ import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
@@ -282,12 +283,14 @@ public class LensFlareNode extends AbstractPipelineNode {
             LOGGER.fine("[LensFlare] dispatch 失败: " + t.getMessage());
         }
 
+        double elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000.0;
         RenderiumProfiler.recordEnd(8);
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format(
-                    "[LensFlare] 完成 | intensity=%.2f ghosts=%d streak=%.2f threshold=%.2f | %.1f\u00b5s",%.1fμs",
+                    "[LensFlare] 完成 | intensity=%.2f ghosts=%d streak=%.2f threshold=%.2f | %.1f\u00b5s",
                 curIntensity, curGhostCount, curStreakLength, curThreshold, elapsedMicros
-        ));
+            ));
+        }
 
         return (outputImageView != 0L) ? outputImageView : passThrough(inputResources);
     }
@@ -491,7 +494,8 @@ public class LensFlareNode extends AbstractPipelineNode {
                     if (LOGGER.isLoggable(Level.FINE)) {
                         LOGGER.fine(String.format("[LensFlare] 输出 Image 创建成功 [%dx%d] image=0x%X view=0x%X",
                             w, h, outputImage, outputImageView));
-                } else {
+                        }
+                    } else {
                     LOGGER.warning("[LensFlare] createImage 返回无效资源");
                 }
             } catch (Exception e) {

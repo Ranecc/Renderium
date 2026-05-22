@@ -77,9 +77,12 @@ public final class RenderiumCommand {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         try {
             // 创建根命令构建器（标注 requires 使所有子命令要求 OP 2）
+            // MC 26.2 API: hasPermission(int) 已移除，改用 PermissionSet + Permission.HasCommandLevel
             LiteralArgumentBuilder<CommandSourceStack> rootBuilder =
                     Commands.literal("renderium")
-                            .requires(source -> source.hasPermission(2))
+                            .requires(source -> source.permissions().hasPermission(
+                                    new net.minecraft.server.permissions.Permission.HasCommandLevel(
+                                            net.minecraft.server.permissions.PermissionLevel.byId(2))))
                             .executes(RenderiumCommand::executeStatus);
 
             // 注册子命令
