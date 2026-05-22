@@ -18,9 +18,11 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 import com.ranecc.renderium.infrastructure.gpu.*;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import java.lang.foreign.MemorySegment;
@@ -58,6 +60,8 @@ import java.lang.foreign.ValueLayout;
 public class ReflectionNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(ReflectionNode.class.getName());
+
+    private static final int NODE_ID = 21;
 
     // ==================== 着色器资源路径 ====================
 
@@ -137,7 +141,7 @@ public class ReflectionNode extends AbstractPipelineNode {
 
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(21);
         if (inputResources == null || inputResources.length < 1) return 0L;
 
         ReflectionType currentType = this.reflectionType;
@@ -165,7 +169,8 @@ public class ReflectionNode extends AbstractPipelineNode {
                 break;
         }
 
-        totalExecuteTimeNanos += System.nanoTime() - startTimeNanos;
+        RenderiumProfiler.recordEnd(21);
+        totalExecuteTimeNanos += RenderiumProfiler.getNodeTime(21);
         totalFrames++;
         return outputImageView;
     }
@@ -315,10 +320,8 @@ public class ReflectionNode extends AbstractPipelineNode {
             ComputePipelineHelper.updateStorageImageDescriptor(
                     dev, descriptorSet, inTexes.length, outTex, 0L);
 
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf == 0L) return;
-
-            LodCullingComputePass.beginCommandBuffer(cmdBuf);
 
             VulkanAPIRegistry.invoke("vkCmdBindPipeline",
                     cmdBuf, 1L, pipeline);
@@ -334,12 +337,7 @@ public class ReflectionNode extends AbstractPipelineNode {
             int h = Math.max(1, (ctx.getHeight() + 7) / 8);
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
 
-            LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            if (queue != 0L) {
-                VulkanSyncManager.submitAndWait(queue, cmdBuf);
-            }
+            FrameCommandContext.endNodeCB(NODE_ID);
 
             LOGGER.fine("[ReflectionNode] " + pass + " dispatch 完成");
         } catch (Throwable t) {
@@ -383,10 +381,8 @@ public class ReflectionNode extends AbstractPipelineNode {
             ComputePipelineHelper.updateImageDescriptor(dev, descSet, 2, normalTex, 0L, 0L);
             ComputePipelineHelper.updateStorageImageDescriptor(dev, descSet, 3, outTex, 0L);
 
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf == 0L) return;
-
-            LodCullingComputePass.beginCommandBuffer(cmdBuf);
 
             VulkanAPIRegistry.invoke("vkCmdBindPipeline",
                     cmdBuf, 1L, pipeline);
@@ -402,12 +398,7 @@ public class ReflectionNode extends AbstractPipelineNode {
             int h = Math.max(1, (ctx.getHeight() + 7) / 8);
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
 
-            LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            if (queue != 0L) {
-                VulkanSyncManager.submitAndWait(queue, cmdBuf);
-            }
+            FrameCommandContext.endNodeCB(NODE_ID);
 
             LOGGER.fine("[ReflectionNode] " + pass + " dispatch 完成");
         } catch (Throwable t) {

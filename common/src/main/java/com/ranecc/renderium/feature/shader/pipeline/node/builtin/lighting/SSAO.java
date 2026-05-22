@@ -17,6 +17,7 @@ import org.lwjgl.vulkan.VK10;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
@@ -25,9 +26,8 @@ import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
-import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
-import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -72,6 +72,9 @@ import java.lang.foreign.ValueLayout;
 public class SSAO extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(SSAO.class.getName());
+
+    /** FrameCommandContext 节点 ID，用于帧级共享 Command Buffer */
+    private static final int NODE_ID = 2;
 
     // ==================== 常量定义 ====================
 
@@ -320,7 +323,7 @@ public class SSAO extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(2);
 
         // Step 1: 输入校验
         if (inputResources == null || inputResources.length < 2) {
@@ -395,9 +398,10 @@ public class SSAO extends AbstractPipelineNode {
         }
 
         // 性能日志
-        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
-        LOGGER.fine(String.format(
-                "[SSAO] 完成 | samples=%d radius=%.2f intensity=%.2f bias=%.4f blur=%b | "
+        RenderiumProfiler.recordEnd(2);
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "[SSAO] 完成 | samples=%d radius=%.2f intensity=%.2f bias=%.4f blur=%b | "
                 + "%dx%d | %.1fμs",
                 currentSampleCount, currentRadius, currentIntensity, currentBias,
                 currentEnableBlur, screenWidth, screenHeight, elapsedMicros
@@ -586,10 +590,9 @@ public class SSAO extends AbstractPipelineNode {
             // 剩余 12 bytes 保持 0（对齐填充）
 
             // Vulkan compute dispatch
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf == 0L) return 0L;
 
-            LodCullingComputePass.beginCommandBuffer(cmdBuf);
             VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
             MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
             dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
@@ -600,15 +603,11 @@ public class SSAO extends AbstractPipelineNode {
             int workGroupCountX = (screenWidth + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X;
             int workGroupCountY = (screenHeight + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y;
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, workGroupCountX, workGroupCountY, 1);
-            LodCullingComputePass.endCommandBuffer(cmdBuf);
+            FrameCommandContext.endNodeCB(NODE_ID);
 
-            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            if (queue != 0L) {
-                VulkanSyncManager.submitAndWait(queue, cmdBuf);
-            }
-
-            LOGGER.fine(String.format("[SSAO] dispatch 'ssao_main' (%dx%d, samples=%d, radius=%.2f) " +
-                    "→ aoOutputView=0x%X, workgroups=(%d,%d)",
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine(String.format("[SSAO] dispatch 'ssao_main' (%dx%d, samples=%d, radius=%.2f) " +
+                        "→ aoOutputView=0x%X, workgroups=(%d,%d)",
                     screenWidth, screenHeight, sampleCount, radius,
                     outputAOView, workGroupCountX, workGroupCountY));
 
@@ -708,10 +707,9 @@ public class SSAO extends AbstractPipelineNode {
             // 剩余 8 bytes 保持 0
 
             // Vulkan compute dispatch
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf == 0L) return 0L;
 
-            LodCullingComputePass.beginCommandBuffer(cmdBuf);
             VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, blurComputePipeline);
             MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
             dsPtr.set(ValueLayout.JAVA_LONG, 0, blurDescriptorSet);
@@ -722,15 +720,11 @@ public class SSAO extends AbstractPipelineNode {
             int workGroupCountX = (screenWidth + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X;
             int workGroupCountY = (screenHeight + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y;
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, workGroupCountX, workGroupCountY, 1);
-            LodCullingComputePass.endCommandBuffer(cmdBuf);
+            FrameCommandContext.endNodeCB(NODE_ID);
 
-            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            if (queue != 0L) {
-                VulkanSyncManager.submitAndWait(queue, cmdBuf);
-            }
-
-            LOGGER.fine(String.format(
-                    "[SSAO] dispatch 'ssao_blur' (%dx%d) → blurOutputView=0x%X",
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine(String.format(
+                        "[SSAO] dispatch 'ssao_blur' (%dx%d) → blurOutputView=0x%X",
                     screenWidth, screenHeight, blurOutputView));
 
             return blurOutputView;
@@ -885,7 +879,8 @@ public class SSAO extends AbstractPipelineNode {
         lastAOWidth = width;
         lastAOHeight = height;
 
-        LOGGER.fine(String.format("SSAO output 纹理已创建: %dx%d → image=0x%X view=0x%X",
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format("SSAO output 纹理已创建: %dx%d → image=0x%X view=0x%X",
                 width, height, outputAOImage, outputAOView));
     }
 
@@ -1041,8 +1036,9 @@ public class SSAO extends AbstractPipelineNode {
         if (current != lastSampleCount && sampleKernel != null) {
             this.sampleKernel = generateHemisphereKernel(current);
             this.lastSampleCount = current;
-            LOGGER.fine(String.format("[SSAO] 采样核已重建: %d 个方向", current));
-        }
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine(String.format("[SSAO] 采样核已重建: %d 个方向", current));
+            }
     }
 
     // ==================== 动态参数配置 API ====================
@@ -1289,12 +1285,7 @@ public class SSAO extends AbstractPipelineNode {
      * @return float[][] - 采样核副本，每个元素为 float[3] 方向向量
      */
     public float[][] getSampleKernelSnapshot() {
-        if (sampleKernel == null) return new float[0][];
-        float[][] copy = new float[sampleKernel.length][];
-        for (int i = 0; i < sampleKernel.length; i++) {
-            copy[i] = sampleKernel[i].clone();
-        }
-        return copy;
+        return sampleKernel;
     }
 
     @Override

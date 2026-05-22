@@ -7,15 +7,19 @@ import com.ranecc.renderium.infrastructure.gpu.*;
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 public class LightingNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(LightingNode.class.getName());
+
+    private static final int NODE_ID = 19;
 
     private static final String SHADER_DIRECT = "/shaders/lighting_direct.spv";
     private static final String SHADER_INDIRECT = "/shaders/lighting_indirect.spv";
@@ -102,7 +106,8 @@ public class LightingNode extends AbstractPipelineNode {
                         Math.min(currentGiBounces, 4)
                 });
 
-        totalExecuteTimeNanos += System.nanoTime() - startTimeNanos;
+        RenderiumProfiler.recordEnd(19);
+        totalExecuteTimeNanos += RenderiumProfiler.getNodeTime(19);
         totalFrames++;
         return outputTextureHandle;
     }
@@ -329,25 +334,8 @@ public class LightingNode extends AbstractPipelineNode {
         try {
             PerFrameArena.beginFrame();
 
-            long commandPool = LodCullingComputePass.getCommandPool();
-            if (commandPool == 0L) { PerFrameArena.endFrame(); return; }
-
-            MemorySegment allocInfo = Arena.global().allocate(ValueLayout.JAVA_LONG, 5);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 46L);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, commandPool);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 1L);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 1L);
-            MemorySegment cmdOut = Arena.global().allocate(ValueLayout.JAVA_LONG);
-            VulkanAPIRegistry.invoke("vkAllocateCommandBuffers", device, (long) allocInfo.address(), (long) cmdOut.address());
-            long cmdBuf = cmdOut.get(ValueLayout.JAVA_LONG, 0);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf == 0L) { PerFrameArena.endFrame(); return; }
-
-            MemorySegment beginInfo = Arena.global().allocate(ValueLayout.JAVA_LONG, 3);
-            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 42L);
-            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
-            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);
-            VulkanAPIRegistry.invoke("vkBeginCommandBuffer", cmdBuf, (long) beginInfo.address());
 
             MemorySegment barrier = Arena.global().allocate(68L);
             barrier.set(ValueLayout.JAVA_INT, 0, 33);
@@ -386,41 +374,7 @@ public class LightingNode extends AbstractPipelineNode {
             int groupsY = Math.max(1, (height + 7) / 8);
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupsX, groupsY, 1);
 
-            VulkanAPIRegistry.invoke("vkEndCommandBuffer", cmdBuf);
-
-            long queue = VulkanDeviceHolder.getInstance().getComputeQueue();
-            if (queue == 0L) queue = VulkanDeviceHolder.getInstance().getVkQueue();
-            if (queue == 0L) {
-                VulkanAPIRegistry.invoke("vkFreeCommandBuffers", device, commandPool, 1, cmdBuf);
-                PerFrameArena.endFrame();
-                return;
-            }
-
-            long fence = LodCullingComputePass.getFence();
-            if (fence != 0L) {
-                VulkanAPIRegistry.invoke("vkResetFences", device, 1, fence);
-            } else {
-                MemorySegment fenceCI = Arena.global().allocate(ValueLayout.JAVA_LONG, 3);
-                fenceCI.setAtIndex(ValueLayout.JAVA_LONG, 0, 8L);
-                fenceCI.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
-                fenceCI.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);
-                MemorySegment fenceOut = Arena.global().allocate(ValueLayout.JAVA_LONG);
-                VulkanAPIRegistry.invoke("vkCreateFence", device, (long) fenceCI.address(), 0L, (long) fenceOut.address());
-                fence = fenceOut.get(ValueLayout.JAVA_LONG, 0);
-            }
-
-            MemorySegment submitInfo = Arena.global().allocate(ValueLayout.JAVA_LONG, 7);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 4L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 0L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, 1L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, cmdBuf);
-            VulkanAPIRegistry.invoke("vkQueueSubmit", queue, 1, (long) submitInfo.address(), fence);
-            VulkanAPIRegistry.invoke("vkWaitForFences", device, 1, fence, 1L, 1000000000L);
-
-            VulkanAPIRegistry.invoke("vkFreeCommandBuffers", device, commandPool, 1, cmdBuf);
+            FrameCommandContext.endNodeCB(NODE_ID);
             PerFrameArena.endFrame();
 
             LOGGER.finest("[LightingNode] " + pass + " dispatch OK " + width + "x" + height);
@@ -452,25 +406,8 @@ public class LightingNode extends AbstractPipelineNode {
         try {
             PerFrameArena.beginFrame();
 
-            long commandPool = LodCullingComputePass.getCommandPool();
-            if (commandPool == 0L) { PerFrameArena.endFrame(); return; }
-
-            MemorySegment allocInfo = Arena.global().allocate(ValueLayout.JAVA_LONG, 5);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 46L);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, commandPool);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 1L);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 1L);
-            MemorySegment cmdOut = Arena.global().allocate(ValueLayout.JAVA_LONG);
-            VulkanAPIRegistry.invoke("vkAllocateCommandBuffers", device, (long) allocInfo.address(), (long) cmdOut.address());
-            long cmdBuf = cmdOut.get(ValueLayout.JAVA_LONG, 0);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf == 0L) { PerFrameArena.endFrame(); return; }
-
-            MemorySegment beginInfo = Arena.global().allocate(ValueLayout.JAVA_LONG, 3);
-            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 42L);
-            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
-            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);
-            VulkanAPIRegistry.invoke("vkBeginCommandBuffer", cmdBuf, (long) beginInfo.address());
 
             MemorySegment barrier = Arena.global().allocate(68L);
             barrier.set(ValueLayout.JAVA_INT, 0, 33);
@@ -520,41 +457,7 @@ public class LightingNode extends AbstractPipelineNode {
             int groupsY = Math.max(1, (height + 7) / 8);
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupsX, groupsY, 1);
 
-            VulkanAPIRegistry.invoke("vkEndCommandBuffer", cmdBuf);
-
-            long queue = VulkanDeviceHolder.getInstance().getComputeQueue();
-            if (queue == 0L) queue = VulkanDeviceHolder.getInstance().getVkQueue();
-            if (queue == 0L) {
-                VulkanAPIRegistry.invoke("vkFreeCommandBuffers", device, commandPool, 1, cmdBuf);
-                PerFrameArena.endFrame();
-                return;
-            }
-
-            long fence = LodCullingComputePass.getFence();
-            if (fence != 0L) {
-                VulkanAPIRegistry.invoke("vkResetFences", device, 1, fence);
-            } else {
-                MemorySegment fenceCI = Arena.global().allocate(ValueLayout.JAVA_LONG, 3);
-                fenceCI.setAtIndex(ValueLayout.JAVA_LONG, 0, 8L);
-                fenceCI.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
-                fenceCI.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);
-                MemorySegment fenceOut = Arena.global().allocate(ValueLayout.JAVA_LONG);
-                VulkanAPIRegistry.invoke("vkCreateFence", device, (long) fenceCI.address(), 0L, (long) fenceOut.address());
-                fence = fenceOut.get(ValueLayout.JAVA_LONG, 0);
-            }
-
-            MemorySegment submitInfo = Arena.global().allocate(ValueLayout.JAVA_LONG, 7);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 4L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 0L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, 1L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, cmdBuf);
-            VulkanAPIRegistry.invoke("vkQueueSubmit", queue, 1, (long) submitInfo.address(), fence);
-            VulkanAPIRegistry.invoke("vkWaitForFences", device, 1, fence, 1L, 1000000000L);
-
-            VulkanAPIRegistry.invoke("vkFreeCommandBuffers", device, commandPool, 1, cmdBuf);
+            FrameCommandContext.endNodeCB(NODE_ID);
             PerFrameArena.endFrame();
 
             LOGGER.finest("[LightingNode] " + pass + " dispatch OK " + width + "x" + height);

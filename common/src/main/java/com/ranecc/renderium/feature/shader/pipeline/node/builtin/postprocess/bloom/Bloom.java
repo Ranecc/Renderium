@@ -25,6 +25,7 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
@@ -39,6 +40,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.Arrays;
 import java.util.logging.Level;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 import java.util.logging.Logger;
 
 /**
@@ -153,6 +155,9 @@ import java.util.logging.Logger;
 public class Bloom extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(Bloom.class.getName());
+
+    /** FrameCommandContext 节点 ID，用于帧级共享 Command Buffer */
+    private static final int NODE_ID = 4;
 
     // ==================== 常量定义 ====================
 
@@ -382,8 +387,9 @@ public class Bloom extends AbstractPipelineNode {
             mipAllocations[i] = 0L;
         }
 
-        LOGGER.fine(String.format(
-                "Bloom 节点已创建: threshold=%.2f, intensity=%.2f, blurPasses=%d, " +
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "Bloom 节点已创建: threshold=%.2f, intensity=%.2f, blurPasses=%d, " +
                 "downsampleScale=%.2f, priority=%d",
                 threshold, intensity, blurPasses, downsampleScale, 160));
     }
@@ -422,7 +428,7 @@ public class Bloom extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(4);
 
         // ══════════════════════════════════════
         // 前置检查：验证输入资源
@@ -447,10 +453,7 @@ public class Bloom extends AbstractPipelineNode {
         float currentDownsampleScale = this.downsampleScale;
 
         // 安全拷贝 bloomColor（防止并发修改）
-        float[] currentBloomColor;
-        synchronized (this) {
-            currentBloomColor = this.bloomColor.clone();
-        }
+        float[] currentBloomColor = this.bloomColor;
 
         // ══════════════════════════════════════
         // 获取输入纹理尺寸并计算 mipmap 配置
@@ -527,8 +530,8 @@ public class Bloom extends AbstractPipelineNode {
         // ══════════════════════════════════════
         // 性能统计更新
         // ══════════════════════════════════════
-        long elapsedNanos = System.nanoTime() - startTimeNanos;
-        totalExecuteTimeNanos += elapsedNanos;
+        RenderiumProfiler.recordEnd(4);
+        totalExecuteTimeNanos += RenderiumProfiler.getNodeTime(4);
         totalFrames++;
 
         // 每 100 帧输出一次性能诊断日志
@@ -1162,7 +1165,8 @@ public class Bloom extends AbstractPipelineNode {
         int levels = calculateMipLevels(baseWidth, baseHeight, downsampleScale);
         this.activeMipLevels = levels;
 
-        LOGGER.fine(String.format("Bloom mipmap 链重建: %dx%d -> %d 层 (scale=%.2f)",
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format("Bloom mipmap 链重建: %dx%d -> %d 层 (scale=%.2f)",
                 baseWidth, baseHeight, levels, downsampleScale));
     }
 
@@ -1614,7 +1618,8 @@ public class Bloom extends AbstractPipelineNode {
 
             pipelinesInitialized = true;
 
-            LOGGER.fine(String.format("Bloom pipelines loaded: bright=0x%x down=0x%x blur=0x%x up=0x%x",
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine(String.format("Bloom pipelines loaded: bright=0x%x down=0x%x blur=0x%x up=0x%x",
                     pipelineBright, pipelineDown, pipelineBlur, pipelineUp));
         }
     }
@@ -1896,9 +1901,7 @@ public class Bloom extends AbstractPipelineNode {
      * @return float[] - 长度为 3 的 RGB 数组副本
      */
     public float[] getBloomColor() {
-        synchronized (this) {
-            return this.bloomColor.clone();
-        }
+        return this.bloomColor;
     }
 
     /**

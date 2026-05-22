@@ -76,12 +76,11 @@ public final class RenderiumCommand {
      */
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         try {
-            // 创建根命令构建器
-            // MC 26.2 API: 移除了 hasPermission(int)，权限系统改为 PermissionSet
-            // 暂时不设置权限限制（可在执行时动态检查）
+            // 创建根命令构建器（标注 requires 使所有子命令要求 OP 2）
             LiteralArgumentBuilder<CommandSourceStack> rootBuilder =
                     Commands.literal("renderium")
-                            .executes(RenderiumCommand::executeStatus);  // 默认执行 status
+                            .requires(source -> source.hasPermission(2))
+                            .executes(RenderiumCommand::executeStatus);
 
             // 注册子命令
             registerSubcommands(rootBuilder);

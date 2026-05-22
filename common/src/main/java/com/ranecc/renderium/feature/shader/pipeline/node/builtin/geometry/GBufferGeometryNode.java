@@ -17,12 +17,12 @@ import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode.Category;
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
-import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 import com.ranecc.renderium.platform.bridge.mc.BatchTransformEngine;
 import com.ranecc.renderium.platform.bridge.mc.BatchTransformEngineV3;
 import com.ranecc.renderium.platform.bridge.mc.FrameDataSnapshot;
@@ -31,6 +31,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * G-Buffer 几何缓冲节点
@@ -106,6 +107,9 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
 
     /** 性能诊断日志输出间隔（帧数） */
     private static final int DIAGNOSTIC_LOG_INTERVAL = 200;
+
+    /** FrameCommandContext 节点索引 */
+    private static final int NODE_ID = 0;
 
     /**
      * Shader key，镜像 shaders-src/ 目录结构
@@ -305,7 +309,7 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(0);
 
         // ══════════════════════════════════════════════
         // Step 1: 获取批量顶点变换引擎（V3 优先，V2 回退）
@@ -394,8 +398,8 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
         // ══════════════════════════════════════════════
         // 性能诊断日志（周期性输出）
         // ══════════════════════════════════════════════
-        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
-        totalTimeMicros += elapsedMicros;
+        RenderiumProfiler.recordEnd(0);
+        totalTimeMicros += RenderiumProfiler.getNodeTime(0) / 1000;
         frameCount++;
 
         if (frameCount % DIAGNOSTIC_LOG_INTERVAL == 0) {
@@ -472,9 +476,8 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
             ComputePipelineHelper.updateStorageImageDescriptor(vkDevice, descriptorSet, 6, outputMaterialView, 0L);
 
             // Compute dispatch
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf != 0L) {
-                LodCullingComputePass.beginCommandBuffer(cmdBuf);
 
                 // vkCmdBindPipeline(VK_PIPELINE_BIND_POINT_COMPUTE = 1)
                 VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
@@ -506,12 +509,7 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
                 int h = (context.getHeight() + 7) / 8;
                 VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
 
-                LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-                long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                if (queue != 0L) {
-                    VulkanSyncManager.submitAndWait(queue, cmdBuf);
-                }
+                FrameCommandContext.endNodeCB(NODE_ID);
             }
         } catch (Throwable t) {
             LOGGER.fine("[GBuffer] Compute dispatch 失败: " + t.getMessage());
@@ -811,8 +809,9 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
                 lastGBufW = w;
                 lastGBufH = h;
 
-                LOGGER.fine(String.format("[GBuffer] G-Buffer 输出图像创建成功 [%dx%d] " +
-                        "pos=0x%X norm=0x%X alb=0x%X mat=0x%X",
+                if (LOGGER.isLoggable(Level.FINE)) {
+                    LOGGER.fine(String.format("[GBuffer] G-Buffer 输出图像创建成功 [%dx%d] " +
+                            "pos=0x%X norm=0x%X alb=0x%X mat=0x%X",
                         w, h, outputPositionView, outputNormalView,
                         outputAlbedoView, outputMaterialView));
 
@@ -890,7 +889,8 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
 
             ssboCapacity = newCap;
 
-            LOGGER.fine(String.format("[GBuffer] SSBO 扩容: %d → %d floats (%.1f MB)",
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine(String.format("[GBuffer] SSBO 扩容: %d \u2192 %d floats (%.1f MB)",
                     ssboCapacity >> 1, newCap,
                     (posSize + normSize + colSize) / (1024.0 * 1024.0)));
         }
@@ -1196,8 +1196,9 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
         this.materialBuffer  = new float[newCap * 4];
         this.bufferCapacity  = newCap;
 
-        LOGGER.fine(String.format(
-                "[GBuffer] 输出缓冲区扩容: %d → %d 顶点 (%.1f MB)",
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "[GBuffer] 输出缓冲区扩容: %d → %d 顶点 (%.1f MB)",
                 bufferCapacity >> 1, newCap,
                 (newCap * 3L * 4 + newCap * 3L * 4 + newCap * 4L * 4 + newCap * 4L * 4)
                         / (1024.0 * 1024.0)

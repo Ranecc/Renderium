@@ -644,13 +644,10 @@ public class ShaderSettingsTab extends Screen {
         // 同时 net.minecraft.client.Font 已移至 net.minecraft.client.gui.Font
         // TODO: 适配新的 Widget 渲染 API
         public void renderWidget(net.minecraft.client.gui.GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-            // MC 26.2 使用正确的 Font 类路径
             net.minecraft.client.gui.Font font = net.minecraft.client.Minecraft.getInstance().font;
             int textWidth = font.width(this.text);
             int centeredX = getX() + (width - textWidth) / 2;
-            // MC 26.2 API: GuiGraphics.drawString() 签名已变更，暂时禁用文本渲染
-            // 原调用: graphics.drawString(font, this.text, centeredX, getY(), 0xFFAAAAAA);
-            // TODO: 找到 MC 26.2 正确的文本渲染方式（可能需要使用 Component 或新的 draw 方法）
+            graphics.drawString(font, this.text, centeredX, getY(), 0xFFAAAAAA, false);
         }
 
         // MC 26.2 兼容性: AbstractWidget 要求实现 extractWidgetRenderState()

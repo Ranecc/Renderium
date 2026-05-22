@@ -22,11 +22,13 @@ import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 
 import com.ranecc.renderium.feature.config.RenderiumConfigLoader;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * 增强运动模糊节点 (Enhanced Motion Blur)
@@ -121,6 +123,9 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
 
     /** 最大速度默认值（像素/帧） */
     private static final float MAX_VELOCITY_DEFAULT = 50.0f;
+
+    /** FrameCommandContext 节点索引 */
+    private static final int NODE_ID = 13;
 
     // ==================== 可调参数 ====================
 
@@ -229,7 +234,7 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
             return 0L;
         }
 
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(13);
 
         MemorySegment params = PerFrameArena.allocate(32L);
         params.set(ValueLayout.JAVA_FLOAT, 0, curStrength);
@@ -255,9 +260,8 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
             ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputImage, outputImageView);
         }
         try {
-            long cmdBuf = com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.allocateCommandBuffer(dev);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf != 0L) {
-                com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.beginCommandBuffer(cmdBuf);
                 com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
                 MemorySegment dsPtr = com.ranecc.renderium.infrastructure.gpu.PerFrameArena.allocateLongs(1);
                 dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
@@ -266,19 +270,16 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
                 int w = (context.getWidth() + 7) / 8;
                 int h = (context.getHeight() + 7) / 8;
                 com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
-                com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.endCommandBuffer(cmdBuf);
-                long queue = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                if (queue != 0L) {
-                    com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager.submitAndWait(queue, cmdBuf);
-                }
+                FrameCommandContext.endNodeCB(NODE_ID);
             }
         } catch (Throwable t) {
             LOGGER.fine("[MotionBlur] dispatch 失败: " + t.getMessage());
         }
 
-        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
-        LOGGER.fine(String.format(
-                "[MotionBlur] 完成 | strength=%.2f sampleCount=%d velocityScale=%.2f | pipeline=0x%X | %.1fμs",
+        RenderiumProfiler.recordEnd(13);
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "[MotionBlur] 完成 | strength=%.2f sampleCount=%d velocityScale=%.2f | pipeline=0x%X | %.1f\u00b5s",
                 curStrength, curSampleCount, curVelocityScale, computePipeline, elapsedMicros
         ));
 
@@ -330,7 +331,8 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
             if (outputImage != 0L) {
                 try { mgr2.releaseResource(new com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastOutputWidth, lastOutputHeight, 87, com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
             }
-            LOGGER.fine(String.format("[MotionBlur] 释放输出资源 image=0x%X view=0x%X",
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine(String.format("[MotionBlur] 释放输出资源 image=0x%X view=0x%X",
                     outputImage, outputImageView));
             outputImage = 0L;
             outputImageView = 0L;
@@ -512,7 +514,8 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
             this.lastOutputWidth = w;
             this.lastOutputHeight = h;
 
-            LOGGER.fine(String.format("[MotionBlur] 输出 Image 已创建 [%dx%d] image=0x%X view=0x%X",
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine(String.format("[MotionBlur] 输出 Image 已创建 [%dx%d] image=0x%X view=0x%X",
                     w, h, resource.handle, view));
         }
     }

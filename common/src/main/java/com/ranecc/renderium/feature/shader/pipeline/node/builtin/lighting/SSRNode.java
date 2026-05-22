@@ -23,12 +23,12 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
-import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
-import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 
 import java.lang.foreign.MemorySegment;
@@ -97,6 +97,9 @@ import java.util.logging.Logger;
 public class SSRNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(SSRNode.class.getName());
+
+    /** FrameCommandContext 节点 ID，用于帧级共享 Command Buffer */
+    private static final int NODE_ID = 7;
 
     /**
      * Shader key，镜像 shaders-src/ 目录结构
@@ -256,7 +259,7 @@ public class SSRNode extends AbstractPipelineNode {
             return passThrough(inputResources);
         }
 
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(7);
 
         int curQuality = this.quality;
         int curMaxSteps = curMaxStepsCfg;
@@ -301,9 +304,8 @@ public class SSRNode extends AbstractPipelineNode {
             params.set(ValueLayout.JAVA_INT, 28, curFrameIdx);
 
             // Vulkan compute dispatch
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf != 0L) {
-                LodCullingComputePass.beginCommandBuffer(cmdBuf);
                 VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
                 MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
                 dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
@@ -313,12 +315,7 @@ public class SSRNode extends AbstractPipelineNode {
                 int w = (context.getWidth() + 7) / 8;
                 int h = (context.getHeight() + 7) / 8;
                 VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
-                LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-                long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                if (queue != 0L) {
-                    VulkanSyncManager.submitAndWait(queue, cmdBuf);
-                }
+                FrameCommandContext.endNodeCB(NODE_ID);
             }
         } catch (Throwable t) {
             LOGGER.fine("[SSR] dispatch 失败: " + t.getMessage());
@@ -327,9 +324,10 @@ public class SSRNode extends AbstractPipelineNode {
         // 更新帧索引
         this.frameIndex = curFrameIdx + 1;
 
-        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
-        LOGGER.fine(String.format(
-                "[SSR] 完成 | quality=%d maxSteps=%d thickness=%.3f bias=%.3f halfRes=%b | %.1fμs",
+        RenderiumProfiler.recordEnd(7);
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "[SSR] 完成 | quality=%d maxSteps=%d thickness=%.3f bias=%.3f halfRes=%b | %.1f\u00b5s",%.1fμs",
                 curQuality, curMaxSteps, curThickness, curBruteForceBias, curHalfResolution, elapsedMicros
         ));
 
@@ -563,7 +561,8 @@ public class SSRNode extends AbstractPipelineNode {
                         lastOutputWidth = w;
                         lastOutputHeight = h;
 
-                        LOGGER.fine(String.format("[SSR] 输出图像已创建 [%dx%d] image=0x%X view=0x%X",
+                        if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine(String.format("[SSR] 输出图像已创建 [%dx%d] image=0x%X view=0x%X",
                                 w, h, outputImage, outputImageView));
                     } else {
                         LOGGER.warning("[SSR] createView 失败，回退到 passThrough");

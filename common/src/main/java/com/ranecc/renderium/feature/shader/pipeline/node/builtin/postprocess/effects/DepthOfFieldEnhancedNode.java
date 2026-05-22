@@ -19,11 +19,14 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * 景深节点 (Depth of Field)
@@ -125,6 +128,9 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
 
     /** 焦距默认值（mm） */
     private static final float FOCAL_LENGTH_DEFAULT = 50.0f;
+
+    /** FrameCommandContext 节点索引 */
+    private static final int NODE_ID = 10;
 
     // ==================== 可调参数 (volatile) ====================
 
@@ -232,7 +238,7 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
             return 0L;
         }
 
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(10);
 
         // 构建参数 UBO：focalDist, aperture, samples, focalLen, screenWidth, screenHeight
         MemorySegment params = PerFrameArena.allocate(32L);
@@ -261,9 +267,8 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
 
         // 自包含 Compute Shader 调度（分配临时 CB → 录制 → 提交 → 等待）
         try {
-            long cmdBuf = com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.allocateCommandBuffer(dev);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf != 0L) {
-                com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.beginCommandBuffer(cmdBuf);
                 com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
                 MemorySegment dsPtr = com.ranecc.renderium.infrastructure.gpu.PerFrameArena.allocateLongs(1);
                 dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
@@ -272,19 +277,16 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
                 int w = (context.getWidth() + 7) / 8;
                 int h = (context.getHeight() + 7) / 8;
                 com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
-                com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.endCommandBuffer(cmdBuf);
-                long queue = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                if (queue != 0L) {
-                    com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager.submitAndWait(queue, cmdBuf);
-                }
+                FrameCommandContext.endNodeCB(NODE_ID);
             }
         } catch (Throwable t) {
             LOGGER.fine("[DOF] dispatch 失败: " + t.getMessage());
         }
 
-        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
-        LOGGER.fine(String.format(
-                "[DOF] 完成 | focalDist=%.2f aperture=f/%.1f samples=%d focalLen=%.1fmm | pipeline=0x%X | %.1fμs",
+        RenderiumProfiler.recordEnd(10);
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "[DOF] 完成 | focalDist=%.2f aperture=f/%.1f samples=%d focalLen=%.1fmm | pipeline=0x%X | %.1f\u00b5s",
                 curFocalDist, curAperture, curSamples, curFocalLen, computePipeline, elapsedMicros
         ));
 
@@ -498,7 +500,8 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
                     outputImageView = newView;
                     lastOutputWidth = w;
                     lastOutputHeight = h;
-                    LOGGER.fine(String.format("[DOF] 输出 Image 创建成功: %dx%d image=0x%X view=0x%X", w, h, newImage, newView));
+                    if (LOGGER.isLoggable(Level.FINE)) {
+                        LOGGER.fine(String.format("[DOF] 输出 Image 创建成功: %dx%d image=0x%X view=0x%X", w, h, newImage, newView));
                 } else {
                     LOGGER.warning("[DOF] createView 失败");
                 }

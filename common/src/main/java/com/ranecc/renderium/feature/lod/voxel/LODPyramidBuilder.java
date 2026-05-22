@@ -10,6 +10,7 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
@@ -146,8 +147,8 @@ public class LODPyramidBuilder {
      */
     private volatile LinkedHashMap<Long, LODPyramidData> pyramidCache;
 
-    /** 缓存锁对象（用于保证线程安全） */
-    private final Object cacheLock = new Object();
+    /** 缓存锁对象（读写锁，允许并发读取） */
+    private final ReentrantReadWriteLock cacheLock = new ReentrantReadWriteLock();
 
     // ==================== 统计字段 ====================
 
@@ -332,7 +333,8 @@ public class LODPyramidBuilder {
 
         long startTime = System.nanoTime();
 
-        synchronized (cacheLock) {
+        cacheLock.writeLock().lock();
+        try {
             // ======== Step 1: 尝试从缓存获取 ========
             LODPyramidData cached = pyramidCache.get(chunkKey);
             if (cached != null) {
@@ -383,6 +385,8 @@ public class LODPyramidBuilder {
 
 
             return new BuildResult(pyramid, false, buildTime);
+        } finally {
+            cacheLock.writeLock().unlock();
         }
 
     }
@@ -645,8 +649,11 @@ public class LODPyramidBuilder {
      * @return true 如果缓存中存在该区块的金字塔
      */
     public boolean containsPyramid(long chunkKey) {
-        synchronized (cacheLock) {
+        cacheLock.readLock().lock();
+        try {
             return pyramidCache.containsKey(chunkKey);
+        } finally {
+            cacheLock.readLock().unlock();
         }
     }
 
@@ -657,8 +664,11 @@ public class LODPyramidBuilder {
      * @return 金字塔数据，如果不存在返回 null
      */
     public LODPyramidData getPyramidFromCache(long chunkKey) {
-        synchronized (cacheLock) {
+        cacheLock.readLock().lock();
+        try {
             return pyramidCache.get(chunkKey);
+        } finally {
+            cacheLock.readLock().unlock();
         }
     }
 
@@ -732,7 +742,8 @@ public class LODPyramidBuilder {
      *
      */
     public void clearCache() {
-        synchronized (cacheLock) {
+        cacheLock.writeLock().lock();
+        try {
             int oldSize = pyramidCache.size();
             pyramidCache.clear();
             currentCacheSize = 0;
@@ -742,6 +753,8 @@ public class LODPyramidBuilder {
                 "金字塔缓存已清除 (释放 %d 个条目)",
                 oldSize
             ));
+        } finally {
+            cacheLock.writeLock().unlock();
         }
     }
 
@@ -768,7 +781,8 @@ public class LODPyramidBuilder {
 
 
 
-        synchronized (cacheLock) {
+        cacheLock.writeLock().lock();
+        try {
             // 清空缓存
             int cacheSizeBefore = pyramidCache.size();
             pyramidCache.clear();
@@ -786,6 +800,8 @@ public class LODPyramidBuilder {
                 "LODPyramidBuilder 已关闭 (释放 %d 个缓存条目)",
                 cacheSizeBefore
             ));
+        } finally {
+            cacheLock.writeLock().unlock();
         }
     }
 

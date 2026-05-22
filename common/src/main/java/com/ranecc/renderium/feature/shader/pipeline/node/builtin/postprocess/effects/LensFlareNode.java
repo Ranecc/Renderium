@@ -22,16 +22,16 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
-import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
-import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * 镜头光晕节点 (Lens Flare)
@@ -88,6 +88,9 @@ import java.util.logging.Logger;
 public class LensFlareNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(LensFlareNode.class.getName());
+
+    /** FrameCommandContext 节点 ID，用于帧级共享 Command Buffer */
+    private static final int NODE_ID = 8;
 
     /**
      * Shader key，镜像 shaders-src/ 目录结构
@@ -262,9 +265,8 @@ public class LensFlareNode extends AbstractPipelineNode {
             params.set(ValueLayout.JAVA_FLOAT, 20, 0.0f); // padding
 
             // Vulkan compute dispatch
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf != 0L) {
-                LodCullingComputePass.beginCommandBuffer(cmdBuf);
                 VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
                 MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
                 dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
@@ -274,20 +276,16 @@ public class LensFlareNode extends AbstractPipelineNode {
                 int w = (context.getWidth() + 7) / 8;
                 int h = (context.getHeight() + 7) / 8;
                 VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
-                LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-                long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                if (queue != 0L) {
-                    VulkanSyncManager.submitAndWait(queue, cmdBuf);
-                }
+                FrameCommandContext.endNodeCB(NODE_ID);
             }
         } catch (Throwable t) {
             LOGGER.fine("[LensFlare] dispatch 失败: " + t.getMessage());
         }
 
-        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
-        LOGGER.fine(String.format(
-                "[LensFlare] 完成 | intensity=%.2f ghosts=%d streak=%.2f threshold=%.2f | %.1fμs",
+        RenderiumProfiler.recordEnd(8);
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "[LensFlare] 完成 | intensity=%.2f ghosts=%d streak=%.2f threshold=%.2f | %.1f\u00b5s",%.1fμs",
                 curIntensity, curGhostCount, curStreakLength, curThreshold, elapsedMicros
         ));
 
@@ -490,7 +488,8 @@ public class LensFlareNode extends AbstractPipelineNode {
                     outputImageView = mgr.createView(outputImage, format, 1);
                     lastOutputWidth = w;
                     lastOutputHeight = h;
-                    LOGGER.fine(String.format("[LensFlare] 输出 Image 创建成功 [%dx%d] image=0x%X view=0x%X",
+                    if (LOGGER.isLoggable(Level.FINE)) {
+                        LOGGER.fine(String.format("[LensFlare] 输出 Image 创建成功 [%dx%d] image=0x%X view=0x%X",
                             w, h, outputImage, outputImageView));
                 } else {
                     LOGGER.warning("[LensFlare] createImage 返回无效资源");

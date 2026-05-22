@@ -19,12 +19,12 @@ import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode.Category;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
-import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 import com.ranecc.renderium.platform.bridge.mc.BatchTransformEngine;
 import com.ranecc.renderium.platform.bridge.mc.BatchTransformEngineV3;
 import com.ranecc.renderium.platform.bridge.mc.CommandBatcher;
@@ -36,6 +36,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * 阴影贴图生成节点 (Shadow Map Node)
@@ -130,6 +131,9 @@ public class ShadowMapNode extends AbstractPipelineNode {
 
     /** 最大支持的级联数量 */
     public static final int MAX_CASCADE_COUNT = 8;
+
+    /** FrameCommandContext 节点索引 */
+    private static final int NODE_ID = 1;
 
     /** 默认级联数量 */
     public static final int DEFAULT_CASCADE_COUNT = 4;
@@ -341,7 +345,7 @@ public class ShadowMapNode extends AbstractPipelineNode {
      */
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(1);
 
         // ══════════════════════════════════════
         // Step 1: 获取帧数据和批处理引擎
@@ -397,8 +401,9 @@ public class ShadowMapNode extends AbstractPipelineNode {
         this.lastFarPlane = farPlane;
         this.lastCascadeCount = currentCascadeCount;
 
-        LOGGER.fine(String.format(
-                "级联分割计算完成: count=%d, near=%.2f, far=%.2f, lambda=%.2f",
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "级联分割计算完成: count=%d, near=%.2f, far=%.2f, lambda=%.2f",
                 currentCascadeCount, nearPlane, farPlane, this.cascadeSplitLambda));
 
         // ══════════════════════════════════════
@@ -441,8 +446,8 @@ public class ShadowMapNode extends AbstractPipelineNode {
         // ══════════════════════════════════════
         // Step 6: 统计与日志
         // ══════════════════════════════════════
-        long elapsedNanos = System.nanoTime() - startTimeNanos;
-        totalExecuteTimeNanos += elapsedNanos;
+        RenderiumProfiler.recordEnd(1);
+        totalExecuteTimeNanos += RenderiumProfiler.getNodeTime(1);
         frameCount++;
 
         // 每 100 帧输出一次性能诊断
@@ -835,10 +840,9 @@ public class ShadowMapNode extends AbstractPipelineNode {
         ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, cascadeViews[cascadeIndex], 0L);
 
         // 分配 Command Buffer 并录制 Dispatch
-        long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+        long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
         if (cmdBuf == 0L) return;
         try {
-            LodCullingComputePass.beginCommandBuffer(cmdBuf);
 
             // 绑定 Compute Pipeline
             VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
@@ -859,13 +863,7 @@ public class ShadowMapNode extends AbstractPipelineNode {
             int totalThreads = (vertexCount + 63) / 64;
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, Math.max(1, totalThreads), 1, 1);
 
-            LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-            // 提交到 Graphics Queue 并等待完成
-            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            if (queue != 0L) {
-                VulkanSyncManager.submitAndWait(queue, cmdBuf);
-            }
+            FrameCommandContext.endNodeCB(NODE_ID);
         } catch (Throwable t) {
             LOGGER.fine("shadow dispatch 失败: " + t.getMessage());
         }

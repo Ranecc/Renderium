@@ -12,6 +12,7 @@ import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
@@ -55,6 +56,8 @@ public class GenericShaderNode extends AbstractPipelineNode
         implements ShaderNodeFactory.ParameterAware, ShaderNodeFactory.SpirvCapable {
 
     private static final Logger LOGGER = Logger.getLogger(GenericShaderNode.class.getName());
+
+    private static final int NODE_ID = 22;
 
     /** 关联的 Comp 描述符 */
     private volatile ShaderCompDescriptor descriptor;
@@ -410,10 +413,8 @@ public class GenericShaderNode extends AbstractPipelineNode
         if (device == 0L) return effectiveOutputHandle;
 
         try {
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf == 0L) return effectiveOutputHandle;
-
-            LodCullingComputePass.beginCommandBuffer(cmdBuf);
 
             // 更新 Descriptor Set 绑定输入/输出纹理
             if (descriptorSet != 0L) {
@@ -470,12 +471,7 @@ public class GenericShaderNode extends AbstractPipelineNode
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf,
                     workGroupX, workGroupY, 1);
 
-            LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            if (queue != 0L) {
-                VulkanSyncManager.submitAndWait(queue, cmdBuf);
-            }
+            FrameCommandContext.endNodeCB(NODE_ID);
 
             LOGGER.fine("Dispatch %s: %dx%d input=%d wg=(%d,%d) output=0x%x".formatted(
                     getName(), width, height, inputResources.length,

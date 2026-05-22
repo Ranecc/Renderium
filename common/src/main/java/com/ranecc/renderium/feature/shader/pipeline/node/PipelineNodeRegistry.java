@@ -139,7 +139,9 @@ public final class PipelineNodeRegistry {
         if (existing != null) {
             LOGGER.warning(String.format("节点 %s 已被覆盖", id));
         } else {
-            LOGGER.fine(String.format("注册节点: %s [%s]", id, node.getDisplayName()));
+            if (LOGGER.isLoggable(Level.FINE)) {
+                LOGGER.fine(String.format("注册节点: %s [%s]", id, node.getDisplayName()));
+            }
         }
     }
 
@@ -176,7 +178,9 @@ public final class PipelineNodeRegistry {
             LOGGER.warning(String.format("释放节点 %s 资源时出错: %s", nodeId, e.getMessage()));
         }
 
-        LOGGER.fine(String.format("注销节点: %s", nodeId));
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format("注销节点: %s", nodeId));
+        }
         return true;
     }
 

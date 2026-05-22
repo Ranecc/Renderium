@@ -20,10 +20,12 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 import com.ranecc.renderium.infrastructure.gpu.*;
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -55,6 +57,8 @@ import java.lang.foreign.ValueLayout;
 public class ExposureNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(ExposureNode.class.getName());
+
+    private static final int NODE_ID = 16;
 
     /** 曝光模式 */
     public enum ExposureMode {
@@ -132,7 +136,7 @@ public class ExposureNode extends AbstractPipelineNode {
 
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(16);
         if (inputResources == null || inputResources.length == 0) return 0L;
 
         ExposureMode currentMode = this.mode;
@@ -168,7 +172,8 @@ public class ExposureNode extends AbstractPipelineNode {
                         2.222f                 // white point (Reinhard)
                 });
 
-        totalExecuteTimeNanos += System.nanoTime() - startTimeNanos;
+        RenderiumProfiler.recordEnd(16);
+        totalExecuteTimeNanos += RenderiumProfiler.getNodeTime(16);
         totalFrames++;
         return outputTextureHandle;
     }
@@ -249,8 +254,7 @@ public class ExposureNode extends AbstractPipelineNode {
             ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 0, inTex, 0L);
             ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputImageView, 0L);
 
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
-            LodCullingComputePass.beginCommandBuffer(cmdBuf);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
 
             VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1L, computePipeline);
             VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1L, pipelineLayout, 0L, 1, descriptorSet, 0, 0L);
@@ -266,9 +270,7 @@ public class ExposureNode extends AbstractPipelineNode {
             int h = Math.max(1, (ctx.getHeight() + 7) / 8);
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
 
-            LodCullingComputePass.endCommandBuffer(cmdBuf);
-            long gfxQueue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            VulkanSyncManager.submitAndWait(gfxQueue, cmdBuf);
+            FrameCommandContext.endNodeCB(NODE_ID);
         } catch (Throwable t) {
             LOGGER.warning("[ExposureNode] dispatch error: " + t.getMessage());
         }

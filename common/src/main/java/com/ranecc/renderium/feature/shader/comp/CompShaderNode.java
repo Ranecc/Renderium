@@ -25,11 +25,11 @@ import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.feature.shader.settings.ShaderGraphicsConfig;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
-import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
@@ -69,6 +69,9 @@ import java.util.logging.Logger;
 public class CompShaderNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger("Renderium|CompShader");
+
+    /** FrameCommandContext 节点 ID，用于帧级共享 Command Buffer */
+    private static final int NODE_ID = 15;
 
     // ==================== 实例状态 ====================
 
@@ -409,10 +412,8 @@ public class CompShaderNode extends AbstractPipelineNode {
         if (device == 0L) return inputResources.length > 0 ? inputResources[0] : 0L;
 
         try {
-            long cmdBuf = com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.allocateCommandBuffer(device);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf == 0L) return inputResources.length > 0 ? inputResources[0] : 0L;
-
-            com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.beginCommandBuffer(cmdBuf);
 
             // 更新 DescriptorSet 绑定输入/输出纹理
             if (descriptorSet != 0L) {
@@ -455,12 +456,7 @@ public class CompShaderNode extends AbstractPipelineNode {
                 (cachedWidth + wgX - 1) / wgX,
                 (cachedHeight + wgY - 1) / wgY, wgZ);
 
-            com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            if (queue != 0L) {
-                VulkanSyncManager.submitAndWait(queue, cmdBuf);
-            }
+            FrameCommandContext.endNodeCB(NODE_ID);
         } catch (Throwable t) {
             LOGGER.fine("CompShader dispatch %s 失败: %s".formatted(getName(), t.getMessage()));
         }

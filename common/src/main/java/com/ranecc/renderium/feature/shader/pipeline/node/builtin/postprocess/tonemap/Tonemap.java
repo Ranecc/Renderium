@@ -17,19 +17,19 @@ package com.ranecc.renderium.feature.shader.pipeline.node.builtin.postprocess.to
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
-import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
-import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * 色调映射 (Tonemapping) 后处理节点
@@ -107,6 +107,9 @@ import java.util.logging.Logger;
 public class Tonemap extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(Tonemap.class.getName());
+
+    /** FrameCommandContext 节点 ID，用于帧级共享 Command Buffer */
+    private static final int NODE_ID = 5;
 
     /**
      * Shader key，镜像 shaders-src/ 目录结构
@@ -494,7 +497,7 @@ public class Tonemap extends AbstractPipelineNode {
             return 0L;
         }
 
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(5);
 
         // 快照读取 volatile 参数（一次读取，避免多次读不一致）
         float curExposure = this.exposure;
@@ -537,9 +540,8 @@ public class Tonemap extends AbstractPipelineNode {
             // pad0 (offset 24) 和 pad1 (offset 28) 保持 0
 
             // Vulkan compute dispatch
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf != 0L) {
-                LodCullingComputePass.beginCommandBuffer(cmdBuf);
                 VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
                 MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
                 dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
@@ -549,20 +551,16 @@ public class Tonemap extends AbstractPipelineNode {
                 int w = (context.getWidth() + 7) / 8;
                 int h = (context.getHeight() + 7) / 8;
                 VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
-                LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-                long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                if (queue != 0L) {
-                    VulkanSyncManager.submitAndWait(queue, cmdBuf);
-                }
+                FrameCommandContext.endNodeCB(NODE_ID);
             }
         } catch (Throwable t) {
             LOGGER.fine("[Tonemap] dispatch 失败: " + t.getMessage());
         }
 
-        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
-        LOGGER.fine(String.format(
-                "[Tonemap] 完成 | type=%s exp=%.2f gamma=%.2f sat=%.2f con=%.2f vig=%.2f | %.1f\u00b5s",
+        RenderiumProfiler.recordEnd(5);
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "[Tonemap] 完成 | type=%s exp=%.2f gamma=%.2f sat=%.2f con=%.2f vig=%.2f | %.1f\u00b5s",
                 tonemapType.name(), curExposure, curGamma, curSaturation,
                 curContrast, curVignetteStrength, elapsedMicros
         ));

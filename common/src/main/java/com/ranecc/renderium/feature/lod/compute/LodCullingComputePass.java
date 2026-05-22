@@ -703,6 +703,57 @@ public final class LodCullingComputePass {
      * - 内存带宽消耗：读取深度缓冲 + 写入可见性掩码
      * - 工作组大小：(screenWidth/16) x (screenHeight/16) for HiZ Build
      */
+
+    /**
+     * 异步提交 Hi-Z 遮挡查询（无阻塞）。
+     * 使用内部 ring buffer，结果通过 {@link #getCachedVisibilityResult} 获取。
+     * 适合在每帧渲染决策前调用，无需等待 GPU 完成。
+     *
+     * @param holder VulkanDeviceHolder 实例
+     * @return true 如果成功提交
+     */
+    public static boolean submitAsyncVisibilityQuery(VulkanDeviceHolder holder) {
+        if (!initialized) {
+            ensureInitialized(holder);
+            if (!initialized) return false;
+        }
+        int nextHead = (ringHead + 1) % RING_SLOT_COUNT;
+        if (nextHead == ringTail) return false;
+
+        long deviceHandle = holder.getVkDeviceHandle();
+        long queueHandle = holder.getComputeQueue();
+        if (deviceHandle == 0L || queueHandle == 0L) return false;
+
+        try {
+            long cmdBuf = getOrCreateCachedCmdBuf(deviceHandle);
+            if (cmdBuf == 0L) return false;
+
+            beginCachedCommandBuffer(cmdBuf);
+            bindAndDispatchHiZBuild(cmdBuf, holder);
+            insertMemoryBarrier(cmdBuf);
+            bindAndDispatchOcclusionQuery(cmdBuf, holder);
+            insertMemoryBarrier(cmdBuf);
+            dispatchLODCompute(cmdBuf);
+            insertMemoryBarrier(cmdBuf);
+            recordVisibilityReadback(cmdBuf, ringHead);
+            endCommandBuffer(cmdBuf);
+
+            long fence = VulkanSyncManager.acquireFence();
+            if (VulkanSyncManager.submitAsync(queueHandle, cmdBuf, fence)) {
+                if (slotFences[ringHead] != 0L) VulkanSyncManager.releaseFence(slotFences[ringHead]);
+                slotFences[ringHead] = fence;
+                ringHead = nextHead;
+                return true;
+            } else {
+                VulkanSyncManager.releaseFence(fence);
+                return false;
+            }
+        } catch (Exception e) {
+            LOGGER.warning("[LodCulling] submitAsyncVisibilityQuery failed: " + e.getMessage());
+            return false;
+        }
+    }
+
     public static void execute(VulkanDeviceHolder holder) {
         if (holder == null || !holder.isInitialized()) {
             LOGGER.fine("[LodCulling] VulkanDeviceHolder 未初始化，跳过");

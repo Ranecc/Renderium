@@ -18,11 +18,13 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 import com.ranecc.renderium.infrastructure.gpu.*;
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
@@ -74,6 +76,8 @@ import java.lang.foreign.ValueLayout;
 public class SkyBoxNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(SkyBoxNode.class.getName());
+
+    private static final int NODE_ID = 20;
 
     // ==================== 常量定义 ====================
 
@@ -206,7 +210,7 @@ public class SkyBoxNode extends AbstractPipelineNode {
 
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(20);
 
         // 参数快照（ThreadLocal 式单次读取）
         SkyType currentType = this.skyType;
@@ -231,8 +235,8 @@ public class SkyBoxNode extends AbstractPipelineNode {
         }
 
         // 更新统计
-        long elapsed = System.nanoTime() - startTimeNanos;
-        totalExecuteTimeNanos += elapsed;
+        RenderiumProfiler.recordEnd(20);
+        totalExecuteTimeNanos += RenderiumProfiler.getNodeTime(20);
         totalFrames++;
 
         return outputTextureHandle;
@@ -588,9 +592,8 @@ public class SkyBoxNode extends AbstractPipelineNode {
                     pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 2, exp);
                     pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 3, 0.0f); // pad
 
-                    cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+                    cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
                     if (cmdBuf == 0L) return;
-                    LodCullingComputePass.beginCommandBuffer(cmdBuf);
 
                     VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1L, pipeline);
                     VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
@@ -633,9 +636,8 @@ public class SkyBoxNode extends AbstractPipelineNode {
                     pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 2, 0.0f); // pad
                     pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 3, 0.0f); // pad
 
-                    cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+                    cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
                     if (cmdBuf == 0L) return;
-                    LodCullingComputePass.beginCommandBuffer(cmdBuf);
 
                     VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1L, pipeline);
                     VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
@@ -674,9 +676,8 @@ public class SkyBoxNode extends AbstractPipelineNode {
                     pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 2, exp);
                     pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 3, 0.0f); // pad
 
-                    cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+                    cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
                     if (cmdBuf == 0L) return;
-                    LodCullingComputePass.beginCommandBuffer(cmdBuf);
 
                     VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1L, pipeline);
                     VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
@@ -694,16 +695,7 @@ public class SkyBoxNode extends AbstractPipelineNode {
                     return;
             }
 
-            if (cmdBuf != 0L) {
-                LodCullingComputePass.endCommandBuffer(cmdBuf);
-                long queue = VulkanDeviceHolder.getInstance().getComputeQueue();
-                if (queue == 0L) {
-                    queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                }
-                if (queue != 0L) {
-                    VulkanSyncManager.submitAndWait(queue, cmdBuf);
-                }
-            }
+            FrameCommandContext.endNodeCB(NODE_ID);
         } catch (Throwable t) {
             LOGGER.warning("[SkyBoxNode] dispatch error [" + shaderPass + "]: " + t.getMessage());
         }

@@ -24,11 +24,13 @@ import com.ranecc.renderium.infrastructure.gpu.*;
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * PBR 材质计算节点（Disney Principled BSDF）
@@ -65,6 +67,8 @@ import java.util.logging.Logger;
 public class PBRMaterialNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(PBRMaterialNode.class.getName());
+
+    private static final int NODE_ID = 18;
 
     // ==================== 参数常量 ====================
 
@@ -183,7 +187,7 @@ public class PBRMaterialNode extends AbstractPipelineNode {
 
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(18);
 
         if (inputResources == null || inputResources.length == 0) {
             return 0L;
@@ -237,8 +241,8 @@ public class PBRMaterialNode extends AbstractPipelineNode {
                         r * r           // alpha (roughness^2, 用于 GGX)
                 });
 
-        long elapsed = System.nanoTime() - startTimeNanos;
-        totalExecuteTimeNanos += elapsed;
+        RenderiumProfiler.recordEnd(18);
+        totalExecuteTimeNanos += RenderiumProfiler.getNodeTime(18);
         totalFrames++;
 
         return outputImageView;
@@ -376,10 +380,8 @@ public class PBRMaterialNode extends AbstractPipelineNode {
         if (device == 0L || computePipeline == 0L || descriptorSet == 0L) return;
 
         try {
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf == 0L) return;
-
-            LodCullingComputePass.beginCommandBuffer(cmdBuf);
 
             // 更新 DescriptorSet：binding 0..3 = G-Buffer 输入（只读存储图像），binding 4 = 输出（写入存储图像）
             for (int i = 0; i < 4; i++) {
@@ -422,12 +424,7 @@ public class PBRMaterialNode extends AbstractPipelineNode {
             // Dispatch
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupsX, groupsY, 1);
 
-            LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            if (queue != 0L) {
-                VulkanSyncManager.submitAndWait(queue, cmdBuf);
-            }
+            FrameCommandContext.endNodeCB(NODE_ID);
 
             LOGGER.finest("[PBRMaterialNode] " + pass + " dispatch 完成: " + w + "x" + h + " groups=" + groupsX + "x" + groupsY);
 

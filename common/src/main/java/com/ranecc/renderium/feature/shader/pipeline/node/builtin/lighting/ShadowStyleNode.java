@@ -19,6 +19,7 @@ import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.*;
@@ -26,6 +27,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * 阴影风格控制节点
@@ -64,6 +66,8 @@ import java.util.logging.Logger;
 public class ShadowStyleNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(ShadowStyleNode.class.getName());
+
+    private static final int NODE_ID = 17;
 
     /** 阴影风格枚举 */
     public enum ShadowStyle {
@@ -129,7 +133,7 @@ public class ShadowStyleNode extends AbstractPipelineNode {
 
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(17);
         if (inputResources == null || inputResources.length == 0) return 0L;
 
         ShadowStyle currentStyle = this.style;
@@ -156,7 +160,8 @@ public class ShadowStyleNode extends AbstractPipelineNode {
                         currentColor[0], currentColor[1], currentColor[2]
                 });
 
-        totalExecuteTimeNanos += System.nanoTime() - startTimeNanos;
+        RenderiumProfiler.recordEnd(17);
+        totalExecuteTimeNanos += RenderiumProfiler.getNodeTime(17);
         totalFrames++;
         return outputTextureHandle;
     }
@@ -195,9 +200,7 @@ public class ShadowStyleNode extends AbstractPipelineNode {
      * @return float[] - RGB 数组副本
      */
     public float[] getShadowColor() {
-        synchronized (this) {
-            return this.shadowColor.clone();
-        }
+        return this.shadowColor;
     }
 
     public void setEdgeSoftness(float v) { this.edgeSoftness = clamp01(v); }
@@ -277,28 +280,8 @@ public class ShadowStyleNode extends AbstractPipelineNode {
             ComputePipelineHelper.updateStorageImageDescriptor(device, descriptorSet, 1, outputImageView,
                     ComputePipelineHelper.VK_IMAGE_LAYOUT_GENERAL);
 
-            // Allocate and begin a temporary command buffer for compute dispatch
-            long commandPool = LodCullingComputePass.getCommandPool();
-            if (commandPool == 0L) return;
-
-            MemorySegment allocInfo = arena.allocate(5 * 8L);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 46L); // VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, commandPool);
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 1L); // VK_COMMAND_BUFFER_LEVEL_PRIMARY
-            allocInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 1L); // commandBufferCount
-
-            MemorySegment cmdOut = arena.allocate(ValueLayout.JAVA_LONG);
-            VulkanAPIRegistry.invoke("vkAllocateCommandBuffers", device, allocInfo.address(), cmdOut.address());
-            long cmdBuf = cmdOut.get(ValueLayout.JAVA_LONG, 0);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf == 0L) return;
-
-            // Image memory barrier: output image UNDEFINED → GENERAL
-            MemorySegment beginInfo = arena.allocate(3 * 8L);
-            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 42L); // VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
-            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
-            beginInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L); // flags
-            VulkanAPIRegistry.invoke("vkBeginCommandBuffer", cmdBuf, beginInfo.address());
 
             // VkImageMemoryBarrier: oldLayout=UNDEFINED(0), newLayout=GENERAL(1)
             MemorySegment barrier = arena.allocate(68L);
@@ -349,44 +332,7 @@ public class ShadowStyleNode extends AbstractPipelineNode {
             int groupsY = Math.max(1, (height + 7) / 8);
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupsX, groupsY, 1);
 
-            // End command buffer
-            VulkanAPIRegistry.invoke("vkEndCommandBuffer", cmdBuf);
-
-            // Submit to compute queue and wait
-            long queue = VulkanDeviceHolder.getInstance().getComputeQueue();
-            if (queue == 0L) queue = VulkanDeviceHolder.getInstance().getVkQueue();
-            if (queue == 0L) {
-                VulkanAPIRegistry.invoke("vkFreeCommandBuffers", device, commandPool, 1, cmdBuf);
-                return;
-            }
-
-            long fence = LodCullingComputePass.getFence();
-            if (fence == 0L) {
-                MemorySegment fenceCI = arena.allocate(3 * 8L);
-                fenceCI.setAtIndex(ValueLayout.JAVA_LONG, 0, 8L); // VK_STRUCTURE_TYPE_FENCE_CREATE_INFO
-                fenceCI.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
-                fenceCI.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L); // flags = 0 (unsignaled)
-                MemorySegment fenceOut = arena.allocate(ValueLayout.JAVA_LONG);
-                VulkanAPIRegistry.invoke("vkCreateFence", device, fenceCI.address(), 0L, fenceOut.address());
-                fence = fenceOut.get(ValueLayout.JAVA_LONG, 0);
-            } else {
-                VulkanAPIRegistry.invoke("vkResetFences", device, 1, fence);
-            }
-
-            MemorySegment submitInfo = arena.allocate(7 * 8L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 0, 4L); // VK_STRUCTURE_TYPE_SUBMIT_INFO
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 1, 0L);
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 2, 0L); // waitSemaphoreCount
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 3, 0L); // pWaitSemaphores
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 4, 0L); // pWaitDstStageMask
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 5, 1L); // commandBufferCount
-            submitInfo.setAtIndex(ValueLayout.JAVA_LONG, 6, cmdBuf); // pCommandBuffers
-
-            VulkanAPIRegistry.invoke("vkQueueSubmit", queue, 1, submitInfo.address(), fence);
-            VulkanAPIRegistry.invoke("vkWaitForFences", device, 1, fence, 1L, 1000000000L); // 1s timeout
-
-            // Cleanup temporary command buffer
-            VulkanAPIRegistry.invoke("vkFreeCommandBuffers", device, commandPool, 1, cmdBuf);
+            FrameCommandContext.endNodeCB(NODE_ID);
 
             // Update output texture handle to point to our compute output
             outputTextureHandle = outputImageView;

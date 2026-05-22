@@ -24,12 +24,14 @@ package com.ranecc.renderium.feature.shader.pipeline.node.builtin;
 
 
 import java.util.logging.Level;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 import java.util.logging.Logger;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.infrastructure.gpu.VulkanOperationGuard;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.*;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
@@ -70,6 +72,8 @@ import java.lang.foreign.ValueLayout;
 public class RayTracingNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(RayTracingNode.class.getName());
+
+    private static final int NODE_ID = 23;
 
     /** 所需的 Vulkan RT 扩展列表 */
     private static final String[] REQUIRED_RT_EXTENSIONS = {
@@ -186,14 +190,15 @@ public class RayTracingNode extends AbstractPipelineNode {
         // 创建加速结构
         buildAccelerationStructures(context);
 
-        LOGGER.fine(String.format("RT Node: available=%b, enabled=%b, rays=%d, cache=%dx%d",
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format("RT Node: available=%b, enabled=%b, rays=%d, cache=%dx%d",
                 rtAvailable, rtEnabled, rayCount, cachedWidth, cachedHeight));
         return true;
     }
 
     @Override
     public long execute(RenderContext context, long... inputResources) {
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(23);
         if (inputResources == null || inputResources.length == 0) return 0L;
 
         boolean currentEnabled = this.rtEnabled && this.rtAvailable;
@@ -203,7 +208,8 @@ public class RayTracingNode extends AbstractPipelineNode {
 
         if (!currentEnabled) {
             // 回退模式：直接传递输入（不执行 RT）
-            totalExecuteTimeNanos += System.nanoTime() - startTimeNanos;
+            RenderiumProfiler.recordEnd(23);
+            totalExecuteTimeNanos += RenderiumProfiler.getNodeTime(23);
             totalFrames++;
             return inputResources[0];
         }
@@ -219,7 +225,8 @@ public class RayTracingNode extends AbstractPipelineNode {
             blitTexture(rtOutputTexture, outputTextureHandle);
         }
 
-        totalExecuteTimeNanos += System.nanoTime() - startTimeNanos;
+        RenderiumProfiler.recordEnd(23);
+        totalExecuteTimeNanos += RenderiumProfiler.getNodeTime(23);
         totalFrames++;
         return outputTextureHandle;
     }
@@ -282,8 +289,7 @@ public class RayTracingNode extends AbstractPipelineNode {
 
             // 去噪 Dispatch（实验性功能，异常时跳过）
             try {
-                long cmdBuf2 = LodCullingComputePass.allocateCommandBuffer(dev2);
-                LodCullingComputePass.beginCommandBuffer(cmdBuf2);
+                long cmdBuf2 = FrameCommandContext.beginNodeCB(NODE_ID);
                 VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf2, 1L, denoisePipeline);
                 VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf2, 1L, denoiseLayout, 0L, 1, denoiseSet, 0, 0L);
                 MemorySegment pcData2 = Arena.global().allocate(32);
@@ -295,11 +301,7 @@ public class RayTracingNode extends AbstractPipelineNode {
                 int w2 = Math.max(1, (context.getWidth() + 7) / 8);
                 int h2 = Math.max(1, (context.getHeight() + 7) / 8);
                 VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf2, w2, h2, 1);
-                LodCullingComputePass.endCommandBuffer(cmdBuf2);
-                long graphicsQueue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                if (graphicsQueue != 0L) {
-                    VulkanSyncManager.submitAndWait(graphicsQueue, cmdBuf2);
-                }
+                FrameCommandContext.endNodeCB(NODE_ID);
             } catch (Throwable t) {
                 LOGGER.log(Level.WARNING, "RayTracingNode: 去噪 dispatch 异常，跳过", t);
             }
@@ -312,9 +314,8 @@ public class RayTracingNode extends AbstractPipelineNode {
         long device = VulkanDeviceHolder.getInstance().getDevice();
         if (device == 0L || tracePipeline == 0L || traceSet == 0L) return;
         try {
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf == 0L) return;
-            LodCullingComputePass.beginCommandBuffer(cmdBuf);
 
             for (int i = 0; i < inputs.length; i++) {
                 if (inputs[i] != 0L) {
@@ -345,12 +346,7 @@ public class RayTracingNode extends AbstractPipelineNode {
             int h = Math.max(1, (context.getHeight() + 7) / 8);
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
 
-            LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            if (queue != 0L) {
-                VulkanSyncManager.submitAndWait(queue, cmdBuf);
-            }
+            FrameCommandContext.endNodeCB(NODE_ID);
             LOGGER.finest("[RT] " + pass + " dispatch: " + w + "x" + h);
         } catch (Throwable t) {
             LOGGER.fine("[RT] " + pass + " dispatch error: " + t.getMessage());
@@ -363,9 +359,8 @@ public class RayTracingNode extends AbstractPipelineNode {
         long device = VulkanDeviceHolder.getInstance().getDevice();
         if (device == 0L || denoisePipeline == 0L || denoiseSet == 0L) return;
         try {
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf == 0L) return;
-            LodCullingComputePass.beginCommandBuffer(cmdBuf);
 
             ComputePipelineHelper.updateStorageImageDescriptor(device, denoiseSet, 0, source, 0L);
             ComputePipelineHelper.updateStorageImageDescriptor(device, denoiseSet, 1, target, 0L);
@@ -392,12 +387,7 @@ public class RayTracingNode extends AbstractPipelineNode {
             int h = Math.max(1, (context.getHeight() + 7) / 8);
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
 
-            LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            if (queue != 0L) {
-                VulkanSyncManager.submitAndWait(queue, cmdBuf);
-            }
+            FrameCommandContext.endNodeCB(NODE_ID);
             LOGGER.finest("[RT] " + pass + " dispatch: " + w + "x" + h);
         } catch (Throwable t) {
             LOGGER.fine("[RT] " + pass + " dispatch error: " + t.getMessage());

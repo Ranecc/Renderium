@@ -23,19 +23,20 @@ import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
-import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
-import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
+import java.util.logging.Level;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * 自动曝光节点 (Auto Exposure)
@@ -96,6 +97,9 @@ import java.util.logging.Logger;
 public class AutoExposureNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(AutoExposureNode.class.getName());
+
+    /** FrameCommandContext 节点 ID，用于帧级共享 Command Buffer */
+    private static final int NODE_ID = 6;
 
     /**
      * Shader key，镜像 shaders-src/ 目录结构
@@ -270,7 +274,7 @@ public class AutoExposureNode extends AbstractPipelineNode {
             return 0L;
         }
 
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(6);
 
         float curTargetLuminance = this.targetLuminance;
         float curAdaptationRate = curAdaptationSpeed;
@@ -308,9 +312,8 @@ public class AutoExposureNode extends AbstractPipelineNode {
             params.set(ValueLayout.JAVA_FLOAT, 28, 0.0f); // padding
 
             // Vulkan compute dispatch
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf != 0L) {
-                LodCullingComputePass.beginCommandBuffer(cmdBuf);
                 VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
                 MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
                 dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
@@ -320,12 +323,7 @@ public class AutoExposureNode extends AbstractPipelineNode {
                 int w = (context.getWidth() + 15) / 16;
                 int h = (context.getHeight() + 15) / 16;
                 VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
-                LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-                long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                if (queue != 0L) {
-                    VulkanSyncManager.submitAndWait(queue, cmdBuf);
-                }
+                FrameCommandContext.endNodeCB(NODE_ID);
             }
         } catch (Throwable t) {
             LOGGER.fine("[AutoExposure] dispatch 失败: " + t.getMessage());
@@ -339,9 +337,10 @@ public class AutoExposureNode extends AbstractPipelineNode {
         }
         this.frameCount = curFrameCount + 1;
 
-        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
-        LOGGER.fine(String.format(
-                "[AutoExposure] 完成 | targetLum=%.2f rate=%.2f minExp=%.1f maxExp=%.1f mode=%d prevExp=%.2f | %.1fμs",
+        RenderiumProfiler.recordEnd(6);
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "[AutoExposure] 完成 | targetLum=%.2f rate=%.2f minExp=%.1f maxExp=%.1f mode=%d prevExp=%.2f | %.1f\u00b5s",%.1fμs",
                 curTargetLuminance, curAdaptationRate, curMinExposure, curMaxExposure,
                 curMeteringMode, this.prevExposure, elapsedMicros
         ));

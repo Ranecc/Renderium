@@ -24,11 +24,13 @@ import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * 体积雾节点 (Volumetric Fog)
@@ -108,6 +110,9 @@ public class VolumetricFogNode extends AbstractPipelineNode {
 
     /** Froxel 总数 */
     private static final int FROXEL_TOTAL = FROXEL_X * FROXEL_Y * FROXEL_Z;
+
+    /** FrameCommandContext 节点索引 */
+    private static final int NODE_ID = 14;
 
     // ==================== 参数边界 ====================
 
@@ -250,7 +255,7 @@ public class VolumetricFogNode extends AbstractPipelineNode {
             return 0L;
         }
 
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(14);
 
         float curFalloff = this.fogHeightFalloff;
         int curSteps = curMarchSteps;
@@ -276,9 +281,8 @@ public class VolumetricFogNode extends AbstractPipelineNode {
             ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputImageView != 0L ? outputImageView : inputResources[0], 0L);
         }
         try {
-            long cmdBuf = com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.allocateCommandBuffer(dev);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf != 0L) {
-                com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.beginCommandBuffer(cmdBuf);
                 com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
                 MemorySegment dsPtr = com.ranecc.renderium.infrastructure.gpu.PerFrameArena.allocateLongs(1);
                 dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
@@ -287,19 +291,16 @@ public class VolumetricFogNode extends AbstractPipelineNode {
                 int w = (context.getWidth() + 7) / 8;
                 int h = (context.getHeight() + 7) / 8;
                 com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
-                com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.endCommandBuffer(cmdBuf);
-                long queue = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                if (queue != 0L) {
-                    com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager.submitAndWait(queue, cmdBuf);
-                }
+                FrameCommandContext.endNodeCB(NODE_ID);
             }
         } catch (Throwable t) {
             LOGGER.fine("[VolFog] dispatch 失败: " + t.getMessage());
         }
 
-        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
-        LOGGER.fine(String.format(
-                "[VolFog] 完成 | density=%.2f falloff=%.4f steps=%d aniso=%.2f | pipeline=0x%X | %.1fμs",
+        RenderiumProfiler.recordEnd(14);
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "[VolFog] 完成 | density=%.2f falloff=%.4f steps=%d aniso=%.2f | pipeline=0x%X | %.1f\u00b5s",
                 curDensity, curFalloff, curSteps, curAniso, computePipeline, elapsedMicros
         ));
 
@@ -523,7 +524,8 @@ public class VolumetricFogNode extends AbstractPipelineNode {
                     outputImageView = newView;
                     lastOutputWidth = w;
                     lastOutputHeight = h;
-                    LOGGER.fine(String.format("[VolFog] 输出 Image 创建成功: %dx%d image=0x%X view=0x%X", w, h, newImage, newView));
+                    if (LOGGER.isLoggable(Level.FINE)) {
+                        LOGGER.fine(String.format("[VolFog] 输出 Image 创建成功: %dx%d image=0x%X view=0x%X", w, h, newImage, newView));
                 } else {
                     LOGGER.warning("[VolFog] createView 失败");
                 }

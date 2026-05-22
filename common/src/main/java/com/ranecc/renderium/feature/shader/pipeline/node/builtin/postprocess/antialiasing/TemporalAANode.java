@@ -21,12 +21,14 @@ import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.PostProcessComputeHelper;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * 时域抗锯齿节点 (Temporal Anti-Aliasing)
@@ -111,6 +113,9 @@ public class TemporalAANode extends AbstractPipelineNode {
 
     /** 历史帧混合权重默认值 */
     private static final float BLEND_WEIGHT_DEFAULT = 0.1f;
+
+    /** FrameCommandContext 节点索引 */
+    private static final int NODE_ID = 11;
 
     // ==================== 可调参数 ====================
 
@@ -219,7 +224,7 @@ public class TemporalAANode extends AbstractPipelineNode {
             return 0L;
         }
 
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(11);
 
         float curSharpness = curJitterStrength;
         float curBlendWeight = curBlendFactor;
@@ -247,9 +252,8 @@ public class TemporalAANode extends AbstractPipelineNode {
             ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 3, outputImageView, 0L);
         }
         try {
-            long cmdBuf = com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.allocateCommandBuffer(dev);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf != 0L) {
-                com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.beginCommandBuffer(cmdBuf);
                 com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
                 MemorySegment dsPtr = com.ranecc.renderium.infrastructure.gpu.PerFrameArena.allocateLongs(1);
                 dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
@@ -258,11 +262,7 @@ public class TemporalAANode extends AbstractPipelineNode {
                 int w = (context.getWidth() + 7) / 8;
                 int h = (context.getHeight() + 7) / 8;
                 com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
-                com.ranecc.renderium.feature.lod.compute.LodCullingComputePass.endCommandBuffer(cmdBuf);
-                long queue = com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                if (queue != 0L) {
-                    com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager.submitAndWait(queue, cmdBuf);
-                }
+                FrameCommandContext.endNodeCB(NODE_ID);
             }
         } catch (Throwable t) {
             LOGGER.fine("[TAA] dispatch 失败: " + t.getMessage());
@@ -271,9 +271,10 @@ public class TemporalAANode extends AbstractPipelineNode {
         long previousHistory = this.historyColorBuffer;
         this.historyColorBuffer = outputImageView;
 
-        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
-        LOGGER.fine(String.format(
-                "[TAA] 完成 | blend=%.2f sharpness=%.2f clamp=%b velReject=%b | outputView=0x%X prevHistory=0x%X | %.1fμs",
+        RenderiumProfiler.recordEnd(11);
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "[TAA] 完成 | blend=%.2f sharpness=%.2f clamp=%b velReject=%b | outputView=0x%X prevHistory=0x%X | %.1f\u00b5s",%.1fμs",
                 curBlendWeight, curSharpness, curClamp, curVelReject, outputImageView, previousHistory, elapsedMicros
         ));
 

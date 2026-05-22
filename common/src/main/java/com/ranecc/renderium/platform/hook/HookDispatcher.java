@@ -9,6 +9,9 @@ import com.ranecc.renderium.infrastructure.sanitizer.LazyGuard;
 import com.ranecc.renderium.infrastructure.sanitizer.DirtyFrameScope;
 import com.ranecc.renderium.infrastructure.sanitizer.EntityBudget;
 import com.ranecc.renderium.infrastructure.sanitizer.AutoCleanScheduler;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
+import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * 热路径调度核心 — 高性能 Hook 分发器
@@ -382,6 +385,16 @@ public final class HookDispatcher {
             ctx.setDirtyFrameScope(scope);
             EntityBudget.check(ctx.entityCount);
         }
+
+        if (!FrameCommandContext.isInitialized()) {
+            long dev = VulkanDeviceHolder.getInstance().getDevice();
+            if (dev != 0L) {
+                long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+                FrameCommandContext.init(dev, queue != 0L ? queue : VulkanDeviceHolder.getInstance().getComputeQueue());
+            }
+        }
+        FrameCommandContext.beginFrame();
+        RenderiumProfiler.beginFrame();
     }
 
     /**
@@ -397,6 +410,9 @@ public final class HookDispatcher {
             description = "每帧出口处的清理和统计"
     )
     public static void onFrameEnd(FrameContext ctx) {
+        RenderiumProfiler.endFrame();
+        FrameCommandContext.endFrame();
+
         Object scope = ctx.getDirtyFrameScope();
         if (scope instanceof DirtyFrameScope) {
             ((DirtyFrameScope) scope).close();

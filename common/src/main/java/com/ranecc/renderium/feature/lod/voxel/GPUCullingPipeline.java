@@ -372,34 +372,18 @@ public class GPUCullingPipeline {
             return executeCPUCulling(cameraPos, frustum, candidateCount);
         }
 
-        long device = VulkanDeviceHolder.getInstance().getDevice();
-        if (device == 0L || !LodCullingComputePass.isInitialized()) {
+        var holder = VulkanDeviceHolder.getInstance();
+        if (holder.getDevice() == 0L || !LodCullingComputePass.isInitialized()) {
             return executeCPUCulling(cameraPos, frustum, candidateCount);
         }
 
         try {
-            long cmdBuf = LodCullingComputePass.getOrCreateCachedCmdBuf(device);
-            if (cmdBuf == 0L) {
-                LOGGER.fine("Cached CB unavailable, fallback to CPU");
-                return executeCPUCulling(cameraPos, frustum, candidateCount);
+            BitSet cached = LodCullingComputePass.getCachedVisibilityResult(candidateCount);
+            LodCullingComputePass.submitAsyncVisibilityQuery(holder);
+            if (cached != null) {
+                return cached;
             }
-
-            LodCullingComputePass.beginCachedCommandBuffer(cmdBuf);
-            LodCullingComputePass.bindAndDispatchHiZBuild(cmdBuf, VulkanDeviceHolder.getInstance());
-            LodCullingComputePass.insertMemoryBarrier(cmdBuf);
-            LodCullingComputePass.bindAndDispatchOcclusionQuery(cmdBuf, VulkanDeviceHolder.getInstance());
-            LodCullingComputePass.recordVisibilityReadback(cmdBuf, 0);
-            LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-            if (queue == 0L) return executeCPUCulling(cameraPos, frustum, candidateCount);
-
-            VulkanSyncManager.submitAndWait(queue, cmdBuf);
-
-            BitSet result = LodCullingComputePass.readbackVisibilityBitSet(candidateCount, 0);
-            LOGGER.fine(String.format("Hi-Z Occlusion: %d → %d visible (GPU)", candidateCount, result.cardinality()));
-            return result;
-
+            return executeCPUCulling(cameraPos, frustum, candidateCount);
         } catch (Throwable t) {
             LOGGER.warning("executeGPUCulling failed, falling back to CPU: " + t.getMessage());
             return executeCPUCulling(cameraPos, frustum, candidateCount);

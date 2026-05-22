@@ -19,16 +19,18 @@ import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.infrastructure.gpu.ComputePipelineHelper;
+import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 import com.ranecc.renderium.infrastructure.gpu.VulkanAPIRegistry;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
-import com.ranecc.renderium.infrastructure.gpu.VulkanSyncManager;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
+import java.util.logging.Level;
+import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
 
 /**
  * 色差节点 (Chromatic Aberration)
@@ -111,6 +113,9 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
 
     /** 中心点偏移默认值 */
     private static final float CENTER_OFFSET_DEFAULT = 0.0f;
+
+    /** FrameCommandContext 节点索引 */
+    private static final int NODE_ID = 12;
 
     // ==================== 可调参数 ====================
 
@@ -209,7 +214,7 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
             return 0L;
         }
 
-        long startTimeNanos = System.nanoTime();
+        RenderiumProfiler.recordStart(12);
 
         boolean curRadial = this.radial;
         float curCenterOffsetX = this.centerOffsetX;
@@ -241,9 +246,8 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
             params.set(ValueLayout.JAVA_FLOAT, 20, curCenterOffsetY);
 
             // Vulkan compute dispatch
-            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+            long cmdBuf = FrameCommandContext.beginNodeCB(NODE_ID);
             if (cmdBuf != 0L) {
-                LodCullingComputePass.beginCommandBuffer(cmdBuf);
                 VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
                 MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
                 dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
@@ -253,20 +257,16 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
                 int w = (context.getWidth() + 7) / 8;
                 int h = (context.getHeight() + 7) / 8;
                 VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
-                LodCullingComputePass.endCommandBuffer(cmdBuf);
-
-                long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
-                if (queue != 0L) {
-                    VulkanSyncManager.submitAndWait(queue, cmdBuf);
-                }
+                FrameCommandContext.endNodeCB(NODE_ID);
             }
         } catch (Throwable t) {
             LOGGER.fine("[ChromaticAberration] dispatch 失败: " + t.getMessage());
         }
 
-        long elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000;
-        LOGGER.fine(String.format(
-                "[ChromaticAberration] 完成 | strength=%.4f radial=%b center=(%.2f,%.2f) | %.1fμs",
+        RenderiumProfiler.recordEnd(12);
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine(String.format(
+                    "[ChromaticAberration] 完成 | strength=%.4f radial=%b center=(%.2f,%.2f) | %.1f\u00b5s",
                 curStrength, curRadial, curCenterOffsetX, curCenterOffsetY, elapsedMicros
         ));
 
