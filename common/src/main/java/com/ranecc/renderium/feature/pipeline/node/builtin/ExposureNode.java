@@ -20,6 +20,11 @@ import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
+import com.ranecc.renderium.infrastructure.gpu.*;
+import com.ranecc.renderium.domain.constant.VulkanConst;
+import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 
 /**
  * 曝光控制节点
@@ -74,6 +79,16 @@ public class ExposureNode extends AbstractPipelineNode {
 
     // 运行时状态
     private long outputTextureHandle = 0L;
+
+    // GPU compute 资源
+    private static final String SHADER_PATH = "/shaders/exposure_tonemap.spv";
+    private volatile long computePipeline = 0L;
+    private volatile long pipelineLayout = 0L;
+    private volatile long descriptorSet = 0L;
+    private volatile long outputImage = 0L;
+    private volatile long outputImageView = 0L;
+    private volatile int lastWidth = 0;
+    private volatile int lastHeight = 0;
 
     /** 当前有效曝光值（用于眼睛适应插值） */
     private volatile float currentExposure = 1.0f;
@@ -161,13 +176,6 @@ public class ExposureNode extends AbstractPipelineNode {
         return 1.0f / (float) Math.pow(2.0, ev100 / 100.0);
     }
 
-    @Override
-    protected void onDispose() {
-        releaseTexture(outputTextureHandle);
-        outputTextureHandle = 0L;
-        releaseShaderPrograms();
-    }
-
     // ==================== 配置 API ====================
 
     public void setMode(ExposureMode m) { if (m != null) this.mode = m; }
@@ -216,6 +224,114 @@ public class ExposureNode extends AbstractPipelineNode {
     }
     private void submitFullScreenDraw(RenderContext ctx, String pass, long inTex, long outTex, float[] uniforms) {
         if (!VulkanGraphicsHelper.isAvailable()) return;
-        LOGGER.fine("[ExposureNode] submitted " + pass + " pass");
+
+        long dev = VulkanDeviceHolder.getInstance().getDevice();
+        if (dev == 0L) return;
+
+        try {
+            float exposure = uniforms.length > 0 ? uniforms[0] : 1.0f;
+            float minExp = uniforms.length > 1 ? uniforms[1] : 0.1f;
+            float maxExp = uniforms.length > 2 ? uniforms[2] : 5.0f;
+            float whitePoint = uniforms.length > 3 ? uniforms[3] : 2.222f;
+
+            ensurePipeline();
+            ensureOutputImage(ctx.getWidth(), ctx.getHeight());
+
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 0, inTex, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev, descriptorSet, 1, outputImageView, 0L);
+
+            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(dev);
+            LodCullingComputePass.beginCommandBuffer(cmdBuf);
+
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1L, computePipeline);
+            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1L, pipelineLayout, 0L, 1, descriptorSet, 0, 0L);
+
+            MemorySegment pcData = PerFrameArena.allocate(32);
+            pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 0, exposure);
+            pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 1, minExp);
+            pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 2, maxExp);
+            pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 3, whitePoint);
+            VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, pipelineLayout, 0x20L, 0L, 32, pcData);
+
+            int w = Math.max(1, (ctx.getWidth() + 7) / 8);
+            int h = Math.max(1, (ctx.getHeight() + 7) / 8);
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
+
+            LodCullingComputePass.endCommandBuffer(cmdBuf);
+            VulkanSyncManager.submitAndWait(cmdBuf);
+        } catch (Throwable t) {
+            LOGGER.warning("[ExposureNode] dispatch error: " + t.getMessage());
+        }
+    }
+
+    private void ensurePipeline() {
+        if (computePipeline != 0L) return;
+        synchronized (this) {
+            if (computePipeline != 0L) return;
+            try {
+                byte[] spirv = loadSPIRV(SHADER_PATH);
+                if (spirv == null) { LOGGER.warning("Failed to load SPIR-V"); return; }
+
+                int[] bindings = {
+                    0, 10, 1,  // binding 0: STORAGE_IMAGE (readonly)
+                    1, 10, 1   // binding 1: STORAGE_IMAGE (writeonly)
+                };
+                var result = ComputePipelineHelper.createComputePipeline(spirv, bindings, 32);
+                computePipeline = result.pipeline;
+                pipelineLayout = result.layout;
+                descriptorSet = result.descriptorSet;
+            } catch (Throwable t) {
+                LOGGER.warning("[ExposureNode] createPipeline error: " + t.getMessage());
+            }
+        }
+    }
+
+    private void ensureOutputImage(int w, int h) {
+        if (outputImage != 0L && lastWidth == w && lastHeight == h) return;
+        synchronized (this) {
+            if (outputImage != 0L && lastWidth == w && lastHeight == h) return;
+            var mgr = VulkanGPUResourceManager.getInstance();
+            if (outputImageView != 0L) { try { mgr.destroyView(outputImageView); } catch (Throwable ignored) {} }
+            if (outputImage != 0L) { try { mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastWidth, lastHeight, 44, VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {} }
+
+            var res = mgr.createImage(w, h, 28, 0x20 | 0x10, VmaMemoryPools.PoolType.RENDER_TARGET);
+            if (res != null && res.handle != 0L) {
+                outputImage = res.handle;
+                outputImageView = mgr.createView(outputImage, 28, 1);
+                lastWidth = w; lastHeight = h;
+            }
+        }
+    }
+
+    private byte[] loadSPIRV(String path) {
+        try (var is = getClass().getResourceAsStream(path)) {
+            if (is == null) return null;
+            return is.readAllBytes();
+        } catch (Exception e) {
+            LOGGER.warning("[ExposureNode] loadSPIRV error: " + e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    protected void onDispose() {
+        // 先释放原始资源
+        releaseTexture(outputTextureHandle);
+        outputTextureHandle = 0L;
+        releaseShaderPrograms();
+
+        // 释放 GPU compute 资源
+        long dev = VulkanDeviceHolder.getInstance().getDevice();
+        if (dev != 0L) {
+            if (computePipeline != 0L) { try { VulkanAPIRegistry.invoke("vkDestroyPipeline", dev, computePipeline, 0L); } catch (Throwable ignored) {} computePipeline = 0L; }
+            if (pipelineLayout != 0L) { try { VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", dev, pipelineLayout, 0L); } catch (Throwable ignored) {} pipelineLayout = 0L; }
+            if (outputImageView != 0L) { try { VulkanAPIRegistry.invoke("vkDestroyImageView", dev, outputImageView, 0L); } catch (Throwable ignored) {} outputImageView = 0L; }
+        }
+        if (outputImage != 0L) {
+            try { VulkanGPUResourceManager.getInstance().releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastWidth, lastHeight, 44, VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
+            outputImage = 0L;
+        }
+        lastWidth = 0; lastHeight = 0;
+        LOGGER.fine("[ExposureNode] resources released");
     }
 }

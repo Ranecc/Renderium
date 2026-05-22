@@ -1,0 +1,48 @@
+#version 460
+// PBRMaterialNode - PBR 材质 Compute Shader
+// 输入: G-Buffer (position RGBA32F, normal RGBA16F, albedo RGBA8, material RGBA8)
+// 输出: 着色后颜色 (RGBA16F)
+// 工作: 使用 G-Buffer 数据 + PBR uniforms 计算最终材质颜色
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba32f) uniform readonly image2D uPositionImage;
+layout(binding = 1, rgba16f) uniform readonly image2D uNormalImage;
+layout(binding = 2, rgba8) uniform readonly image2D uAlbedoImage;
+layout(binding = 3, rgba8) uniform readonly image2D uMaterialImage;
+layout(binding = 4, rgba16f) uniform writeonly image2D uOutput;
+
+layout(push_constant) uniform PushConstants {
+    float metallic;
+    float roughness;
+    float fresnelF0;
+    float clearcoat;
+    float sheen;
+    float subsurface;
+    float dielectricWeight;
+    float alpha;
+} pc;
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uOutput);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec3 albedo = imageLoad(uAlbedoImage, texel).rgb;
+    vec4 matData = imageLoad(uMaterialImage, texel);
+    float metal = matData.r;
+    float rough = matData.g;
+
+    float useMetallic = pc.metallic >= 0.0 ? pc.metallic : metal;
+    float useRough = pc.roughness >= 0.0 ? pc.roughness : rough;
+
+    vec3 f0 = mix(vec3(pc.dielectricWeight), albedo, useMetallic);
+    vec3 kd = (1.0 - f0) * (1.0 - useMetallic);
+
+    vec3 color = albedo * kd + f0 * (1.0 - useRough);
+    color = mix(color, color * 1.1, pc.clearcoat);
+    color = mix(color, vec3(dot(color, vec3(0.3, 0.6, 0.1))), pc.sheen * 0.5);
+
+    imageStore(uOutput, texel, vec4(clamp(color, 0.0, 1.0), 1.0));
+}

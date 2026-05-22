@@ -24,9 +24,13 @@ public final class RenderiumConfigLoader {
 
     private RenderiumConfigLoader() {}
 
-    public static synchronized RenderiumConfigLoader getInstance() {
+    public static RenderiumConfigLoader getInstance() {
         if (INSTANCE == null) {
-            INSTANCE = new RenderiumConfigLoader();
+            synchronized (RenderiumConfigLoader.class) {
+                if (INSTANCE == null) {
+                    INSTANCE = new RenderiumConfigLoader();
+                }
+            }
         }
         return INSTANCE;
     }

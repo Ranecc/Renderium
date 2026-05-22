@@ -1,0 +1,69 @@
+#version 460
+// ReflectionNode - SSR 光线步进 Compute Shader
+// 输入: scene color, position, normal
+// 输出: SSR 反射结果 (RGBA16F)
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform readonly image2D uSceneColor;
+layout(binding = 1, rgba32f) uniform readonly image2D uPosition;
+layout(binding = 2, rgba16f) uniform readonly image2D uNormal;
+layout(binding = 3, rgba16f) uniform writeonly image2D uOutput;
+
+layout(push_constant) uniform PushConstants {
+    float maxDist;
+    float rayStride;
+    float thicknessBias;
+    float hitThreshold;
+    float fadeEdge;
+    float reflectionStrength;
+    float pad0;
+    float pad1;
+} pc;
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uOutput);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec3 worldPos = imageLoad(uPosition, texel).xyz;
+    vec3 normal = normalize(imageLoad(uNormal, texel).xyz * 2.0 - 1.0);
+    if (length(worldPos) < 0.001 || length(normal) < 0.001) {
+        imageStore(uOutput, texel, vec4(0.0));
+        return;
+    }
+
+    vec3 viewDir = normalize(-worldPos);
+    vec3 reflectDir = reflect(viewDir, normal);
+
+    vec2 uv = (vec2(texel) + 0.5) / vec2(sz);
+    vec2 reflectUV = uv;
+    float hit = 0.0;
+
+    for (float d = 0.1; d < pc.maxDist; d += pc.rayStride) {
+        vec3 samplePos = worldPos + reflectDir * d;
+        vec4 ssPos = vec4(samplePos, 1.0);
+        vec2 sampleUV = uv + reflectDir.xy * d * 0.001;
+        ivec2 st = ivec2(sampleUV * vec2(sz));
+        if (st.x < 0 || st.x >= int(sz.x) || st.y < 0 || st.y >= int(sz.y)) break;
+
+        vec3 sp = imageLoad(uPosition, st).xyz;
+        float depthDiff = length(sp - samplePos);
+        if (depthDiff < pc.hitThreshold) {
+            reflectUV = sampleUV;
+            hit = 1.0;
+            break;
+        }
+    }
+
+    vec3 reflectColor = vec3(0.0);
+    if (hit > 0.5) {
+        ivec2 hitTexel = ivec2(reflectUV * vec2(sz));
+        reflectColor = imageLoad(uSceneColor, hitTexel).rgb;
+    }
+
+    float edgeFade = 1.0 - smoothstep(0.0, pc.fadeEdge, abs(uv.x - 0.5) + abs(uv.y - 0.5));
+    vec3 color = mix(imageLoad(uSceneColor, texel).rgb, reflectColor, hit * pc.reflectionStrength * edgeFade);
+    imageStore(uOutput, texel, vec4(color, 1.0));
+}

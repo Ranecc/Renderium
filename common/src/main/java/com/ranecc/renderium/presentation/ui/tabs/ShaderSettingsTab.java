@@ -101,14 +101,14 @@ public class ShaderSettingsTab extends Screen {
 
     /** 节点配置键 */
     private static final String[] NODE_KEYS = {
-        "shader.dof.enabled",
-        "shader.motionblur.enabled",
-        "shader.taa.enabled",
-        "shader.volfog.enabled",
-        "shader.ssr.enabled",
-        "shader.lensflare.enabled",
-        "shader.chromatic.enabled",
-        "shader.exposure.enabled"
+        "depth_of_field.enabled",
+        "motion_blur.enabled",
+        "temporal_aa.enabled",
+        "volumetric_fog.enabled",
+        "screen_space_reflection.enabled",
+        "lens_flare.enabled",
+        "chromatic_aberration.enabled",
+        "auto_exposure.enabled"
     };
 
     // ==================== 构造函数 ====================
@@ -138,7 +138,7 @@ public class ShaderSettingsTab extends Screen {
         int buttonHeight = 20;
 
         // ===== 第1行: 全局开关 =====
-        boolean enabled = getLocalBool("shader.global.enabled", false);
+        boolean enabled = getLocalBool("renderium.enabled", false);
         enableButton = MCAbstract.buttonBuilder(centerX - 100, startY, buttonWidth, buttonHeight)
                 .text(enabled ? "[ON]  Renderium Shader System" : "[OFF] Renderium Shader System")
                 .onClick(btn -> toggleGlobalEnable())
@@ -146,7 +146,7 @@ public class ShaderSettingsTab extends Screen {
         addRenderableWidget(enableButton);
 
         // ===== 第2行: 预设选择器 =====
-        String presetName = getLocalString("shader.preset", "BALANCED");
+        String presetName = getLocalString("renderium.preset", "BALANCED");
         currentPreset = ShaderPreset.fromString(presetName);
         presetButton = MCAbstract.buttonBuilder(centerX - 100, startY + spacing, buttonWidth, buttonHeight)
                 .text("Preset: " + currentPreset.getDisplayName())
@@ -155,7 +155,7 @@ public class ShaderSettingsTab extends Screen {
         addRenderableWidget(presetButton);
 
         // ===== 第3行: Shader Pack 选择 =====
-        String packPath = getLocalString("shader.pack.path", "internal");
+        String packPath = getLocalString("renderium.pack.path", "internal");
         String displayPath = packPath.length() > 25 ? packPath.substring(0, 22) + "..." : packPath;
         shaderPackButton = MCAbstract.buttonBuilder(centerX - 100, startY + spacing * 2, buttonWidth, buttonHeight)
                 .text("Pack: " + displayPath)
@@ -224,9 +224,9 @@ public class ShaderSettingsTab extends Screen {
     private void loadConfigToLocalCache() {
         localValues.clear();
 
-        localValues.put("shader.global.enabled", String.valueOf(configLoader.getBoolean("shader.global.enabled", false)));
-        localValues.put("shader.preset", configLoader.getString("shader.preset", "BALANCED"));
-        localValues.put("shader.pack.path", configLoader.getString("shader.pack.path", "internal"));
+        localValues.put("renderium.enabled", String.valueOf(configLoader.getBoolean("renderium.enabled", false)));
+        localValues.put("renderium.preset", configLoader.getString("renderium.preset", "BALANCED"));
+        localValues.put("renderium.pack.path", configLoader.getString("renderium.pack.path", "internal"));
 
         for (String key : NODE_KEYS) {
             localValues.put(key, String.valueOf(configLoader.getBoolean(key, true)));
@@ -303,12 +303,12 @@ public class ShaderSettingsTab extends Screen {
     /**
      * 切换全局开关状态
      *
-     * 方法说明：反转 shader.global.enabled 并更新按钮文本
+     * 方法说明：反转 renderium.enabled 并更新按钮文本
      */
     private void toggleGlobalEnable() {
-        boolean current = getLocalBool("shader.global.enabled", false);
+        boolean current = getLocalBool("renderium.enabled", false);
         boolean newState = !current;
-        setLocalValue("shader.global.enabled", String.valueOf(newState));
+        setLocalValue("renderium.enabled", String.valueOf(newState));
         enableButton.setMessage(MCAbstract.text(newState ? "[ON]  Renderium Shader System" : "[OFF] Renderium Shader System"));
         updateSaveButton();
     }
@@ -320,7 +320,7 @@ public class ShaderSettingsTab extends Screen {
      */
     private void cyclePreset() {
         currentPreset = currentPreset.next();
-        setLocalValue("shader.preset", currentPreset.getDisplayName());
+        setLocalValue("renderium.preset", currentPreset.getDisplayName());
         presetButton.setMessage(MCAbstract.text("Preset: " + currentPreset.getDisplayName()));
         applyPresetDefaults(currentPreset);
         updateSaveButton();
@@ -356,16 +356,16 @@ public class ShaderSettingsTab extends Screen {
                 for (int i = 0; i < NODE_KEYS.length; i++) {
                     setLocalValue(NODE_KEYS[i], "true");
                 }
-                setLocalValue("shader.dof.focal_distance", "20.0");
-                setLocalValue("shader.dof.aperture", "4.0");
+                setLocalValue("depth_of_field.focal_distance", "20.0");
+                setLocalValue("depth_of_field.aperture", "4.0");
                 refreshAllNodeButtons();
                 break;
             case ULTRA:
                 for (int i = 0; i < NODE_KEYS.length; i++) {
                     setLocalValue(NODE_KEYS[i], "true");
                 }
-                setLocalValue("shader.dof.bokeh_samples", "32");
-                setLocalValue("shader.volfog.march_steps", "128");
+                setLocalValue("depth_of_field.bokeh_samples", "32");
+                setLocalValue("volumetric_fog.march_steps", "128");
                 refreshAllNodeButtons();
                 break;
         }
@@ -441,31 +441,31 @@ public class ShaderSettingsTab extends Screen {
     /** DOF 参数定义 */
     private static final Map<String, ParamMeta> DOF_PARAMS = new ConcurrentHashMap<>();
     static {
-        DOF_PARAMS.put("dof_focal", new ParamMeta("shader.dof.focal_distance", "Focal Distance", 15.0f, 0.5f, 100.0f, 1.0f));
-        DOF_PARAMS.put("dof_aperture", new ParamMeta("shader.dof.aperture", "Aperture", 2.8f, 1.0f, 16.0f, 0.2f));
-        DOF_PARAMS.put("dof_bokeh", new ParamMeta("shader.dof.bokeh_samples", "Bokeh Samples", 8.0f, 1.0f, 32.0f, 1.0f));
+        DOF_PARAMS.put("dof_focal", new ParamMeta("depth_of_field.focal_distance", "Focal Distance", 15.0f, 0.5f, 100.0f, 1.0f));
+        DOF_PARAMS.put("dof_aperture", new ParamMeta("depth_of_field.aperture", "Aperture", 2.8f, 1.0f, 16.0f, 0.2f));
+        DOF_PARAMS.put("dof_bokeh", new ParamMeta("depth_of_field.bokeh_samples", "Bokeh Samples", 8.0f, 1.0f, 32.0f, 1.0f));
     }
 
     /** Motion Blur 参数定义 */
     private static final Map<String, ParamMeta> MB_PARAMS = new ConcurrentHashMap<>();
     static {
-        MB_PARAMS.put("mb_strength", new ParamMeta("shader.motionblur.strength", "Strength", 0.5f, 0.0f, 1.0f, 0.05f));
-        MB_PARAMS.put("mb_samples", new ParamMeta("shader.motionblur.sample_count", "Sample Count", 8.0f, 2.0f, 32.0f, 1.0f));
+        MB_PARAMS.put("mb_strength", new ParamMeta("motion_blur.strength", "Strength", 0.5f, 0.0f, 1.0f, 0.05f));
+        MB_PARAMS.put("mb_samples", new ParamMeta("motion_blur.sample_count", "Sample Count", 8.0f, 2.0f, 32.0f, 1.0f));
     }
 
     /** TAA 参数定义 */
     private static final Map<String, ParamMeta> TAA_PARAMS = new ConcurrentHashMap<>();
     static {
-        TAA_PARAMS.put("taa_jitter", new ParamMeta("shader.taa.jitter_strength", "Jitter Strength", 0.5f, 0.0f, 1.0f, 0.05f));
-        TAA_PARAMS.put("taa_blend", new ParamMeta("shader.taa.blend_factor", "Blend Factor", 0.9f, 0.5f, 0.99f, 0.01f));
+        TAA_PARAMS.put("taa_jitter", new ParamMeta("temporal_aa.jitter_strength", "Jitter Strength", 0.5f, 0.0f, 1.0f, 0.05f));
+        TAA_PARAMS.put("taa_blend", new ParamMeta("temporal_aa.blend_factor", "Blend Factor", 0.9f, 0.5f, 0.99f, 0.01f));
     }
 
     /** VolFog 参数定义 */
     private static final Map<String, ParamMeta> VOLFOG_PARAMS = new ConcurrentHashMap<>();
     static {
-        VOLFOG_PARAMS.put("volfog_density", new ParamMeta("shader.volfog.density", "Density", 0.3f, 0.0f, 1.0f, 0.05f));
-        VOLFOG_PARAMS.put("volfog_scatter", new ParamMeta("shader.volfog.scattering", "Scattering", 0.5f, 0.0f, 1.0f, 0.05f));
-        VOLFOG_PARAMS.put("volfog_march", new ParamMeta("shader.volfog.march_steps", "March Steps", 48.0f, 8.0f, 128.0f, 4.0f));
+        VOLFOG_PARAMS.put("volfog_density", new ParamMeta("volumetric_fog.density", "Density", 0.3f, 0.0f, 1.0f, 0.05f));
+        VOLFOG_PARAMS.put("volfog_scatter", new ParamMeta("volumetric_fog.scattering", "Scattering", 0.5f, 0.0f, 1.0f, 0.05f));
+        VOLFOG_PARAMS.put("volfog_march", new ParamMeta("volumetric_fog.march_steps", "March Steps", 48.0f, 8.0f, 128.0f, 4.0f));
     }
 
     /**

@@ -12,6 +12,7 @@ import com.ranecc.renderium.domain.enums.QualityLevel;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
 import com.ranecc.renderium.domain.enums.SRTechnology;
 import com.ranecc.renderium.domain.enums.FrameGenMode;
+import com.ranecc.renderium.infrastructure.config.RenderiumConfigSnapshot;
 
 /**
  * Renderium 配置聚合根（Domain Layer）
@@ -343,6 +344,18 @@ public final class RenderiumConfig {
         backfaceCullingEnabled = Boolean.parseBoolean(
             props.getProperty("renderium.backfaceCulling.enabled", "true")
         );
+        neighborFaceCullingEnabled = Boolean.parseBoolean(
+            props.getProperty("renderium.neighborFaceCulling.enabled", "true")
+        );
+        effectsEnabled = Boolean.parseBoolean(
+            props.getProperty("renderium.effects.enabled", "true")
+        );
+        dynamicResolutionEnabled = Boolean.parseBoolean(
+            props.getProperty("renderium.dynamicResolution.enabled", "false")
+        );
+        sharpening = Float.parseFloat(
+            props.getProperty("renderium.sharpening", "0.0")
+        );
         batchingEnabled = Boolean.parseBoolean(
             props.getProperty("renderium.batching.enabled", "true")
         );
@@ -395,6 +408,10 @@ public final class RenderiumConfig {
         props.setProperty("renderium.backfaceCulling.enabled", String.valueOf(backfaceCullingEnabled));
         props.setProperty("renderium.batching.enabled", String.valueOf(batchingEnabled));
         props.setProperty("renderium.instancing.enabled", String.valueOf(instancingEnabled));
+        props.setProperty("renderium.neighborFaceCulling.enabled", String.valueOf(neighborFaceCullingEnabled));
+        props.setProperty("renderium.effects.enabled", String.valueOf(effectsEnabled));
+        props.setProperty("renderium.sharpening", String.valueOf(sharpening));
+        props.setProperty("renderium.dynamicResolution.enabled", String.valueOf(dynamicResolutionEnabled));
 
         // 保存浮点数参数
         props.setProperty("renderium.fov", String.valueOf(fov));
@@ -581,6 +598,39 @@ public final class RenderiumConfig {
     /** 设置背面剔除启用状态 */
     public void setBackfaceCullingEnabled(boolean backfaceCullingEnabled) {
         this.backfaceCullingEnabled = backfaceCullingEnabled;
+    }
+
+    /** 是否启用相邻面剔除 */
+    private boolean neighborFaceCullingEnabled = true;
+    /** 后处理效果总开关 */
+    private boolean effectsEnabled = true;
+    /** 锐化强度 */
+    private float sharpening = 0.0f;
+    /** 动态分辨率 */
+    private boolean dynamicResolutionEnabled = false;
+
+    public boolean isNeighborFaceCullingEnabled() { return neighborFaceCullingEnabled; }
+    public void setNeighborFaceCullingEnabled(boolean v) { this.neighborFaceCullingEnabled = v; }
+    public boolean isEffectsEnabled() { return effectsEnabled; }
+    public void setEffectsEnabled(boolean v) { this.effectsEnabled = v; }
+    public float getSharpening() { return sharpening; }
+    public void setSharpening(float v) { this.sharpening = v; }
+    public boolean isDynamicResolutionEnabled() { return dynamicResolutionEnabled; }
+    public void setDynamicResolutionEnabled(boolean v) { this.dynamicResolutionEnabled = v; }
+
+    private volatile RenderiumConfigSnapshot cachedSnapshot;
+
+    public void commitSnapshot() {
+        cachedSnapshot = new RenderiumConfigSnapshot.Builder().fromConfig(this).build();
+    }
+
+    public RenderiumConfigSnapshot getSnapshot() {
+        var snap = cachedSnapshot;
+        if (snap == null) {
+            snap = new RenderiumConfigSnapshot.Builder().fromConfig(this).build();
+            cachedSnapshot = snap;
+        }
+        return snap;
     }
 
     // ==================== Getter/Setter: 性能调优 ====================

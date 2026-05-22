@@ -1,0 +1,57 @@
+#version 460
+// LightingNode - 直接光照 Compute Shader
+// 输入: G-Buffer (albedo, normal, position, material) + shadow map
+// 输出: 直接光照结果 (RGBA16F)
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba8) uniform readonly image2D uAlbedo;
+layout(binding = 1, rgba16f) uniform readonly image2D uNormal;
+layout(binding = 2, rgba32f) uniform readonly image2D uPosition;
+layout(binding = 3, rgba8) uniform readonly image2D uMaterial;
+layout(binding = 4, r32f) uniform readonly image2D uShadowDepth;
+layout(binding = 5, rgba16f) uniform writeonly image2D uOutput;
+
+layout(push_constant) uniform PushConstants {
+    float sunAngleX;
+    float sunAngleY;
+    float lightCount;
+    float shadowQuality;
+    float ambientIntensity;
+    float sunIntensity;
+    float pad0;
+    float pad1;
+} pc;
+
+vec3 getSunDir() {
+    return normalize(vec3(cos(pc.sunAngleX) * cos(pc.sunAngleY), sin(pc.sunAngleY), sin(pc.sunAngleX) * cos(pc.sunAngleY)));
+}
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uOutput);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec3 albedo = imageLoad(uAlbedo, texel).rgb;
+    vec3 normal = normalize(imageLoad(uNormal, texel).xyz * 2.0 - 1.0);
+    vec3 worldPos = imageLoad(uPosition, texel).xyz;
+    if (length(worldPos) < 0.001) {
+        imageStore(uOutput, texel, vec4(0.0));
+        return;
+    }
+
+    vec3 sunDir = getSunDir();
+    float NdotL = max(dot(normal, sunDir), 0.0);
+
+    float shadow = 1.0;
+    if (pc.shadowQuality > 0.5) {
+        shadow = imageLoad(uShadowDepth, texel).r;
+    }
+
+    vec3 direct = albedo * pc.sunIntensity * NdotL * shadow;
+    vec3 ambient = albedo * pc.ambientIntensity;
+    vec3 color = direct + ambient;
+
+    imageStore(uOutput, texel, vec4(color, 1.0));
+}

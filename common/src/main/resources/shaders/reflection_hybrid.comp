@@ -1,0 +1,32 @@
+#version 460
+// ReflectionNode - 混合反射 Compute Shader
+// 输入: SSR output + planar output + scene color
+// 输出: hybrid reflection (RGBA16F)
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform readonly image2D uSSR;
+layout(binding = 1, rgba16f) uniform readonly image2D uPlanar;
+layout(binding = 2, rgba16f) uniform readonly image2D uScene;
+layout(binding = 3, rgba16f) uniform writeonly image2D uOutput;
+
+layout(push_constant) uniform PushConstants {
+    float ssrWeight;
+    float planarWeight;
+    float sceneWeight;
+    float pad;
+} pc;
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uOutput);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec3 ssr = imageLoad(uSSR, texel).rgb;
+    vec3 planar = imageLoad(uPlanar, texel).rgb;
+    vec3 scene = imageLoad(uScene, texel).rgb;
+
+    vec3 color = ssr * pc.ssrWeight + planar * pc.planarWeight + scene * pc.sceneWeight;
+    imageStore(uOutput, texel, vec4(color, 1.0));
+}

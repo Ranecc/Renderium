@@ -6,6 +6,15 @@
 //   2. 遮挡剔除并行化：BFS 引擎在独立线程运行
 //   3. Chunk 构建异步化：工作线程池 + 双缓冲结果队列
 //   4. 批量渲染合并：MultiDrawIndirect 减少 Draw Call
+//
+// BFS 遮挡剔除的业务链:
+//   processOcclusionCull() → 构造 BfsInput (DTO, 10 字段)
+//     → AdaptivePathSelector.selectBfsStrategy() (Java/C++ 路径选择)
+//     → JavaBfsStrategy / NativeBfsStrategy (Strategy 适配器层)
+//     → AlgorithmStrategy<BfsInput, CullResult> (策略接口, 预留框架)
+//     → BfsOcclusionEngine (核心计算引擎)
+//       OR
+//     → RenderiumAccelerator.bfs() → BfsOcclusionFFIAdapter (C++ FFI)
 
 package com.ranecc.renderium.feature.pipeline;
 

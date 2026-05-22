@@ -1,0 +1,33 @@
+#version 460
+// ReflectionNode - SSR Resolve Compute Shader
+// 输入: raw SSR output + scene color
+// 输出: resolved reflection (RGBA16F)
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform readonly image2D uSSRInput;
+layout(binding = 1, rgba16f) uniform readonly image2D uSceneColor;
+layout(binding = 2, rgba16f) uniform writeonly image2D uOutput;
+
+layout(push_constant) uniform PushConstants {
+    float blendFactor;
+    float roughnessThreshold;
+    float pad0;
+    float pad1;
+} pc;
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uOutput);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec3 ssr = imageLoad(uSSRInput, texel).rgb;
+    vec3 scene = imageLoad(uSceneColor, texel).rgb;
+
+    // 在 SSR 无 hit 区域 fallback 到场景颜色
+    float ssrIntensity = length(ssr);
+    vec3 color = mix(scene, ssr, smoothstep(0.01, 0.5, ssrIntensity) * pc.blendFactor);
+
+    imageStore(uOutput, texel, vec4(color, 1.0));
+}

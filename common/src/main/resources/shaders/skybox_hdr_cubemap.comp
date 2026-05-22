@@ -1,0 +1,46 @@
+#version 460
+// SkyBoxNode - HDR 立方体贴图 Compute Shader
+// 输入: cubemap handle (通过 sampler), 输出: 天空颜色 (RGBA16F)
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D uCubemap;
+layout(binding = 1, rgba16f) uniform writeonly image2D uOutput;
+
+layout(push_constant) uniform PushConstants {
+    float exposure;
+    float rotation;
+    float pad0;
+    float pad1;
+} pc;
+
+vec3 uvToDir(vec2 uv) {
+    float theta = uv.x * 6.2831853 + pc.rotation;
+    float phi = (1.0 - uv.y) * 3.14159265;
+    return vec3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta));
+}
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uOutput);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec2 uv = (vec2(texel) + 0.5) / vec2(sz);
+    vec3 dir = uvToDir(uv);
+
+    // 从方向映射到立方体贴图采样坐标
+    vec3 adir = abs(dir);
+    vec2 cmUV;
+    if (adir.x >= adir.y && adir.x >= adir.z) {
+        cmUV = vec2(dir.z / dir.x, dir.y / dir.x);
+    } else if (adir.y >= adir.z) {
+        cmUV = vec2(dir.x / dir.y, dir.z / dir.y);
+    } else {
+        cmUV = vec2(dir.x / dir.z, dir.y / dir.z);
+    }
+    cmUV = cmUV * 0.5 + 0.5;
+
+    vec3 color = texture(uCubemap, cmUV).rgb * pc.exposure;
+    imageStore(uOutput, texel, vec4(color, 1.0));
+}

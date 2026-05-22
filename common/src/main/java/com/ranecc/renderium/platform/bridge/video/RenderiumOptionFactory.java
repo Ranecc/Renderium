@@ -3,7 +3,7 @@ package com.ranecc.renderium.platform.bridge.video;
 import com.mojang.serialization.Codec;
 import com.ranecc.renderium.application.core.RenderiumCore;
 import com.ranecc.renderium.domain.enums.RenderiumMode;
-import com.ranecc.renderium.domain.enums.ShaderPreset;
+import com.ranecc.renderium.feature.shader.settings.ShaderPreset;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 import com.ranecc.renderium.infrastructure.gpu.VulkanFFMDebugger;
 import net.minecraft.network.chat.Component;

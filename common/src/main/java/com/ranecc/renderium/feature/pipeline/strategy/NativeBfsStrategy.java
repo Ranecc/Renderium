@@ -1,17 +1,17 @@
 // ============================================================
-// Renderium Native BFS Strategy - C++ 原生加速策略
+// Renderium Native BFS Strategy - C++ 原生加速策略 (适配器层)
 // ============================================================
-// 通过 Panama FFM 调用 renderium_accel 的 BFS 算法
-// 利用 C++ 原生性能优势（SIMD、缓存友好、零 GC）
+// 业务链位置: AdaptivePathSelector
+//               → NativeBfsStrategy (此文件, Strategy 包装器)
+//               → AlgorithmStrategy<T,R> (策略接口)
+//               → RenderiumAccelerator.bfs()  → BfsOcclusionFFIAdapter
+//               → renderium_accel.dll (C++ 原生库)
 //
-// 性能特征:
-//   - C++ SIMD BFS: ~0.5-1.5ms/帧 (10000 chunks)
-//   - 加速比: 3-6x vs Java 实现
-//   - 内存开销: 共享内存通信 (~64KB)
+// 作用: 通过 Panama FFM 调用 C++ 原生库的 BFS 算法，利用 SIMD 加速。
+//       提供与 JavaBfsStrategy 一致的 AlgorithmStrategy 接口，
+//       使得 AdaptivePathSelector 可以用统一方式调度 Java/C++ 双路径。
 //
-// 降级条件:
-//   - 原生库未加载 → 自动切换到 JavaBfsStrategy
-//   - BFS 上下文无效 → 重建上下文或降级
+// 降级: 原生库未加载时 isAvailable() 返回 false，调用方自动切 Java。
 // ============================================================
 
 package com.ranecc.renderium.feature.pipeline.strategy;

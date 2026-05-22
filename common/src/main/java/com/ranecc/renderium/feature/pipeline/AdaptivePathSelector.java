@@ -1,15 +1,18 @@
 // ============================================================
-// Renderium Adaptive Path Selector (Enhanced)
+// Renderium Adaptive Path Selector (双路径调度中心)
 // ============================================================
-// 原有功能: 异步/同步路径切换（滞后熔断器）
-// 新增功能: Java/C++ 算法路径动态调度
+// 业务链位置: AsyncRenderPipeline.processOcclusionCull()
+//               → AdaptivePathSelector (此文件)
+//               → JavaBfsStrategy / NativeBfsStrategy
+//               → AlgorithmStrategy<BfsInput, CullResult>
+//               → BfsOcclusionEngine (真实计算)
 //
-// 调度策略:
-//   1. GPU 占用率 < 70% → 优先使用 C++ Native 路径
-//   2. GPU 占用率 >= 70% → 使用 Java 路径（避免 GPU 过载）
-//   3. Native 不可用 → 自动降级到 Java
+// 职责: 根据 GPU 占用率和 Native 可用性动态选择 Java/C++ 路径。
+//       低 GPU 占用 → 优先 C++ 原生 (renderium_accel.dll, SIMD 加速)
+//       高 GPU 占用 → 回退 Java 路径 (BfsOcclusionEngine)
 //
-// 性能开销: ~50ns/帧（GPU 查询 + 策略选择）
+// 说明: JavaBfsStrategy + NativeBfsStrategy + AlgorithmStrategy 三层
+//       是"未来多算法统一调度"的预留抽象。当前仅有 BFS 使用此框架。
 // ============================================================
 
 package com.ranecc.renderium.feature.pipeline;

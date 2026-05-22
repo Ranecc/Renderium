@@ -1,0 +1,31 @@
+#version 460
+// LightingNode - 光照合成 Compute Shader
+// 输入: directLight + indirectLight
+// 输出: final composited lighting (RGBA16F)
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform readonly image2D uDirectLight;
+layout(binding = 1, rgba16f) uniform readonly image2D uIndirectLight;
+layout(binding = 2, rgba16f) uniform writeonly image2D uOutput;
+
+layout(push_constant) uniform PushConstants {
+    float blendFactor;
+    float pad0;
+    float pad1;
+    float pad2;
+} pc;
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uOutput);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec3 direct = imageLoad(uDirectLight, texel).rgb;
+    vec3 indirect = imageLoad(uIndirectLight, texel).rgb;
+
+    vec3 color = direct + indirect * pc.blendFactor;
+
+    imageStore(uOutput, texel, vec4(color, 1.0));
+}

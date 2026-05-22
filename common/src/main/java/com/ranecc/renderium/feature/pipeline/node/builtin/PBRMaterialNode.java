@@ -19,9 +19,15 @@ package com.ranecc.renderium.feature.pipeline.node.builtin;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.feature.pipeline.node.PipelineNodeRegistry;
+import com.ranecc.renderium.infrastructure.gpu.*;
+import com.ranecc.renderium.domain.constant.VulkanConst;
+import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
+import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 
 /**
  * PBR 材质计算节点（Disney Principled BSDF）
@@ -90,12 +96,54 @@ public class PBRMaterialNode extends AbstractPipelineNode {
 
     // ==================== 运行时状态 ====================
 
-    /** 输出纹理句柄 */
-    private long outputTextureHandle = 0L;
-
     /** 性能统计 */
     private long totalExecuteTimeNanos = 0L;
     private long totalFrames = 0L;
+
+    // ==================== Compute Pipeline 资源 ====================
+
+    /** SPIR-V 着色器资源路径 */
+    private static final String SHADER_PATH = "/shaders/pbr_material.spv";
+
+    /** 工作组大小（16x16 线程组，适配大多数 GPU 架构） */
+    private static final int WORKGROUP_SIZE_X = 16;
+    private static final int WORKGROUP_SIZE_Y = 16;
+
+    /** Compute Pipeline 句柄 */
+    private volatile long computePipeline = 0L;
+
+    /** Pipeline Layout 句柄 */
+    private volatile long pipelineLayout = 0L;
+
+    /** Descriptor Set 句柄 */
+    private volatile long descriptorSet = 0L;
+
+    /** 输出 Image 句柄 */
+    private volatile long outputImage = 0L;
+
+    /** 输出 ImageView 句柄 */
+    private volatile long outputImageView = 0L;
+
+    /** 上次输出纹理宽度 */
+    private volatile int lastOutputWidth = 0;
+
+    /** 上次输出纹理高度 */
+    private volatile int lastOutputHeight = 0;
+
+    /** G-Buffer Position 输入纹理 ImageView 句柄 */
+    private volatile long gbufferPositionView = 0L;
+
+    /** G-Buffer Normal 输入纹理 ImageView 句柄 */
+    private volatile long gbufferNormalView = 0L;
+
+    /** G-Buffer Albedo 输入纹理 ImageView 句柄 */
+    private volatile long gbufferAlbedoView = 0L;
+
+    /** G-Buffer Material 输入纹理 ImageView 句柄 */
+    private volatile long gbufferMaterialView = 0L;
+
+    /** SPIR-V 二进制缓存 */
+    private byte[] spirvBinary = null;
 
     // ==================== 构造函数 ====================
 
@@ -117,15 +165,12 @@ public class PBRMaterialNode extends AbstractPipelineNode {
 
     @Override
     protected boolean onInitialize(RenderContext context) {
-        outputTextureHandle = allocateOutputTexture(1920, 1080);
-        boolean shadersOk = prepareShaderPrograms(context);
-
-        if (!shadersOk) {
-            LOGGER.severe("PBR 着色器预编译失败");
-            return false;
+        this.spirvBinary = loadSPIRV();
+        if (spirvBinary == null) {
+            LOGGER.warning("PBR SPIR-V 着色器未找到，将使用软件回退模式");
         }
 
-        LOGGER.info("PBRMaterialNode 初始化完成");
+        LOGGER.info("PBRMaterialNode 初始化完成" + (spirvBinary != null ? " (SPIR-V 已加载)" : ""));
         return true;
     }
 
@@ -148,8 +193,32 @@ public class PBRMaterialNode extends AbstractPipelineNode {
         // 从 IOR 计算 Fresnel F0 (Schlick 近似)
         float f0 = ((i - 1.0f) * (i - 1.0f)) / ((i + 1.0f) * (i + 1.0f));
 
+        // 懒加载 Compute Pipeline
+        ensurePipeline();
+        if (computePipeline == 0L) {
+            // 回退：直接使用 G-Buffer 的位置纹理作为输出
+            return inputResources[0];
+        }
+
+        // 确保输出存储图像已创建
+        ensureOutputImage(context);
+        if (outputImageView == 0L) {
+            return inputResources[0];
+        }
+
+        // 解析 G-Buffer 四通道输入纹理
+        resolveGBufferInputs(context, inputResources);
+
+        // 构建 G-Buffer 输入纹理数组 [position, normal, albedo, material]
+        long[] gbufferInputs = new long[]{
+                gbufferPositionView,
+                gbufferNormalView,
+                gbufferAlbedoView,
+                gbufferMaterialView
+        };
+
         // 提交 PBR 材质计算 Pass
-        submitFullScreenDraw(context, "pbr_material", inputResources[0], outputTextureHandle,
+        submitFullScreenDraw(context, "pbr_material", gbufferInputs, outputImageView,
                 new float[]{
                         m,              // metallic
                         r,              // roughness
@@ -165,14 +234,12 @@ public class PBRMaterialNode extends AbstractPipelineNode {
         totalExecuteTimeNanos += elapsed;
         totalFrames++;
 
-        return outputTextureHandle;
+        return outputImageView;
     }
 
     @Override
     protected void onDispose() {
-        releaseTexture(outputTextureHandle);
-        outputTextureHandle = 0L;
-        releaseShaderPrograms();
+        disposeGPUResources();
         LOGGER.fine("PBRMaterialNode 资源已释放");
     }
 
@@ -215,28 +282,325 @@ public class PBRMaterialNode extends AbstractPipelineNode {
     private float clamp01(float v) { return Math.max(0.0f, Math.min(1.0f, v)); }
     private float clamp(float v, float min, float max) { return Math.max(min, Math.min(max, v)); }
 
-    private long allocateOutputTexture(int w, int h) {
-        return 0xBB020000L | ((long) (w & 0xFFFF) << 16) | (long) (h & 0xFFFF);
+    /**
+     * 解析 G-Buffer 四通道输入纹理
+     * <p>
+     * 从管线框架传递的 inputResources 和 PipelineNodeRegistry 中
+     * 解析 G-Buffer 的 Position/Normal/Albedo/Material 四张纹理的 ImageView 句柄。
+     * Position 纹理由管线框架作为 inputResources[0] 传递，
+     * 其余三张从 GBufferGeometryNode 的输出纹理字段中读取。
+     * </p>
+     */
+    private void resolveGBufferInputs(RenderContext context, long... inputResources) {
+        if (inputResources != null && inputResources.length > 0) {
+            this.gbufferPositionView = inputResources[0];
+        }
+
+        if (this.gbufferNormalView == 0L || this.gbufferAlbedoView == 0L || this.gbufferMaterialView == 0L) {
+            resolveGBufferFromNodeRegistry();
+        }
     }
 
-    private void releaseTexture(long handle) {
-        if (!VulkanGraphicsHelper.isAvailable() || handle == 0L) return;
-        VulkanGraphicsHelper.destroyImageView(VulkanGraphicsHelper.getDevice(), handle);
+    /**
+     * 从 PipelineNodeRegistry 查找 GBufferGeometryNode 的输出纹理句柄
+     * <p>
+     * 由于 GBufferGeometryNode 的输出纹理字段为私有权限，
+     * 此方法通过反射兼容机制尝试获取。若无法访问则记录警告，
+     * PBR 计算将降级使用已获取到的纹理。
+     * </p>
+     */
+    private void resolveGBufferFromNodeRegistry() {
+        try {
+            PipelineNodeRegistry registry = PipelineNodeRegistry.getInstance();
+            PipelineNode gbufferNode = registry.getNode("gbuffer_geometry");
+            if (gbufferNode == null) return;
+
+            try {
+                java.lang.reflect.Field posField = gbufferNode.getClass().getDeclaredField("outputPositionView");
+                java.lang.reflect.Field normField = gbufferNode.getClass().getDeclaredField("outputNormalView");
+                java.lang.reflect.Field albField = gbufferNode.getClass().getDeclaredField("outputAlbedoView");
+                java.lang.reflect.Field matField = gbufferNode.getClass().getDeclaredField("outputMaterialView");
+
+                posField.setAccessible(true);
+                normField.setAccessible(true);
+                albField.setAccessible(true);
+                matField.setAccessible(true);
+
+                if (this.gbufferPositionView == 0L) this.gbufferPositionView = posField.getLong(gbufferNode);
+                if (this.gbufferNormalView == 0L) this.gbufferNormalView = normField.getLong(gbufferNode);
+                if (this.gbufferAlbedoView == 0L) this.gbufferAlbedoView = albField.getLong(gbufferNode);
+                if (this.gbufferMaterialView == 0L) this.gbufferMaterialView = matField.getLong(gbufferNode);
+            } catch (Exception ignored) {
+                LOGGER.finest("无法通过反射获取 GBufferGeometryNode 输出纹理（非错误）");
+            }
+        } catch (Exception ignored) {
+            // PipelineNodeRegistry 可能尚未初始化
+        }
     }
 
-    private boolean prepareShaderPrograms(RenderContext context) {
-        if (!VulkanGraphicsHelper.isAvailable()) return true;
-        LOGGER.fine("[PBRMaterialNode] shader programs prepared");
-        return true;
+    /**
+     * 提交 PBR 材质计算 Compute Shader Dispatch
+     * <p>
+     * 完整的 Compute Shader 调度流程：
+     * <ol>
+     *   <li>确保 Compute Pipeline 已创建</li>
+     *   <li>分配并开始录制 Command Buffer</li>
+     *   <li>更新 DescriptorSet 绑定 4 张 G-Buffer 输入纹理 + 1 张输出纹理</li>
+     *   <li>绑定 Pipeline 和 DescriptorSet</li>
+     *   <li>写入 32 字节 Push Constants（PBR 参数）</li>
+     *   <li>Dispatch 工作组（向上取整到 16x16 线程组边界）</li>
+     *   <li>插入内存屏障确保写入可见</li>
+     *   <li>提交并等待完成</li>
+     * </ol>
+     * </p>
+     *
+     * @param ctx      RenderContext - 渲染上下文
+     * @param pass     字符串标识（仅用于日志）
+     * @param inputs   long[4] - [0]=position, [1]=normal, [2]=albedo, [3]=material 的 ImageView 句柄
+     * @param output   输出 ImageView 句柄（RGBA16F）
+     * @param uniforms float[8] - PBR 参数数组
+     */
+    private void submitFullScreenDraw(RenderContext ctx, String pass, long[] inputs, long output, float[] uniforms) {
+        if (!VulkanFFMBinding.isFfmLoaded()) return;
+        if (inputs == null || inputs.length < 4 || output == 0L) return;
+        if (inputs[0] == 0L) return;
+
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L || computePipeline == 0L || descriptorSet == 0L) return;
+
+        try {
+            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
+            if (cmdBuf == 0L) return;
+
+            LodCullingComputePass.beginCommandBuffer(cmdBuf);
+
+            // 更新 DescriptorSet：binding 0..3 = G-Buffer 输入（只读存储图像），binding 4 = 输出（写入存储图像）
+            for (int i = 0; i < 4; i++) {
+                long imgView = inputs[i];
+                if (imgView != 0L) {
+                    ComputePipelineHelper.updateStorageImageDescriptor(device, descriptorSet, i, imgView, 0L);
+                }
+            }
+            if (output != 0L) {
+                ComputePipelineHelper.updateStorageImageDescriptor(device, descriptorSet, 4, output, 0L);
+            }
+
+            // 绑定 Compute Pipeline
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, computePipeline);
+
+            // 绑定 DescriptorSet
+            if (pipelineLayout != 0L && descriptorSet != 0L) {
+                MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
+                dsPtr.set(ValueLayout.JAVA_LONG, 0, descriptorSet);
+                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
+                        cmdBuf, 1, pipelineLayout, 0, 1, dsPtr.address(), 0, 0L);
+            }
+
+            // 写入 Push Constants（32 字节：8 个 float）
+            if (uniforms != null && uniforms.length >= 8 && pipelineLayout != 0L) {
+                MemorySegment pcSeg = PerFrameArena.allocate(32L);
+                for (int i = 0; i < 8; i++) {
+                    pcSeg.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
+                }
+                VulkanAPIRegistry.invoke("vkCmdPushConstants",
+                        cmdBuf, pipelineLayout, 0x00000020L, 0, 32, pcSeg.address());
+            }
+
+            // 计算工作组数量（16x16 线程组）
+            int w = ctx.getWidth();
+            int h = ctx.getHeight();
+            int groupsX = Math.max(1, (w + WORKGROUP_SIZE_X - 1) / WORKGROUP_SIZE_X);
+            int groupsY = Math.max(1, (h + WORKGROUP_SIZE_Y - 1) / WORKGROUP_SIZE_Y);
+
+            // Dispatch
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, groupsX, groupsY, 1);
+
+            LodCullingComputePass.endCommandBuffer(cmdBuf);
+
+            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+            if (queue != 0L) {
+                VulkanSyncManager.submitAndWait(queue, cmdBuf);
+            }
+
+            LOGGER.finest("[PBRMaterialNode] " + pass + " dispatch 完成: " + w + "x" + h + " groups=" + groupsX + "x" + groupsY);
+
+        } catch (Throwable t) {
+            LOGGER.fine("[PBRMaterialNode] " + pass + " dispatch 异常: " + t.getMessage());
+        }
     }
 
-    private void releaseShaderPrograms() {
-        if (!VulkanGraphicsHelper.isAvailable()) return;
-        LOGGER.fine("[PBRMaterialNode] shader programs released");
+    /**
+     * 懒加载 Compute Pipeline（DCL 双重检查锁定）
+     * <p>
+     * 从 SPIR-V 二进制创建 Compute Pipeline：
+     * <ul>
+     *   <li>5 个 Descriptor Set Binding（4 个只读 STORAGE_IMAGE + 1 个写入 STORAGE_IMAGE）</li>
+     *   <li>32 字节 Push Constants（VK_SHADER_STAGE_COMPUTE_BIT）</li>
+     * </ul>
+     * </p>
+     */
+    private void ensurePipeline() {
+        if (computePipeline != 0L) return;
+        if (spirvBinary == null || spirvBinary.length == 0) return;
+
+        synchronized (this) {
+            if (computePipeline != 0L) return;
+            if (spirvBinary == null || spirvBinary.length == 0) return;
+
+            ComputePipelineHelper.Binding[] bindings = new ComputePipelineHelper.Binding[]{
+                    new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(2, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(3, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(4, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+            };
+
+            ComputePipelineHelper.PushConstant pc =
+                    new ComputePipelineHelper.PushConstant(0, 32, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
+
+            try {
+                ComputePipelineHelper.PipelineResources r =
+                        ComputePipelineHelper.createComputePipeline(spirvBinary, bindings, pc);
+                if (r != null) {
+                    computePipeline = r.pipeline();
+                    pipelineLayout = r.pipelineLayout();
+                    descriptorSet = r.descriptorSet();
+                    LOGGER.fine("[PBRMaterialNode] Compute Pipeline 创建成功: " + SHADER_PATH);
+                }
+            } catch (Exception e) {
+                LOGGER.warning("[PBRMaterialNode] Pipeline 创建异常: " + e.getMessage());
+            }
+        }
     }
 
-    private void submitFullScreenDraw(RenderContext ctx, String pass, long input, long output, float[] uniforms) {
-        if (!VulkanGraphicsHelper.isAvailable()) return;
-        LOGGER.fine("[PBRMaterialNode] submitted " + pass + " pass");
+    /**
+     * 确保输出存储图像已创建（DCL 双重检查锁定）
+     * <p>
+     * 创建 RGBA16F（R16G16B16A16_SFLOAT）格式的存储图像，
+     * 用于接收 PBR Compute Shader 的着色结果。
+     * 当视口尺寸变化时自动重新创建。
+     * </p>
+     */
+    private void ensureOutputImage(RenderContext context) {
+        int w = context.getWidth();
+        int h = context.getHeight();
+        if (w <= 0 || h <= 0) return;
+
+        if (outputImageView != 0L && w == lastOutputWidth && h == lastOutputHeight) return;
+
+        synchronized (this) {
+            if (outputImageView != 0L && w == lastOutputWidth && h == lastOutputHeight) return;
+
+            VulkanGPUResourceManager resMgr = VulkanGPUResourceManager.getInstance();
+            if (resMgr == null) return;
+
+            if (outputImageView != 0L) {
+                try { resMgr.destroyView(outputImageView); } catch (Throwable ignored) {}
+                outputImageView = 0L;
+            }
+            if (outputImage != 0L) {
+                try {
+                    resMgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
+                            outputImage, 0L, lastOutputWidth, lastOutputHeight, 97,
+                            VulkanGPUResourceManager.ResourceType.IMAGE));
+                } catch (Throwable ignored) {}
+                outputImage = 0L;
+            }
+
+            int storageUsage = VulkanConst.IMAGE_USAGE_STORAGE_BIT | VulkanConst.IMAGE_USAGE_SAMPLED_BIT;
+            int formatRGBA16F = 97;
+
+            var imgRes = resMgr.createImage(w, h, formatRGBA16F, storageUsage,
+                    VmaMemoryPools.PoolType.RENDER_TARGET);
+            if (imgRes == null || !imgRes.isValid()) {
+                LOGGER.warning("[PBRMaterialNode] 输出 Image 创建失败: " + w + "x" + h);
+                return;
+            }
+
+            long newImage = imgRes.handle;
+            long newView = resMgr.createView(newImage, formatRGBA16F, VulkanConst.IMAGE_ASPECT_COLOR_BIT);
+            if (newView == 0L) {
+                LOGGER.warning("[PBRMaterialNode] 输出 ImageView 创建失败");
+                resMgr.releaseResource(imgRes);
+                return;
+            }
+
+            outputImage = newImage;
+            outputImageView = newView;
+            lastOutputWidth = w;
+            lastOutputHeight = h;
+
+            LOGGER.fine("[PBRMaterialNode] 输出图像已创建: " + w + "x" + "h format=RGBA16F image=0x" + Long.toHexString(newImage));
+        }
+    }
+
+    /**
+     * 从 classpath 加载 SPIR-V 二进制着色器
+     * <p>
+     * 从资源路径 /shaders/pbr_material.spv 加载预编译的 SPIR-V 字节码。
+     * 着色器包含 PBR Disney Principled BSDF 的 GPU 实现。
+     * </p>
+     *
+     * @return SPIR-V 字节数组，加载失败返回 null
+     */
+    private static byte[] loadSPIRV() {
+        String path = SHADER_PATH;
+        try (var is = PBRMaterialNode.class.getResourceAsStream(path)) {
+            if (is == null) {
+                return null;
+            }
+            return is.readAllBytes();
+        } catch (Exception e) {
+            LOGGER.fine("[PBRMaterialNode] SPIR-V 加载失败: " + path + " - " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 释放 GPU 计算资源
+     * <p>
+     * 顺序释放：输出 ImageView → 输出 Image → Descriptor Pool → Pipeline → PipelineLayout。
+     * 所有释放操作均带空值检查，线程安全。
+     * </p>
+     */
+    private void disposeGPUResources() {
+        VulkanGPUResourceManager resMgr = VulkanGPUResourceManager.getInstance();
+
+        if (outputImageView != 0L && resMgr != null) {
+            try { resMgr.destroyView(outputImageView); } catch (Throwable ignored) {}
+            outputImageView = 0L;
+        }
+        if (outputImage != 0L && resMgr != null) {
+            try {
+                resMgr.releaseResource(new VulkanGPUResourceManager.GpuResource(
+                        outputImage, 0L, lastOutputWidth, lastOutputHeight, 97,
+                        VulkanGPUResourceManager.ResourceType.IMAGE));
+            } catch (Throwable ignored) {}
+            outputImage = 0L;
+        }
+
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device != 0L) {
+            if (computePipeline != 0L) {
+                try {
+                    VulkanAPIRegistry.invoke("vkDestroyPipeline", device, computePipeline, 0L);
+                } catch (Throwable ignored) {}
+                computePipeline = 0L;
+            }
+            if (pipelineLayout != 0L) {
+                try {
+                    VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", device, pipelineLayout, 0L);
+                } catch (Throwable ignored) {}
+                pipelineLayout = 0L;
+            }
+        }
+
+        lastOutputWidth = 0;
+        lastOutputHeight = 0;
+        gbufferPositionView = 0L;
+        gbufferNormalView = 0L;
+        gbufferAlbedoView = 0L;
+        gbufferMaterialView = 0L;
+        spirvBinary = null;
     }
 }

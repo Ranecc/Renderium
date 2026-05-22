@@ -1,0 +1,49 @@
+#version 460
+// SkyBoxNode - 大气散射 Compute Shader
+// 无输入纹理, 输出: 大气散射天空 (RGBA16F)
+// workgroup: 8x8
+// 基于双散射预积分模型
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform writeonly image2D uOutput;
+
+layout(push_constant) uniform PushConstants {
+    float sunAngle;
+    float turbidity;
+    float exposure;
+    float pad;
+} pc;
+
+const float RAYLEIGH_SCATTER = 0.0025;
+const float MIE_SCATTER = 0.0010;
+const float ATMOSPHERE_HEIGHT = 10000.0;
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uOutput);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec2 uv = (vec2(texel) + 0.5) / vec2(sz);
+    float theta = uv.x * 6.2831853;
+    float phi = (1.0 - uv.y) * 3.14159265;
+
+    vec3 dir = vec3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta));
+    vec3 sunDir = normalize(vec3(cos(pc.sunAngle), max(0.1, sin(pc.sunAngle)), sin(pc.sunAngle)));
+
+    float cosTheta = max(dot(dir, sunDir), 0.0);
+    float cosSunZenith = max(sunDir.y, 0.01);
+
+    float rayleighPhase = 0.75 * (1.0 + cosTheta * cosTheta);
+    float miePhase = 1.0 / (1.0 + 0.5 * (1.0 - cosTheta));
+
+    float altitude = max(dir.y, 0.001);
+    float opticalDepth = exp(-altitude * ATMOSPHERE_HEIGHT);
+
+    vec3 rayleighColor = vec3(1.0, 0.8, 0.6) * RAYLEIGH_SCATTER * opticalDepth * rayleighPhase;
+    vec3 mieColor = vec3(1.0, 0.9, 0.8) * MIE_SCATTER * opticalDepth * miePhase;
+    vec3 groundColor = vec3(0.2, 0.15, 0.1) * exp(-altitude * 5.0);
+
+    vec3 color = (rayleighColor + mieColor + groundColor) * pc.exposure * (1.0 + pc.turbidity * 0.2);
+    imageStore(uOutput, texel, vec4(color, 1.0));
+}

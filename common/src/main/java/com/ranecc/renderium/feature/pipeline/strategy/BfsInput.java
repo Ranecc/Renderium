@@ -1,13 +1,16 @@
 // ============================================================
-// Renderium BFS Input - 遮挡剔除算法输入封装
+// Renderium BFS Input - 遮挡剔除算法输入封装 (共享 DTO)
 // ============================================================
-// 统一 Java/C++ 路径的输入格式
-// 封装 BFS 遮挡剔除所需的所有参数
+// 业务链位置: AsyncRenderPipeline.processOcclusionCull()
+//               → 构造 BfsInput (此文件)
+//               → AdaptivePathSelector.selectBfsStrategy()
+//               → JavaBfsStrategy / NativeBfsStrategy
+//               → BfsOcclusionEngine (见 toCameraView())
 //
-// 设计原则:
-//   1. 不可变对象 (Immutable) - 线程安全，可缓存复用
-//   2. 原始类型优先 - 避免 GC 压力（每帧创建一次）
-//   3. GPU 友好 - 数据可直接映射到 C++ struct
+// 作用: 承载 BFS 遮挡剔除所需的所有输入参数 (10 个字段)。
+//       同时被 Java (BfsOcclusionEngine) 和 C++ (renderium_accel) 路径使用。
+//
+// 设计: 不可变对象，线程安全，可缓存复用。
 // ============================================================
 
 package com.ranecc.renderium.feature.pipeline.strategy;

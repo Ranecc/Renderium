@@ -1,20 +1,18 @@
 // ============================================================
-// Renderium Algorithm Strategy - 算法策略统一接口
+// Renderium Algorithm Strategy - 算法策略统一接口 (预留框架)
 // ============================================================
-// 解决"算法双轨制"问题: Java/C++ 并行实现未统一调度
-// 通过 Strategy Pattern 实现运行时动态选择最优路径
+// 此为 "未来多算法统一调度" 的预留抽象层。当前仅 BFS 遮挡剔除
+// (BfsOcclusionEngine) 实现了此接口 (JavaBfsStrategy / NativeBfsStrategy)。
+// 其他算法 (Kahan/LOD 等) 各有独立调用链，未接入此框架。
 //
-// 设计原则:
-//   1. 接口抽象: 统一 Java 和 C++ (Native) 的调用方式
-//   2. 性能透明: getImplementationType() 允许监控和调试
-//   3. 零开销抽象: 接口方法内联优化（JIT 友好）
-//   4. 优雅降级: Native 路径不可用时自动回退 Java
+// 业务链: AdaptivePathSelector
+//           → JavaBfsStrategy / NativeBfsStrategy
+//           → AlgorithmStrategy<T,R>  (此接口)
+//           → BfsOcclusionEngine       (真正的计算逻辑)
 //
-// 使用示例:
-//   AlgorithmStrategy<BfsInput, BfsResult> strategy =
-//       adaptiveSelector.selectBfsStrategy(gpuUsage, preferNative);
-//   BfsResult result = strategy.execute(bfsInput);
-//   LOGGER.info("使用 " + strategy.getImplementationType() + " 路径");
+// 价值: 若后续有更多算法需要 Java/C++ 双路径调度，此接口可复用。
+// 现状: 仅 BFS 一家使用，三层包装 (Engine→Strategy→Selector) 对当前
+//       单算法场景存在多余抽象层级。
 // ============================================================
 
 package com.ranecc.renderium.feature.pipeline.strategy;

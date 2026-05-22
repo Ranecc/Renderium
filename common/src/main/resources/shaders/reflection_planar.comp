@@ -1,0 +1,33 @@
+#version 460
+// ReflectionNode - 平面反射 Compute Shader
+// 输入: scene color, 输出: 平面反射 (RGBA16F)
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform readonly image2D uSceneColor;
+layout(binding = 1, rgba16f) uniform writeonly image2D uOutput;
+
+layout(push_constant) uniform PushConstants {
+    float planeHeight;
+    float reflectivity;
+    float pad0;
+    float pad1;
+} pc;
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uOutput);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec2 uv = (vec2(texel) + 0.5) / vec2(sz);
+    vec2 reflectedUV = vec2(uv.x, 1.0 - uv.y);
+
+    vec3 sceneColor = imageLoad(uSceneColor, texel).rgb;
+    vec3 reflectedColor = imageLoad(uSceneColor, ivec2(reflectedUV * vec2(sz))).rgb;
+
+    float fresnel = 1.0 - max(abs(uv.y - 0.5) * 2.0 - 0.3, 0.0);
+    vec3 color = mix(sceneColor, reflectedColor, fresnel * pc.reflectivity);
+
+    imageStore(uOutput, texel, vec4(color, 1.0));
+}

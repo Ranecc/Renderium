@@ -1,0 +1,61 @@
+#version 460
+// RayTracingNode - RT 去噪 Compute Shader (ATrous 小波滤波)
+// 输入: noisy RT output + position + normal
+// 输出: 去噪后 RT 结果 (RGBA16F)
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform readonly image2D uNoisyInput;
+layout(binding = 1, rgba32f) uniform readonly image2D uPosition;
+layout(binding = 2, rgba16f) uniform readonly image2D uNormal;
+layout(binding = 3, rgba16f) uniform writeonly image2D uOutput;
+
+layout(push_constant) uniform PushConstants {
+    int denoisePasses;
+    float colorSigma;
+    float normalSigma;
+    float depthSigma;
+} pc;
+
+float luminance(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uOutput);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec3 centerColor = imageLoad(uNoisyInput, texel).rgb;
+    vec3 centerPos = imageLoad(uPosition, texel).xyz;
+    vec3 centerNormal = normalize(imageLoad(uNormal, texel).xyz * 2.0 - 1.0);
+    float centerLuma = luminance(centerColor);
+
+    int step = max(1, pc.denoisePasses);
+    vec3 sum = vec3(0.0);
+    float totalW = 0.0;
+
+    for (int dy = -step; dy <= step; dy++) {
+        for (int dx = -step; dx <= step; dx++) {
+            ivec2 st = texel + ivec2(dx, dy);
+            if (st.x < 0 || st.x >= int(sz.x) || st.y < 0 || st.y >= int(sz.y)) continue;
+
+            vec3 c = imageLoad(uNoisyInput, st).rgb;
+            vec3 p = imageLoad(uPosition, st).xyz;
+            vec3 n = normalize(imageLoad(uNormal, st).xyz * 2.0 - 1.0);
+
+            float w = exp(-float(dx*dx + dy*dy) * 0.159);
+            float lumaDiff = abs(luminance(c) - centerLuma);
+            w *= exp(-lumaDiff * lumaDiff / max(pc.colorSigma * pc.colorSigma, 0.001));
+            float depthDiff = length(p - centerPos);
+            w *= exp(-depthDiff * depthDiff / max(pc.depthSigma * pc.depthSigma, 0.001));
+            float normalDiff = 1.0 - max(dot(n, centerNormal), 0.0);
+            w *= exp(-normalDiff * normalDiff / max(pc.normalSigma * pc.normalSigma, 0.001));
+
+            sum += c * w;
+            totalW += w;
+        }
+    }
+
+    vec3 result = totalW > 0.001 ? sum / totalW : centerColor;
+    imageStore(uOutput, texel, vec4(result, 1.0));
+}

@@ -1,0 +1,36 @@
+#version 460
+// ExposureNode - 基本色调映射 Compute Shader
+// 输入: HDR 颜色纹理, 输出: LDR RGBA8
+// 工作: 曝光调整 → Reinhard 色调映射 → Gamma 校正
+// workgroup: 8x8
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba16f) uniform readonly image2D uHDRInput;
+layout(binding = 1, rgba8) uniform writeonly image2D uLDROutput;
+
+layout(push_constant) uniform PushConstants {
+    float exposure;
+    float minExposure;
+    float maxExposure;
+    float whitePoint;
+} pc;
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    uvec2 sz = imageSize(uLDROutput);
+    if (texel.x >= int(sz.x) || texel.y >= int(sz.y)) return;
+
+    vec3 color = imageLoad(uHDRInput, texel).rgb;
+
+    float exp = clamp(pc.exposure, pc.minExposure, pc.maxExposure);
+    color *= exp;
+
+    // Reinhard 色调映射
+    color = color / (color + vec3(pc.whitePoint));
+
+    // Gamma 校正
+    color = pow(max(color, vec3(0.0)), vec3(1.0 / 2.2));
+
+    imageStore(uLDROutput, texel, vec4(clamp(color, 0.0, 1.0), 1.0));
+}

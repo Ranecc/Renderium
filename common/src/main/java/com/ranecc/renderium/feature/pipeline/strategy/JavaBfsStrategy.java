@@ -1,13 +1,17 @@
 // ============================================================
-// Renderium Java BFS Strategy - Java 实现策略
+// Renderium Java BFS Strategy - Java 实现策略 (适配器层)
 // ============================================================
-// 包装现有的 BfsOcclusionEngine 为 AlgorithmStrategy 接口
-// 作为 Native 路径不可用时的回退方案
+// 业务链位置: AdaptivePathSelector
+//               → JavaBfsStrategy (此文件, Strategy 包装器)
+//               → AlgorithmStrategy<T,R> (策略接口)
+//               → BfsOcclusionEngine     (真实计算引擎)
 //
-// 性能特征:
-//   - 单线程 BFS: ~2-5ms/帧 (10000 chunks)
-//   - 内存占用: 零分配（使用预分配缓冲区）
-//   - GC 压力: 无（ThreadLocal 缓冲区）
+// 作用: 将 BfsOcclusionEngine 包装为标准 AlgorithmStrategy 接口，
+//       使得 AdaptivePathSelector 可以用统一方式调度 Java/C++ 双路径。
+//       当 Native 路径 (renderium_accel DLL) 不可用时作为回退。
+//
+// 说明: JavaBfsStrategy + NativeBfsStrategy + AlgorithmStrategy 三层是为
+//       "未来多算法统一调度"预留的抽象。当前仅有 BFS 使用了此框架。
 // ============================================================
 
 package com.ranecc.renderium.feature.pipeline.strategy;

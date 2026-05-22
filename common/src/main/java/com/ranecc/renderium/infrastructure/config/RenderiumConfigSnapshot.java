@@ -222,15 +222,15 @@ public final class RenderiumConfigSnapshot {
             this.frameGenMode = config.getFrameGenMode().ordinal();
             this.reflexEnabled = config.isReflexEnabled();
             this.reflexMode = config.getReflexMode().ordinal();
-            this.neighborFaceCullingEnabled = false;
+            this.neighborFaceCullingEnabled = config.isNeighborFaceCullingEnabled();
             this.backfaceCullingEnabled = config.isBackfaceCullingEnabled();
             this.frustumCullingEnabled = config.isFrustumCullingEnabled();
             this.occlusionCullingEnabled = config.isOcclusionCullingEnabled();
             this.batchingEnabled = config.isBatchingEnabled();
             this.instancingEnabled = config.isInstancingEnabled();
-            this.effectsEnabled = false;
-            this.sharpening = 0.0f;
-            this.dynamicResolution = false;
+            this.effectsEnabled = config.isEffectsEnabled();
+            this.sharpening = config.getSharpening();
+            this.dynamicResolution = config.isDynamicResolutionEnabled();
 
             // 拦截层配置（安全访问）
             InterceptionConfig interception = config.getInterceptionConfig();
