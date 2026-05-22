@@ -10,11 +10,11 @@ import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 
 public class LightingNode extends AbstractPipelineNode {
 
@@ -340,25 +340,23 @@ public class LightingNode extends AbstractPipelineNode {
             if (cmdBuf == 0L) { PerFrameArena.endFrame(); return; }
 
             // 使用 confined arena 管理 barrier 结构体内存
-            try (Arena arena = Arena.ofConfined()) {
-                MemorySegment barrier = arena.allocate(68L);
-                barrier.set(ValueLayout.JAVA_INT, 0, 33);
-                barrier.set(ValueLayout.JAVA_LONG, 8, 0L);
-                barrier.set(ValueLayout.JAVA_INT, 16, 0);
-                barrier.set(ValueLayout.JAVA_INT, 20, 0);
-                barrier.set(ValueLayout.JAVA_INT, 24, 0);
-                barrier.set(ValueLayout.JAVA_INT, 28, 1);
-                barrier.set(ValueLayout.JAVA_INT, 32, 0);
-                barrier.set(ValueLayout.JAVA_INT, 36, 0);
-                barrier.set(ValueLayout.JAVA_LONG, 40, outTex);
-                barrier.set(ValueLayout.JAVA_INT, 48, VulkanConst.IMAGE_ASPECT_COLOR_BIT);
-                barrier.set(ValueLayout.JAVA_INT, 52, 0);
-                barrier.set(ValueLayout.JAVA_INT, 56, 1);
-                barrier.set(ValueLayout.JAVA_INT, 60, 0);
-                barrier.set(ValueLayout.JAVA_INT, 64, 1);
-                VulkanAPIRegistry.invoke("vkCmdPipelineBarrier", cmdBuf,
-                        1, 1, 0, 0, 0L, 0, 0L, 1, (long) barrier.address());
-            }
+            MemorySegment barrier = PerFrameArena.allocate(68L);
+            barrier.set(ValueLayout.JAVA_INT, 0, 33);
+            barrier.set(ValueLayout.JAVA_LONG, 8, 0L);
+            barrier.set(ValueLayout.JAVA_INT, 16, 0);
+            barrier.set(ValueLayout.JAVA_INT, 20, 0);
+            barrier.set(ValueLayout.JAVA_INT, 24, 0);
+            barrier.set(ValueLayout.JAVA_INT, 28, 1);
+            barrier.set(ValueLayout.JAVA_INT, 32, 0);
+            barrier.set(ValueLayout.JAVA_INT, 36, 0);
+            barrier.set(ValueLayout.JAVA_LONG, 40, outTex);
+            barrier.set(ValueLayout.JAVA_INT, 48, VulkanConst.IMAGE_ASPECT_COLOR_BIT);
+            barrier.set(ValueLayout.JAVA_INT, 52, 0);
+            barrier.set(ValueLayout.JAVA_INT, 56, 1);
+            barrier.set(ValueLayout.JAVA_INT, 60, 0);
+            barrier.set(ValueLayout.JAVA_INT, 64, 1);
+            VulkanAPIRegistry.invoke("vkCmdPipelineBarrier", cmdBuf,
+                    1, 1, 0, 0, 0L, 0, 0L, 1, (long) barrier.address());
 
             VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf,
                     VulkanConst.PIPELINE_BIND_POINT_COMPUTE, pipeline);
@@ -415,25 +413,23 @@ public class LightingNode extends AbstractPipelineNode {
             if (cmdBuf == 0L) { PerFrameArena.endFrame(); return; }
 
             // 使用 confined arena 管理 barrier 结构体内存
-            try (Arena arena = Arena.ofConfined()) {
-                MemorySegment barrier = arena.allocate(68L);
-                barrier.set(ValueLayout.JAVA_INT, 0, 33);
-                barrier.set(ValueLayout.JAVA_LONG, 8, 0L);
-                barrier.set(ValueLayout.JAVA_INT, 16, 0);
-                barrier.set(ValueLayout.JAVA_INT, 20, 0);
-                barrier.set(ValueLayout.JAVA_INT, 24, 0);
-                barrier.set(ValueLayout.JAVA_INT, 28, 1);
-                barrier.set(ValueLayout.JAVA_INT, 32, 0);
-                barrier.set(ValueLayout.JAVA_INT, 36, 0);
-                barrier.set(ValueLayout.JAVA_LONG, 40, outTex);
-                barrier.set(ValueLayout.JAVA_INT, 48, VulkanConst.IMAGE_ASPECT_COLOR_BIT);
-                barrier.set(ValueLayout.JAVA_INT, 52, 0);
-                barrier.set(ValueLayout.JAVA_INT, 56, 1);
-                barrier.set(ValueLayout.JAVA_INT, 60, 0);
-                barrier.set(ValueLayout.JAVA_INT, 64, 1);
-                VulkanAPIRegistry.invoke("vkCmdPipelineBarrier", cmdBuf,
-                        1, 1, 0, 0, 0L, 0, 0L, 1, (long) barrier.address());
-            }
+            MemorySegment barrier = PerFrameArena.allocate(68L);
+            barrier.set(ValueLayout.JAVA_INT, 0, 33);
+            barrier.set(ValueLayout.JAVA_LONG, 8, 0L);
+            barrier.set(ValueLayout.JAVA_INT, 16, 0);
+            barrier.set(ValueLayout.JAVA_INT, 20, 0);
+            barrier.set(ValueLayout.JAVA_INT, 24, 0);
+            barrier.set(ValueLayout.JAVA_INT, 28, 1);
+            barrier.set(ValueLayout.JAVA_INT, 32, 0);
+            barrier.set(ValueLayout.JAVA_INT, 36, 0);
+            barrier.set(ValueLayout.JAVA_LONG, 40, outTex);
+            barrier.set(ValueLayout.JAVA_INT, 48, VulkanConst.IMAGE_ASPECT_COLOR_BIT);
+            barrier.set(ValueLayout.JAVA_INT, 52, 0);
+            barrier.set(ValueLayout.JAVA_INT, 56, 1);
+            barrier.set(ValueLayout.JAVA_INT, 60, 0);
+            barrier.set(ValueLayout.JAVA_INT, 64, 1);
+            VulkanAPIRegistry.invoke("vkCmdPipelineBarrier", cmdBuf,
+                    1, 1, 0, 0, 0L, 0, 0L, 1, (long) barrier.address());
 
             VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf,
                     VulkanConst.PIPELINE_BIND_POINT_COMPUTE, pipeline);
@@ -478,16 +474,14 @@ public class LightingNode extends AbstractPipelineNode {
         if (uniforms == null || uniforms.length == 0) return;
         try {
             // 使用 confined arena 管理 push constant 内存
-            try (Arena arena = Arena.ofConfined()) {
-                MemorySegment pcData = arena.allocate(32L);
-                int count = Math.min(uniforms.length, 8);
-                for (int i = 0; i < count; i++) {
-                    pcData.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
-                }
-                VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, layout,
-                        ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT,
-                        0, 32, (long) pcData.address());
+            MemorySegment pcData = PerFrameArena.allocate(32L);
+            int count = Math.min(uniforms.length, 8);
+            for (int i = 0; i < count; i++) {
+                pcData.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
             }
+            VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf, layout,
+                    ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT,
+                    0, 32, (long) pcData.address());
         } catch (Throwable t) {
             LOGGER.warning("[LightingNode] pushConstants 失败: " + t.getMessage());
         }

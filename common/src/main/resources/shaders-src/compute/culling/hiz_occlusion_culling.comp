@@ -53,7 +53,7 @@
 #define HIZ_MAX_LOD_LEVELS 12
 
 /** 是否使用保守模式 (true = 宁可多渲染不可误删) */
-#define HIZ_CONSERVATIVE_MODE true
+#define HIZ_CONSERVATIVE_MODE false
 
 /** 是否启用 Subgroup 扩展进行并行归约 */
 #define USE_SUBGROUP 1

@@ -37,9 +37,9 @@ import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
 import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.domain.constant.VulkanConst;
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 
 /**
  * 光线追踪节点（实验性）
@@ -296,14 +296,12 @@ public class RayTracingNode extends AbstractPipelineNode {
                 VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf2, 1L, denoiseLayout, 0L, 1, denoiseSet, 0, 0L);
                 
                 // 使用 confined arena 管理 push constant 内存，确保及时释放
-                try (Arena arena = Arena.ofConfined()) {
-                    MemorySegment pcData2 = arena.allocate(32);
-                    pcData2.setAtIndex(ValueLayout.JAVA_INT, 0, 1);
-                    pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 1, 0.1f);
-                    pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 2, 1.0f);
-                    pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 3, 1.0f);
-                    VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf2, denoiseLayout, 0x20L, 0L, 32, pcData2.address());
-                }
+                MemorySegment pcData2 = PerFrameArena.allocate(32);
+                pcData2.setAtIndex(ValueLayout.JAVA_INT, 0, 1);
+                pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 1, 0.1f);
+                pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 2, 1.0f);
+                pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 3, 1.0f);
+                VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf2, denoiseLayout, 0x20L, 0L, 32, pcData2.address());
                 
                 int w2 = Math.max(1, (context.getWidth() + 7) / 8);
                 int h2 = Math.max(1, (context.getHeight() + 7) / 8);
@@ -334,22 +332,20 @@ public class RayTracingNode extends AbstractPipelineNode {
             VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, tracePipeline);
 
             // 使用 confined arena 管理 descriptor set 和 push constant 内存
-            try (Arena arena = Arena.ofConfined()) {
-                if (traceLayout != 0L && traceSet != 0L) {
-                    MemorySegment dsPtr = arena.allocate(ValueLayout.JAVA_LONG);
-                    dsPtr.set(ValueLayout.JAVA_LONG, 0, traceSet);
-                    VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
-                            cmdBuf, 1, traceLayout, 0, 1, dsPtr.address(), 0, 0L);
-                }
+            if (traceLayout != 0L && traceSet != 0L) {
+                MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
+                dsPtr.set(ValueLayout.JAVA_LONG, 0, traceSet);
+                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
+                        cmdBuf, 1, traceLayout, 0, 1, dsPtr.address(), 0, 0L);
+            }
 
-                if (uniforms != null && uniforms.length > 0 && traceLayout != 0L) {
-                    MemorySegment pcSeg = arena.allocate(32L);
-                    for (int i = 0; i < Math.min(uniforms.length, 8); i++) {
-                        pcSeg.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
-                    }
-                    VulkanAPIRegistry.invoke("vkCmdPushConstants",
-                            cmdBuf, traceLayout, 0x00000020L, 0, 32, pcSeg.address());
+            if (uniforms != null && uniforms.length > 0 && traceLayout != 0L) {
+                MemorySegment pcSeg = PerFrameArena.allocate(32L);
+                for (int i = 0; i < Math.min(uniforms.length, 8); i++) {
+                    pcSeg.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
                 }
+                VulkanAPIRegistry.invoke("vkCmdPushConstants",
+                        cmdBuf, traceLayout, 0x00000020L, 0, 32, pcSeg.address());
             }
 
             int w = Math.max(1, (context.getWidth() + 7) / 8);
@@ -378,22 +374,20 @@ public class RayTracingNode extends AbstractPipelineNode {
             VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, denoisePipeline);
 
             // 使用 confined arena 管理 descriptor set 和 push constant 内存
-            try (Arena arena = Arena.ofConfined()) {
-                if (denoiseLayout != 0L && denoiseSet != 0L) {
-                    MemorySegment dsPtr = arena.allocate(ValueLayout.JAVA_LONG);
-                    dsPtr.set(ValueLayout.JAVA_LONG, 0, denoiseSet);
-                    VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
-                            cmdBuf, 1, denoiseLayout, 0, 1, dsPtr.address(), 0, 0L);
-                }
+            if (denoiseLayout != 0L && denoiseSet != 0L) {
+                MemorySegment dsPtr = PerFrameArena.allocateLongs(1);
+                dsPtr.set(ValueLayout.JAVA_LONG, 0, denoiseSet);
+                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
+                        cmdBuf, 1, denoiseLayout, 0, 1, dsPtr.address(), 0, 0L);
+            }
 
-                if (uniforms != null && uniforms.length > 0 && denoiseLayout != 0L) {
-                    MemorySegment pcSeg = arena.allocate(32L);
-                    for (int i = 0; i < Math.min(uniforms.length, 8); i++) {
-                        pcSeg.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
-                    }
-                    VulkanAPIRegistry.invoke("vkCmdPushConstants",
-                            cmdBuf, denoiseLayout, 0x00000020L, 0, 32, pcSeg.address());
+            if (uniforms != null && uniforms.length > 0 && denoiseLayout != 0L) {
+                MemorySegment pcSeg = PerFrameArena.allocate(32L);
+                for (int i = 0; i < Math.min(uniforms.length, 8); i++) {
+                    pcSeg.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
                 }
+                VulkanAPIRegistry.invoke("vkCmdPushConstants",
+                        cmdBuf, denoiseLayout, 0x00000020L, 0, 32, pcSeg.address());
             }
 
             int w = Math.max(1, (context.getWidth() + 7) / 8);

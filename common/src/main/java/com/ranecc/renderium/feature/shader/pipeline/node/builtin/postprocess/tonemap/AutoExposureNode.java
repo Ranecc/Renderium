@@ -31,7 +31,6 @@ import com.ranecc.renderium.infrastructure.gpu.VulkanMemoryAllocator;
 import com.ranecc.renderium.infrastructure.gpu.VulkanGPUResourceManager;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
@@ -539,21 +538,19 @@ public class AutoExposureNode extends AbstractPipelineNode {
                             exposureBufferMemory = bufAndMem[1];
 
                             // 持久映射（HOST_COHERENT，无需显式 flush）
-                            try (Arena arena = Arena.ofConfined()) {
-                                MemorySegment ppData = arena.allocate(ValueLayout.JAVA_LONG);
-                                int mapRc;
-                                try {
-                                    mapRc = (int) VulkanAPIRegistry.invoke(
-                                        "vkMapMemory", dev, exposureBufferMemory, 0L, 4L, 0, ppData.address());
-                                } catch (Throwable t) {
-                                    LOGGER.warning("[AutoExposure] vkMapMemory 失败: " + t.getMessage());
-                                    mapRc = -1;
-                                }
-                                if (mapRc == 0) {
-                                    long ptr = ppData.get(ValueLayout.JAVA_LONG, 0);
-                                    if (ptr != 0L) {
-                                        exposureMapped = MemorySegment.ofAddress(ptr).reinterpret(4L);
-                                    }
+                            MemorySegment ppData = PerFrameArena.allocateLongs(1);
+                            int mapRc;
+                            try {
+                                mapRc = (int) VulkanAPIRegistry.invoke(
+                                    "vkMapMemory", dev, exposureBufferMemory, 0L, 4L, 0, ppData.address());
+                            } catch (Throwable t) {
+                                LOGGER.warning("[AutoExposure] vkMapMemory 失败: " + t.getMessage());
+                                mapRc = -1;
+                            }
+                            if (mapRc == 0) {
+                                long ptr = ppData.get(ValueLayout.JAVA_LONG, 0);
+                                if (ptr != 0L) {
+                                    exposureMapped = MemorySegment.ofAddress(ptr).reinterpret(4L);
                                 }
                             }
 

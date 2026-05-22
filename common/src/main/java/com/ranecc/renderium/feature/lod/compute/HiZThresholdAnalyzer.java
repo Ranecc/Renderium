@@ -116,7 +116,7 @@ public final class HiZThresholdAnalyzer {
     // ==================== 配置字段 ====================
 
     /** 当前 Mip 选择策略 */
-    private volatile MipStrategy currentStrategy = MipStrategy.BALANCED;
+    private volatile MipStrategy currentStrategy = MipStrategy.AGGRESSIVE;
 
     /** 屏幕宽度 */
     private volatile int screenWidth = SCREEN_WIDTH;

@@ -23,11 +23,11 @@ import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.*;
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
+import com.ranecc.renderium.infrastructure.gpu.PerFrameArena;
 
 /**
  * 阴影风格控制节点
@@ -250,7 +250,7 @@ public class ShadowStyleNode extends AbstractPipelineNode {
             return;
         }
 
-        try (Arena arena = Arena.ofConfined()) {
+        try {
             int styleFlag = (int) uniforms[0];
             float edgeSoftness = uniforms[1];
             float shadowR = uniforms[2];
@@ -284,7 +284,7 @@ public class ShadowStyleNode extends AbstractPipelineNode {
             if (cmdBuf == 0L) return;
 
             // VkImageMemoryBarrier: oldLayout=UNDEFINED(0), newLayout=GENERAL(1)
-            MemorySegment barrier = arena.allocate(68L);
+            MemorySegment barrier = PerFrameArena.allocate(68L);
             barrier.set(ValueLayout.JAVA_INT, 0, 33);       // sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER
             barrier.set(ValueLayout.JAVA_LONG, 8, 0L);     // pNext
             barrier.set(ValueLayout.JAVA_INT, 16, 0);      // srcAccessMask
@@ -315,7 +315,7 @@ public class ShadowStyleNode extends AbstractPipelineNode {
                     0, 1, descriptorSet, 0, 0L);
 
             // Push constants: 32 bytes (int styleFlag + 5 floats = 24 bytes, padded to 32)
-            MemorySegment pcData = arena.allocate(32L);
+            MemorySegment pcData = PerFrameArena.allocate(32L);
             pcData.set(ValueLayout.JAVA_INT, 0, styleFlag);
             pcData.set(ValueLayout.JAVA_FLOAT, 4, edgeSoftness);
             pcData.set(ValueLayout.JAVA_FLOAT, 8, shadowR);
@@ -340,8 +340,7 @@ public class ShadowStyleNode extends AbstractPipelineNode {
             LOGGER.finest("[ShadowStyleNode] compute dispatch OK: " + pass
                     + " " + width + "x" + height
                     + " groups=" + groupsX + "x" + groupsY);
-        } // confined arena 在此处自动释放，避免内存泄漏
-        catch (Throwable t) {
+        } catch (Throwable t) {
             LOGGER.warning("[ShadowStyleNode] compute dispatch 异常: " + t.getMessage());
         }
     }
@@ -406,7 +405,6 @@ public class ShadowStyleNode extends AbstractPipelineNode {
         if (device == 0L) return;
 
         // 修复: 使用 confined arena 替代 global arena，方法结束后自动释放，避免内存泄漏
-        try (Arena arena = Arena.ofConfined()) {
 
         try {
             disposeOutputImage(device);
@@ -433,7 +431,7 @@ public class ShadowStyleNode extends AbstractPipelineNode {
              *   offset 72: pQueueFamilyIndices   (long) = 0
              *   offset 80: initialLayout (int)    = VK_IMAGE_LAYOUT_UNDEFINED (0)
              */
-            MemorySegment createInfo = arena.allocate(88L);
+            MemorySegment createInfo = PerFrameArena.allocate(88L);
             createInfo.set(ValueLayout.JAVA_INT, 0, VulkanStructs.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
             createInfo.set(ValueLayout.JAVA_LONG, 8, 0L);
             createInfo.set(ValueLayout.JAVA_INT, 16, 0);
@@ -452,51 +450,51 @@ public class ShadowStyleNode extends AbstractPipelineNode {
             createInfo.set(ValueLayout.JAVA_LONG, 72, 0L);
             createInfo.set(ValueLayout.JAVA_INT, 80, 0);
 
-            MemorySegment imgOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment imgOut = PerFrameArena.allocateLongs(1);
             int result = (int) VulkanAPIRegistry.invoke("vkCreateImage",
-                    device, createInfo.address(), 0L, imgOut.address());
+                device, createInfo.address(), 0L, imgOut.address());
             if (result != 0) {
-                LOGGER.warning("[ShadowStyleNode] vkCreateImage 失败: " + result);
-                return;
+            LOGGER.warning("[ShadowStyleNode] vkCreateImage 失败: " + result);
+            return;
             }
             outputImage = imgOut.get(ValueLayout.JAVA_LONG, 0);
 
             // Get memory requirements and allocate device-local memory
-            MemorySegment memReqs = arena.allocate(24L);
+            MemorySegment memReqs = PerFrameArena.allocate(24L);
             VulkanAPIRegistry.invoke("vkGetImageMemoryRequirements", device,
-                    outputImage, memReqs.address());
+                outputImage, memReqs.address());
             long memSize = memReqs.get(ValueLayout.JAVA_LONG, 0);
             int memTypeBits = memReqs.get(ValueLayout.JAVA_INT, 8);
 
             int memoryTypeIndex = findMemoryType(memTypeBits,
-                    VulkanConst.MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                VulkanConst.MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
             if (memoryTypeIndex < 0) {
-                LOGGER.warning("[ShadowStyleNode] 无可用的 device-local 内存类型");
-                disposeOutputImage(device);
-                return;
+            LOGGER.warning("[ShadowStyleNode] 无可用的 device-local 内存类型");
+            disposeOutputImage(device);
+            return;
             }
 
-            MemorySegment allocInfo = arena.allocate(32L);
+            MemorySegment allocInfo = PerFrameArena.allocate(32L);
             allocInfo.set(ValueLayout.JAVA_INT, 0, 5);           // sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO
             allocInfo.set(ValueLayout.JAVA_LONG, 8, 0L);         // pNext
             allocInfo.set(ValueLayout.JAVA_LONG, 16, memSize);   // allocationSize
             allocInfo.set(ValueLayout.JAVA_INT, 24, memoryTypeIndex);
-            MemorySegment memOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment memOut = PerFrameArena.allocateLongs(1);
             result = (int) VulkanAPIRegistry.invoke("vkAllocateMemory",
-                    device, allocInfo.address(), 0L, memOut.address());
+                device, allocInfo.address(), 0L, memOut.address());
             if (result != 0) {
-                LOGGER.warning("[ShadowStyleNode] vkAllocateMemory 失败: " + result);
-                disposeOutputImage(device);
-                return;
+            LOGGER.warning("[ShadowStyleNode] vkAllocateMemory 失败: " + result);
+            disposeOutputImage(device);
+            return;
             }
             outputImageMemory = memOut.get(ValueLayout.JAVA_LONG, 0);
 
             result = (int) VulkanAPIRegistry.invoke("vkBindImageMemory",
-                    device, outputImage, outputImageMemory, 0L);
+                device, outputImage, outputImageMemory, 0L);
             if (result != 0) {
-                LOGGER.warning("[ShadowStyleNode] vkBindImageMemory 失败: " + result);
-                disposeOutputImage(device);
-                return;
+            LOGGER.warning("[ShadowStyleNode] vkBindImageMemory 失败: " + result);
+            disposeOutputImage(device);
+            return;
             }
 
             /*
@@ -516,7 +514,7 @@ public class ShadowStyleNode extends AbstractPipelineNode {
               *   offset 68: subresourceRange.baseArrayLayer (int) = 0
               *   offset 72: subresourceRange.layerCount     (int) = 1
               */
-            MemorySegment viewCI = arena.allocate(80L);
+            MemorySegment viewCI = PerFrameArena.allocate(80L);
             viewCI.set(ValueLayout.JAVA_INT, 0, VulkanStructs.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
             viewCI.set(ValueLayout.JAVA_LONG, 8, 0L);
             viewCI.set(ValueLayout.JAVA_INT, 16, 0);
@@ -531,28 +529,27 @@ public class ShadowStyleNode extends AbstractPipelineNode {
             viewCI.set(ValueLayout.JAVA_INT, 68, 0);
             viewCI.set(ValueLayout.JAVA_INT, 72, 1);
 
-            MemorySegment viewOut = arena.allocate(ValueLayout.JAVA_LONG);
+            MemorySegment viewOut = PerFrameArena.allocateLongs(1);
             result = (int) VulkanAPIRegistry.invoke("vkCreateImageView",
-                    device, viewCI.address(), 0L, viewOut.address());
+                device, viewCI.address(), 0L, viewOut.address());
             if (result != 0) {
-                LOGGER.warning("[ShadowStyleNode] vkCreateImageView 失败: " + result);
-                disposeOutputImage(device);
-                return;
+            LOGGER.warning("[ShadowStyleNode] vkCreateImageView 失败: " + result);
+            disposeOutputImage(device);
+            return;
             }
             outputImageView = viewOut.get(ValueLayout.JAVA_LONG, 0);
 
             lastWidth = width;
             lastHeight = height;
             LOGGER.fine("[ShadowStyleNode] OutputImage 创建成功: "
-                    + width + "x" + height
-                    + " image=0x" + Long.toHexString(outputImage)
-                    + " view=0x" + Long.toHexString(outputImageView));
+                + width + "x" + height
+                + " image=0x" + Long.toHexString(outputImage)
+                + " view=0x" + Long.toHexString(outputImageView));
         } catch (Throwable t) {
             LOGGER.warning("[ShadowStyleNode] ensureOutputImage 异常: " + t.getMessage());
             disposeOutputImage(device);
         }
 
-        } // confined arena 在此处自动释放，避免内存泄漏
     }
 
     // ==================== SPIR-V 加载 ====================
@@ -643,8 +640,8 @@ public class ShadowStyleNode extends AbstractPipelineNode {
         long physicalDevice = VulkanDeviceHolder.getInstance().getVkPhysicalDevice();
         if (physicalDevice == 0L) return -1;
         // 修复: 使用 confined arena 替代 global arena，方法结束后自动释放，避免内存泄漏
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment memProps = arena.allocate(16L);
+        try {
+            MemorySegment memProps = PerFrameArena.allocate(16L);
             VulkanAPIRegistry.invoke("vkGetPhysicalDeviceMemoryProperties",
                     physicalDevice, memProps.address());
             int memoryTypeCount = memProps.get(ValueLayout.JAVA_INT, 0);

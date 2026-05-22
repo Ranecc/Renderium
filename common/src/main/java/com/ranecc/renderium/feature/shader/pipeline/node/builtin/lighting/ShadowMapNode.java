@@ -32,7 +32,6 @@ import com.ranecc.renderium.platform.bridge.mc.FrameDataSnapshot;
 import com.ranecc.renderium.platform.bridge.mc.MCRenderBridge;
 import com.ranecc.renderium.domain.constant.VulkanConst;
 
-import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Level;
@@ -808,34 +807,32 @@ public class ShadowMapNode extends AbstractPipelineNode {
         }
 
         // 映射并上传顶点数据（世界坐标已由 execute() 通过 FrameDataSnapshot 提取）
-        try (Arena arena = Arena.ofConfined()) {
-            MemorySegment ppData = arena.allocate(ValueLayout.JAVA_LONG);
-            try {
-                int mapRc = (int) VulkanAPIRegistry.invoke("vkMapMemory", dev, vertexBufferMemory, 0L, (long) vertBytes, 0, ppData.address());
-                if (mapRc == 0) {
-                    long ptr = ppData.get(ValueLayout.JAVA_LONG, 0);
-                    MemorySegment mapped = MemorySegment.ofAddress(ptr).reinterpret(vertBytes);
-                    float[] pos4 = new float[4];
-                    for (int i = 0; i < vertexCount; i++) {
-                        pos4[0] = worldPositions[i * 3];
-                        pos4[1] = worldPositions[i * 3 + 1];
-                        pos4[2] = worldPositions[i * 3 + 2];
-                        pos4[3] = 1.0f;
-                        mapped.set(ValueLayout.JAVA_FLOAT, i * 16L, pos4[0]);
-                        mapped.set(ValueLayout.JAVA_FLOAT, i * 16L + 4, pos4[1]);
-                        mapped.set(ValueLayout.JAVA_FLOAT, i * 16L + 8, pos4[2]);
-                        mapped.set(ValueLayout.JAVA_FLOAT, i * 16L + 12, pos4[3]);
-                    }
-                } else {
-                    LOGGER.fine("vkMapMemory shadow 失败, rc=" + mapRc);
+        MemorySegment ppData = PerFrameArena.allocateLongs(1);
+        try {
+            int mapRc = (int) VulkanAPIRegistry.invoke("vkMapMemory", dev, vertexBufferMemory, 0L, (long) vertBytes, 0, ppData.address());
+            if (mapRc == 0) {
+                long ptr = ppData.get(ValueLayout.JAVA_LONG, 0);
+                MemorySegment mapped = MemorySegment.ofAddress(ptr).reinterpret(vertBytes);
+                float[] pos4 = new float[4];
+                for (int i = 0; i < vertexCount; i++) {
+                    pos4[0] = worldPositions[i * 3];
+                    pos4[1] = worldPositions[i * 3 + 1];
+                    pos4[2] = worldPositions[i * 3 + 2];
+                    pos4[3] = 1.0f;
+                    mapped.set(ValueLayout.JAVA_FLOAT, i * 16L, pos4[0]);
+                    mapped.set(ValueLayout.JAVA_FLOAT, i * 16L + 4, pos4[1]);
+                    mapped.set(ValueLayout.JAVA_FLOAT, i * 16L + 8, pos4[2]);
+                    mapped.set(ValueLayout.JAVA_FLOAT, i * 16L + 12, pos4[3]);
                 }
-            } catch (Throwable t) {
-                LOGGER.fine("vkMapMemory shadow 异常: " + t.getMessage());
+            } else {
+                LOGGER.fine("vkMapMemory shadow 失败, rc=" + mapRc);
             }
-            try {
-                VulkanAPIRegistry.invoke("vkUnmapMemory", dev, vertexBufferMemory);
-            } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            LOGGER.fine("vkMapMemory shadow 异常: " + t.getMessage());
         }
+        try {
+            VulkanAPIRegistry.invoke("vkUnmapMemory", dev, vertexBufferMemory);
+        } catch (Throwable ignored) {}
 
         // 更新 Descriptor: binding 0 = 顶点 SSBO, binding 1 = 级联深度贴图 Storage Image
         ComputePipelineHelper.updateStorageBufferDescriptor(dev, descriptorSet, 0, vertexBuffer, 0L, vertBytes);
