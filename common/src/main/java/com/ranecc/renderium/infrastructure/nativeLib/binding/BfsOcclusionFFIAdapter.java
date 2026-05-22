@@ -19,7 +19,7 @@ import com.ranecc.renderium.infrastructure.gpu.NativeLibraryLoader;
  *   bfs.destroyContext(ctx);
  * </pre>
  */
-public final class BfsOcclusionFFIAdapter implements com.ranecc.renderium.feature.pipeline.strategy.BfsOcclusion {
+public final class BfsOcclusionFFIAdapter implements com.ranecc.renderium.feature.shader.pipeline.strategy.BfsOcclusion {
 
     /** NativeLibraryLoader实例，用于获取C++函数句柄 */
     private final NativeLibraryLoader loader;

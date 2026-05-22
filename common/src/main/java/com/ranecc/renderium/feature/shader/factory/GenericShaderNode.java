@@ -26,9 +26,9 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
-import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
-import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
-import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob;
+import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
+import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
+import com.ranecc.renderium.feature.shader.pipeline.parameter.ParameterKnob;
 import com.ranecc.renderium.feature.shader.comp.ShaderCompDescriptor;
 import com.ranecc.renderium.feature.shader.spirv.SPIRVShaderModule;
 import com.ranecc.renderium.platform.bridge.mc.CommandBatcher;

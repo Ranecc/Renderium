@@ -3,7 +3,7 @@ package com.ranecc.renderium.platform.mixin;
 import com.ranecc.renderium.platform.bridge.video.VideoSettingsACL;
 import net.minecraft.client.gui.screens.options.OptionsSubScreen;
 import net.minecraft.client.gui.screens.options.VideoSettingsScreen;
-import net.minecraft.world.option.OptionInstance;
+import net.minecraft.client.OptionInstance;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -31,9 +31,10 @@ public abstract class VideoOptionsScreenMixin extends OptionsSubScreen {
     /**
      * dummy 构造函数（Mixin 框架不会实际调用）
      * 继承 OptionsSubScreen 以访问 this.list 字段
+     * MC 26.2 API: OptionsSubScreen(Screen, Options, Component)
      */
     protected VideoOptionsScreenMixin() {
-        super(null, null);
+        super(null, null, net.minecraft.network.chat.Component.literal(""));
     }
 
     /**

@@ -28,8 +28,8 @@ package com.ranecc.renderium.feature.shader.comp;
 
 import java.util.*;
 import java.util.logging.Logger;
-import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
-import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob;
+import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
+import com.ranecc.renderium.feature.shader.pipeline.parameter.ParameterKnob;
 
 /**
  * Shader 节点组件描述符 (.comp 文件格式规范)

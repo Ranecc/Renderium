@@ -18,18 +18,18 @@
 package com.ranecc.renderium.feature.shader.factory;
 
 import com.ranecc.renderium.feature.shader.comp.ShaderCompDescriptor;
-import com.ranecc.renderium.feature.pipeline.parameter.*;
-import com.ranecc.renderium.feature.pipeline.parameter.impl.BoolKnob;
-import com.ranecc.renderium.feature.pipeline.parameter.impl.EnumKnob;
-import com.ranecc.renderium.feature.pipeline.parameter.impl.FloatKnob;
-import com.ranecc.renderium.feature.pipeline.parameter.impl.IntKnob;
+import com.ranecc.renderium.feature.shader.pipeline.parameter.*;
+import com.ranecc.renderium.feature.shader.pipeline.parameter.impl.BoolKnob;
+import com.ranecc.renderium.feature.shader.pipeline.parameter.impl.EnumKnob;
+import com.ranecc.renderium.feature.shader.pipeline.parameter.impl.FloatKnob;
+import com.ranecc.renderium.feature.shader.pipeline.parameter.impl.IntKnob;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
-import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
-import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob;
+import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
+import com.ranecc.renderium.feature.shader.pipeline.parameter.ParameterKnob;
 import com.ranecc.renderium.feature.shader.registry.ShaderNodeRegistry;
 import com.ranecc.renderium.feature.shader.spirv.SPIRVShaderModule;
 /**
@@ -199,19 +199,19 @@ public final class ShaderNodeFactory {
         Map<String, String> map = new LinkedHashMap<>();
 
         // ===== 预计算阶段 (PRE_RENDER) =====
-        map.put("skybox", "com.ranecc.renderium.feature.pipeline.node.builtin.SkyBoxNode");
-        map.put("shadow_style", "com.ranecc.renderium.feature.pipeline.node.builtin.ShadowStyleNode");
+        map.put("skybox", "com.ranecc.renderium.feature.shader.pipeline.node.builtin.SkyBoxNode");
+        map.put("shadow_style", "com.ranecc.renderium.feature.shader.pipeline.node.builtin.ShadowStyleNode");
 
         // ===== G-Buffer 阶段 (GBUFFER) =====
-        map.put("pbr_material", "com.ranecc.renderium.feature.pipeline.node.builtin.PBRMaterialNode");
+        map.put("pbr_material", "com.ranecc.renderium.feature.shader.pipeline.node.builtin.PBRMaterialNode");
 
         // ===== 光照阶段 (LIGHTING) =====
-        map.put("lighting", "com.ranecc.renderium.feature.pipeline.node.builtin.LightingNode");
-        map.put("reflection", "com.ranecc.renderium.feature.pipeline.node.builtin.ReflectionNode");
-        map.put("ray_tracing", "com.ranecc.renderium.feature.pipeline.node.builtin.RayTracingNode");
+        map.put("lighting", "com.ranecc.renderium.feature.shader.pipeline.node.builtin.LightingNode");
+        map.put("reflection", "com.ranecc.renderium.feature.shader.pipeline.node.builtin.ReflectionNode");
+        map.put("ray_tracing", "com.ranecc.renderium.feature.shader.pipeline.node.builtin.RayTracingNode");
 
         // ===== 后处理阶段 (POST_PROCESS) =====
-        map.put("exposure", "com.ranecc.renderium.feature.pipeline.node.builtin.ExposureNode");
+        map.put("exposure", "com.ranecc.renderium.feature.shader.pipeline.node.builtin.ExposureNode");
 
         return Collections.unmodifiableMap(map);
     }

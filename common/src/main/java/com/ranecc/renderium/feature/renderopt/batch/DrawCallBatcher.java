@@ -9,7 +9,7 @@ import com.ranecc.renderium.domain.constant.ConfigConstants;
 
 import java.util.ArrayList;
 import java.util.List;
-import com.ranecc.renderium.feature.pipeline.core.RenderPipeline;
+import com.ranecc.renderium.feature.shader.pipeline.core.RenderPipeline;
 /**
  * DrawCall 批处理器。
  *

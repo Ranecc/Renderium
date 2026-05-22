@@ -22,7 +22,7 @@
 
 package com.ranecc.renderium.feature.shader.registry;
 
-import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
+import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.feature.shader.comp.ShaderCompDescriptor;
 
 import java.io.IOException;

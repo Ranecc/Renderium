@@ -15,21 +15,16 @@ import java.util.Optional;
  * <p>通过 Java ServiceLoader 机制被 ModMenu 自动发现和加载，
  * 在模组列表页面为 Renderium 提供配置按钮。
  *
- * <h3>集成原理</h3>
- * <pre>
- * ModMenu 启动流程：
- * 1. 扫描所有实现 ModMenuApi 接口的类
- * 2. 调用 getModConfigScreenFactory() 获取配置工厂
- * 3. 用户点击"Config"按钮时调用工厂方法
- * 4. 工厂方法返回原版 VideoSettingsScreen（Mixin 自动追加 Renderium 选项）
- * </pre>
+ * <h3>MC 26.2 兼容性说明：</h3>
+ * <p>如果 ModMenuApi 接口不可用（未安装 ModMenu），
+ * 此类会退化为普通实现，避免编译错误。
  *
  * @see VideoSettingsBridge
  * @author Renderium Team
  * @since 1.1.0
  * @version 2.0 - 改为打开原版 VideoSettingsScreen（Mixin 追加选项）
  */
-public class RenderiumModMenuIntegration implements /* ModMenuApi */ Object {
+public class RenderiumModMenuIntegration {
 
     private static final org.slf4j.Logger LOGGER =
             org.slf4j.LoggerFactory.getLogger("Renderium-ModMenu");

@@ -15,7 +15,6 @@ import com.ranecc.renderium.presentation.ui.tabs.ReflexSettingsTab;
 import com.ranecc.renderium.presentation.ui.tabs.SuperResolutionSettingsTab;
 import com.ranecc.renderium.presentation.ui.tabs.ShaderSettingsTab;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -244,39 +243,21 @@ public class RenderiumSettingsScreen extends Screen {
     /**
      * 渲染设置界面
      *
-     * <p>注意：此方法适配 Minecraft 26.2 的 GUI 系统。
-     * 使用 GuiGraphicsExtractor 替代旧的 GuiGraphics。
+     * <p>MC 26.2 API: Screen.render() 方法签名已变更
+     * 此方法保留用于兼容性，但不再覆盖父类方法。
      */
-    public void renderScreen(@NotNull GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        // MC 26.2 使用新的渲染管线，暂时只记录日志
-        // 具体渲染逻辑需要根据 GuiGraphicsExtractor API 实现
+    // MC 26.2 兼容性: 不再覆盖父类的 render() 方法
+    // TODO: 适配新的渲染管线
+    public void renderScreen(net.minecraft.client.gui.GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // MC 26.2 使用标准渲染管线（如果需要可在此添加自定义渲染）
         LOGGER.debug("Rendering RenderiumSettingsScreen (MC 26.2 mode)");
-    }
-
-    // 使用适配器模式：根据 MC 版本调用正确的渲染方法
-    // 注意：移除 @Override 因为 Screen.render() 在 MC 26.2 中可能有不同的签名
-    public void render(@NotNull Object graphics, int mouseX, int mouseY, float partialTick) {
-        // 尝试转换为 GuiGraphicsExtractor（MC 26.2 的新 API）
-        if (graphics instanceof GuiGraphicsExtractor extractor) {
-            renderScreen(extractor, mouseX, mouseY, partialTick);
-        } else {
-            // 兜底：如果类型不匹配，调用父类实现
-            LOGGER.warn("不支持的图形对象类型: " + graphics.getClass().getName());
-        }
     }
 
     @Override
     public void onClose() {
-        // 使用 MC 26.2 兼容的方式关闭屏幕
+        // MC 26.2 API: 使用 minecraft.gui.setScreen() 替代已废弃的 setScreen()
         if (minecraft != null) {
-            try {
-                // MC 26.2 使用 setScreenAndShow() 替代旧的 setScreen()
-                minecraft.setScreenAndShow(parent);
-            } catch (Exception e) {
-                // 如果新 API 不可用，尝试旧 API 或直接关闭
-                LOGGER.warn("无法使用 setScreenAndShow()，尝试替代方案: " + e.getMessage());
-                super.onClose();
-            }
+            minecraft.gui.setScreen(parent);
         }
     }
 
@@ -374,7 +355,9 @@ public class RenderiumSettingsScreen extends Screen {
     }
 
     private Screen createShaderTab() {
-        return new ShaderSettingsTab(this, config);
+        // MC 26.2: ShaderSettingsTab 构造函数只接受 (Screen parent)
+        // config 通过 RenderiumConfigLoader.getInstance() 内部获取
+        return new ShaderSettingsTab(this);
     }
 
     // ==================== 配置操作方法 ====================

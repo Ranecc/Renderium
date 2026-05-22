@@ -7,7 +7,7 @@ import com.ranecc.renderium.feature.shader.settings.ShaderPreset;
 import com.ranecc.renderium.domain.model.config.RenderiumConfig;
 import com.ranecc.renderium.infrastructure.gpu.VulkanFFMDebugger;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.option.OptionInstance;
+import net.minecraft.client.OptionInstance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

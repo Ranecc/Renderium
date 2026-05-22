@@ -13,7 +13,7 @@ import com.ranecc.renderium.platform.bridge.mc.FogContext;
 import com.ranecc.renderium.platform.bridge.mc.CameraContext;
 import com.ranecc.renderium.platform.bridge.mc.MatrixContext;
 import com.ranecc.renderium.platform.bridge.mc.ChunkContext;
-import com.ranecc.renderium.feature.pipeline.core.PipelineExecutor;
+import com.ranecc.renderium.feature.shader.pipeline.core.PipelineExecutor;
 
 /**
  * 渲染生命周期管理器

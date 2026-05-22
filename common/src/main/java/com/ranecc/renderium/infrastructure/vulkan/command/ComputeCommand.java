@@ -3,7 +3,7 @@
 
 package com.ranecc.renderium.infrastructure.vulkan.command;
 
-import com.ranecc.renderium.feature.pipeline.core.RenderPipeline;
+import com.ranecc.renderium.feature.shader.pipeline.core.RenderPipeline;
 
 /**
  * Compute 计算命令。

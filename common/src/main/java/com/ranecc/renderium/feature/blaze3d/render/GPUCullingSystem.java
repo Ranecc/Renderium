@@ -132,13 +132,59 @@ private static byte[] FRUSTUM_CULLING_SPIRV;
 
     // ==================== SPIR-V ====================
 
+    /**
+     * 加载 SPIR-V 着色器字节码
+     * <p>
+     * 修复 Issue: 原实现只尝试从 shaders-src/ 加载源码编译，
+     * 在 release 版本中 shaders-src/ 被排除，导致功能完全不可用。
+     * <p>
+     * 加载策略（参考 LodCullingComputePass.loadShaderResource）：
+     * <ol>
+     *   <li>优先加载预编译 SPIR-V 二进制（shaders/ 路径，release 可用）</li>
+     *   <li>回退到源码编译（shaders-src/ 路径，开发环境可用）</li>
+     * </ol>
+     */
     private void loadSPIRV() {
+        // 1. 优先加载预编译 SPIR-V 二进制（release 路径）
+        try {
+            ClassLoader cl = getClass().getClassLoader();
+            try (InputStream is = cl.getResourceAsStream("shaders/compute/culling/frustum_culling.spv")) {
+                if (is != null) {
+                    FRUSTUM_CULLING_SPIRV = is.readAllBytes();
+                    // 验证 SPIR-V magic number: 0x07230203（little-endian 字节序为 03 02 23 07）
+                    if (FRUSTUM_CULLING_SPIRV.length >= 4
+                            && ((FRUSTUM_CULLING_SPIRV[0] & 0xFF) == 0x03)
+                            && ((FRUSTUM_CULLING_SPIRV[1] & 0xFF) == 0x02)
+                            && ((FRUSTUM_CULLING_SPIRV[2] & 0xFF) == 0x23)
+                            && ((FRUSTUM_CULLING_SPIRV[3] & 0xFF) == 0x07)) {
+                        LOGGER.info("GPU 剔除: 加载预编译 SPIR-V 成功 (" + FRUSTUM_CULLING_SPIRV.length + " bytes)");
+                        return;
+                    }
+                    LOGGER.warning("GPU 剔除: 预编译 SPIR-V magic 验证失败，回退到源码编译");
+                    FRUSTUM_CULLING_SPIRV = null;
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.fine("GPU 剔除: 预编译 SPIR-V 加载失败: " + e.getMessage());
+        }
+
+        // 2. 回退: 从源码编译（开发路径）
         try {
             ClassLoader cl = getClass().getClassLoader();
             try (InputStream is = cl.getResourceAsStream("shaders-src/compute/culling/frustum_culling.comp")) {
-                if (is != null) compileGLSL(new String(is.readAllBytes(), StandardCharsets.UTF_8));
+                if (is != null) {
+                    compileGLSL(new String(is.readAllBytes(), StandardCharsets.UTF_8));
+                    if (FRUSTUM_CULLING_SPIRV != null) {
+                        LOGGER.info("GPU 剔除: 从源码编译 SPIR-V 成功");
+                    }
+                    return;
+                }
             }
-        } catch (Exception e) { LOGGER.warning("SPIR-V 加载失败: " + e.getMessage()); }
+        } catch (Exception e) {
+            LOGGER.warning("GPU 剔除: 源码编译失败: " + e.getMessage());
+        }
+
+        LOGGER.severe("GPU 剔除: 无法加载 SPIR-V（预编译和源码均失败）");
     }
 
     private void compileGLSL(String source) {

@@ -9,8 +9,6 @@ import com.ranecc.renderium.platform.bridge.video.VideoSettingsACL;
 import com.ranecc.renderium.platform.bridge.video.VideoSettingsBridge;
 import com.ranecc.renderium.platform.command.RenderiumCommand;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -139,11 +137,13 @@ public class RenderiumPlatformInitializer implements ClientModInitializer {
     /**
      * 注册 /renderium 命令
      *
-     * <p>通过 Fabric API 的 {@link CommandRegistrationCallback} 注册命令。
-     * 支持服务端和客户端两种环境：
+     * <p>通过 Fabric API 的 CommandRegistrationCallback 注册命令。
+     * 使用反射方式安全加载，兼容不同版本的 Fabric API。
+     *
+     * <h4>Fabric API 版本兼容性：</h4>
      * <ul>
-     *   <li><b>服务端</b>：在专用服务器或集成服务器中可用</li>
-     *   <li><b>客户端</b>：在单人游戏中可用（通过 ClientCommandRegistrationCallback）</li>
+     *   <li><b>v1</b>: 旧版本 Fabric API (0.50.x 之前)</li>
+     *   <li><b>v2</b>: 新版本 Fabric API (0.100.x+)</li>
      * </ul>
      *
      * <h4>子命令列表：</h4>
@@ -157,29 +157,128 @@ public class RenderiumPlatformInitializer implements ClientModInitializer {
      * </ul>
      */
     private void registerCommands() {
-        try {
-            // 注册服务端/集成服务器命令
-            CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-                LOGGER.debug("Registering /renderium command for environment: {}", environment);
-                RenderiumCommand.register(dispatcher);
-            });
+        // 尝试多个可能的包路径（按优先级排序）
+        String[] commandCallbackPaths = {
+            "net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback",
+            "net.fabricmc.fabric.api.command.v1.CommandRegistrationCallback"
+        };
 
-            // 尝试注册客户端命令（如果 API 可用）
+        String[] clientCommandCallbackPaths = {
+            "net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback",
+            "net.fabricmc.fabric.api.client.command.v1.ClientCommandRegistrationCallback"
+        };
+
+        boolean commandRegistered = false;
+
+        // 尝试注册服务端/集成服务器命令
+        for (String callbackPath : commandCallbackPaths) {
             try {
-                ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-                    LOGGER.debug("Registering client-side /renderium command");
-                    RenderiumCommand.register(dispatcher);
-                });
-            } catch (NoClassDefFoundError e) {
-                // ClientCommandRegistrationCallback 可能不可用（取决于 Fabric API 版本）
-                LOGGER.debug("ClientCommandRegistrationCallback not available, skipping client commands");
+                Class<?> callbackClass = Class.forName(callbackPath);
+                Object event = callbackClass.getField("EVENT").get(null);
+
+                // 获取 register 方法（通常只有一个参数的 register 方法）
+                java.lang.reflect.Method[] methods = event.getClass().getMethods();
+                java.lang.reflect.Method registerMethod = null;
+                for (java.lang.reflect.Method m : methods) {
+                    if (m.getName().equals("register") && m.getParameterCount() == 1) {
+                        registerMethod = m;
+                        break;
+                    }
+                }
+
+                if (registerMethod != null) {
+                    // 使用 InvocationHandler 创建动态代理
+                    java.lang.reflect.InvocationHandler handler = (proxy, method, args) -> {
+                        if (args != null && args.length >= 1) {
+                            Object dispatcher = args[0];
+                            LOGGER.debug("Registering /renderium command via reflection");
+                            // 安全的类型转换: Object → CommandDispatcher
+                            if (dispatcher instanceof com.mojang.brigadier.CommandDispatcher) {
+                                RenderiumCommand.register((com.mojang.brigadier.CommandDispatcher) dispatcher);
+                            } else {
+                                LOGGER.warn("Unexpected dispatcher type: {}", dispatcher.getClass().getName());
+                            }
+                        }
+                        return null;
+                    };
+
+                    // 创建回调接口的代理实例
+                    Class<?> callbackInterface = registerMethod.getParameterTypes()[0];
+                    Object proxy = java.lang.reflect.Proxy.newProxyInstance(
+                        callbackClass.getClassLoader(),
+                        new java.lang.Class<?>[]{callbackInterface},
+                        handler
+                    );
+
+                    registerMethod.invoke(event, proxy);
+                    commandRegistered = true;
+                    LOGGER.info("Successfully registered /renderium command using: {}", callbackPath);
+                    break;
+                }
+
+            } catch (ClassNotFoundException e) {
+                LOGGER.debug("CommandRegistrationCallback not found at: {}", callbackPath);
+            } catch (Exception e) {
+                LOGGER.warn("Failed to register command via {}: {}", callbackPath, e.getMessage());
             }
+        }
 
-            LOGGER.info("/renderium command registered with subcommands: status, reload, reset, toggle, info, list");
+        // 尝试注册客户端命令（如果 API 可用）
+        for (String callbackPath : clientCommandCallbackPaths) {
+            try {
+                Class<?> callbackClass = Class.forName(callbackPath);
+                Object event = callbackClass.getField("EVENT").get(null);
 
-        } catch (Exception e) {
-            LOGGER.warn("Failed to register /renderium command: {}", e.getMessage());
-            // 不抛出异常，命令注册失败不应阻止模组启动
+                // 简化的客户端命令注册
+                java.lang.reflect.InvocationHandler handler = (proxy, method, args) -> {
+                    if (args != null && args.length >= 1) {
+                        LOGGER.debug("Registering client-side /renderium command");
+                        // 安全的类型转换: Object → CommandDispatcher
+                        if (args[0] instanceof com.mojang.brigadier.CommandDispatcher) {
+                            RenderiumCommand.register((com.mojang.brigadier.CommandDispatcher) args[0]);
+                        } else {
+                            LOGGER.warn("Unexpected client dispatcher type: {}", args[0].getClass().getName());
+                        }
+                    }
+                    return null;
+                };
+
+                java.lang.reflect.Method[] methods = event.getClass().getMethods();
+                java.lang.reflect.Method registerMethod = null;
+                for (java.lang.reflect.Method m : methods) {
+                    if (m.getName().equals("register") && m.getParameterCount() == 1) {
+                        registerMethod = m;
+                        break;
+                    }
+                }
+
+                if (registerMethod != null) {
+                    Class<?> callbackInterface = registerMethod.getParameterTypes()[0];
+                    Object proxy = java.lang.reflect.Proxy.newProxyInstance(
+                        callbackClass.getClassLoader(),
+                        new java.lang.Class<?>[]{callbackInterface},
+                        handler
+                    );
+
+                    registerMethod.invoke(event, proxy);
+                    LOGGER.debug("Client command registered using: {}", callbackPath);
+                    break;
+                }
+
+            } catch (ClassNotFoundException e) {
+                LOGGER.debug("ClientCommandRegistrationCallback not found at: {}", callbackPath);
+            } catch (Exception e) {
+                LOGGER.debug("Client command registration skipped: {}", e.getMessage());
+            }
+        }
+
+        if (!commandRegistered) {
+            LOGGER.warn("""
+                /renderium command registration failed - Fabric Command API not available.
+                This is normal if:
+                - Using a minimal Fabric API without command module
+                - Running in an environment where command registration is not supported
+                Commands can still be registered manually through other means if needed.""");
         }
     }
 

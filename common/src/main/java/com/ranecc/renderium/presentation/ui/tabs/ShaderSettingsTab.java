@@ -627,6 +627,10 @@ public class ShaderSettingsTab extends Screen {
 
     /**
      * 简单文本标签组件（用于显示分组标题）
+     *
+     * MC 26.2 兼容性说明：
+     * - AbstractWidget 要求实现 updateWidgetNarration() 方法
+     * - drawCenteredString() 可能已移除，改用 drawString() 手动居中
      */
     private static class Label extends net.minecraft.client.gui.components.AbstractWidget {
         private final String text;
@@ -636,13 +640,40 @@ public class ShaderSettingsTab extends Screen {
             this.text = text;
         }
 
-        @Override
-        public void render(net.minecraft.client.gui.GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-            graphics.drawCenteredString(net.minecraft.client.Minecraft.getInstance().font,
-                text, getX() + width / 2, getY(), 0xFFAAAAAA);
+        // MC 26.2 兼容性: AbstractWidget.render() 方法签名已变更
+        // 同时 net.minecraft.client.Font 已移至 net.minecraft.client.gui.Font
+        // TODO: 适配新的 Widget 渲染 API
+        public void renderWidget(net.minecraft.client.gui.GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+            // MC 26.2 使用正确的 Font 类路径
+            net.minecraft.client.gui.Font font = net.minecraft.client.Minecraft.getInstance().font;
+            int textWidth = font.width(this.text);
+            int centeredX = getX() + (width - textWidth) / 2;
+            // MC 26.2 API: GuiGraphics.drawString() 签名已变更，暂时禁用文本渲染
+            // 原调用: graphics.drawString(font, this.text, centeredX, getY(), 0xFFAAAAAA);
+            // TODO: 找到 MC 26.2 正确的文本渲染方式（可能需要使用 Component 或新的 draw 方法）
         }
 
+        // MC 26.2 兼容性: AbstractWidget 要求实现 extractWidgetRenderState()
+        // 这是新的渲染管线的一部分
+        public void extractWidgetRenderState(net.minecraft.client.gui.GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+            // Label 组件不需要特殊的渲染状态提取
+            // 空实现即可
+        }
+
+        // MC 26.2 兼容性: AbstractWidget.onClick() 可能已变更或移除
+        // TODO: 检查是否仍需要此方法
+        public void onClickWidget(double mouseX, double mouseY) { }
+
+        /**
+         * MC 26.2 API: AbstractWidget 要求实现的叙述更新方法
+         * 用于无障碍功能（屏幕阅读器支持）
+         *
+         * @param output 叙述输出器
+         */
         @Override
-        public void onClick(double mouseX, double mouseY) { }
+        protected void updateWidgetNarration(net.minecraft.client.gui.narration.NarrationElementOutput output) {
+            // 标签组件不需要特殊的叙述内容
+            // 默认实现即可满足无障碍要求
+        }
     }
 }

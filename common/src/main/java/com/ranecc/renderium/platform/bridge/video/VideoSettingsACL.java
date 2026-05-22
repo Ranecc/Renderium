@@ -3,7 +3,7 @@ package com.ranecc.renderium.platform.bridge.video;
 import java.util.Objects;
 import java.util.function.Supplier;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.option.OptionInstance;
+import net.minecraft.client.OptionInstance;
 
 /**
  * 视频设置 ACL 防腐层

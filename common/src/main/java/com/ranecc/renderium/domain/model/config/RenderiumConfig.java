@@ -462,6 +462,7 @@ public final class RenderiumConfig {
     /** 设置运行模式 */
     public void setMode(RenderiumMode mode) {
         this.mode = mode;
+        onConfigChanged();
     }
 
     /** 获取质量等级 */
@@ -470,6 +471,7 @@ public final class RenderiumConfig {
     /** 设置质量等级 */
     public void setQualityLevel(QualityLevel qualityLevel) {
         this.qualityLevel = qualityLevel;
+        onConfigChanged();
     }
 
     /** 是否启用模组 */
@@ -478,6 +480,7 @@ public final class RenderiumConfig {
     /** 设置模组启用状态 */
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+        onConfigChanged();
     }
 
     // ==================== Getter/Setter: 算法配置 ====================
@@ -488,6 +491,7 @@ public final class RenderiumConfig {
     /** 设置算法路径配置 */
     public void setAlgorithmConfig(AlgorithmConfig algorithmConfig) {
         this.algorithmConfig = algorithmConfig;
+        onConfigChanged();
     }
 
     // ==================== Getter/Setter: 渲染参数 ====================
@@ -496,31 +500,31 @@ public final class RenderiumConfig {
     public float getFov() { return fov; }
 
     /** 设置 FOV 视场角 */
-    public void setFov(float fov) { this.fov = fov; }
+    public void setFov(float fov) { this.fov = fov; onConfigChanged(); }
 
     /** 获取近裁剪面距离 */
     public float getNearPlane() { return nearPlane; }
 
     /** 设置近裁剪面距离 */
-    public void setNearPlane(float nearPlane) { this.nearPlane = nearPlane; }
+    public void setNearPlane(float nearPlane) { this.nearPlane = nearPlane; onConfigChanged(); }
 
     /** 获取远裁剪面距离 */
     public float getFarPlane() { return farPlane; }
 
     /** 设置远裁剪面距离 */
-    public void setFarPlane(float farPlane) { this.farPlane = farPlane; }
+    public void setFarPlane(float farPlane) { this.farPlane = farPlane; onConfigChanged(); }
 
     /** 获取窗口宽度 */
     public int getWindowWidth() { return windowWidth; }
 
     /** 设置窗口宽度 */
-    public void setWindowWidth(int windowWidth) { this.windowWidth = windowWidth; }
+    public void setWindowWidth(int windowWidth) { this.windowWidth = windowWidth; onConfigChanged(); }
 
     /** 获取窗口高度 */
     public int getWindowHeight() { return windowHeight; }
 
     /** 设置窗口高度 */
-    public void setWindowHeight(int windowHeight) { this.windowHeight = windowHeight; }
+    public void setWindowHeight(int windowHeight) { this.windowHeight = windowHeight; onConfigChanged(); }
 
     // ==================== Getter/Setter: 超分辨率 ====================
 
@@ -528,7 +532,7 @@ public final class RenderiumConfig {
     public SRTechnology getSrTechnology() { return srTechnology; }
 
     /** 设置超分辨率技术类型 */
-    public void setSrTechnology(SRTechnology srTechnology) { this.srTechnology = srTechnology; }
+    public void setSrTechnology(SRTechnology srTechnology) { this.srTechnology = srTechnology; onConfigChanged(); }
 
     /** 是否启用超分辨率 */
     public boolean isSuperResolutionEnabled() { return superResolutionEnabled; }
@@ -536,6 +540,7 @@ public final class RenderiumConfig {
     /** 设置超分辨率启用状态 */
     public void setSuperResolutionEnabled(boolean superResolutionEnabled) {
         this.superResolutionEnabled = superResolutionEnabled;
+        onConfigChanged();
     }
 
     // ==================== Getter/Setter: 帧生成 ====================
@@ -546,6 +551,7 @@ public final class RenderiumConfig {
     /** 设置帧生成启用状态 */
     public void setFrameGenerationEnabled(boolean frameGenerationEnabled) {
         this.frameGenerationEnabled = frameGenerationEnabled;
+        onConfigChanged();
     }
 
     /** 获取帧生成模式 */
@@ -554,6 +560,7 @@ public final class RenderiumConfig {
     /** 设置帧生成模式 */
     public void setFrameGenMode(FrameGenMode frameGenMode) {
         this.frameGenMode = frameGenMode;
+        onConfigChanged();
     }
 
     // ==================== Getter/Setter: Reflex 低延迟 ====================
@@ -564,6 +571,7 @@ public final class RenderiumConfig {
     /** 设置 Reflex 启用状态 */
     public void setReflexEnabled(boolean reflexEnabled) {
         this.reflexEnabled = reflexEnabled;
+        onConfigChanged();
     }
 
     /** 获取 Reflex 模式 */
@@ -572,6 +580,7 @@ public final class RenderiumConfig {
     /** 设置 Reflex 模式 */
     public void setReflexMode(ReflexMode reflexMode) {
         this.reflexMode = reflexMode;
+        onConfigChanged();
     }
 
     // ==================== Getter/Setter: 剔除优化 ====================
@@ -582,6 +591,7 @@ public final class RenderiumConfig {
     /** 设置遮挡剔除启用状态 */
     public void setOcclusionCullingEnabled(boolean occlusionCullingEnabled) {
         this.occlusionCullingEnabled = occlusionCullingEnabled;
+        onConfigChanged();
     }
 
     /** 是否启用视锥体剔除 */
@@ -590,6 +600,7 @@ public final class RenderiumConfig {
     /** 设置视锥体剔除启用状态 */
     public void setFrustumCullingEnabled(boolean frustumCullingEnabled) {
         this.frustumCullingEnabled = frustumCullingEnabled;
+        onConfigChanged();
     }
 
     /** 是否启用背面剔除 */
@@ -598,6 +609,7 @@ public final class RenderiumConfig {
     /** 设置背面剔除启用状态 */
     public void setBackfaceCullingEnabled(boolean backfaceCullingEnabled) {
         this.backfaceCullingEnabled = backfaceCullingEnabled;
+        onConfigChanged();
     }
 
     /** 是否启用相邻面剔除 */
@@ -610,18 +622,29 @@ public final class RenderiumConfig {
     private boolean dynamicResolutionEnabled = false;
 
     public boolean isNeighborFaceCullingEnabled() { return neighborFaceCullingEnabled; }
-    public void setNeighborFaceCullingEnabled(boolean v) { this.neighborFaceCullingEnabled = v; }
+    public void setNeighborFaceCullingEnabled(boolean v) { this.neighborFaceCullingEnabled = v; onConfigChanged(); }
     public boolean isEffectsEnabled() { return effectsEnabled; }
-    public void setEffectsEnabled(boolean v) { this.effectsEnabled = v; }
+    public void setEffectsEnabled(boolean v) { this.effectsEnabled = v; onConfigChanged(); }
     public float getSharpening() { return sharpening; }
-    public void setSharpening(float v) { this.sharpening = v; }
+    public void setSharpening(float v) { this.sharpening = v; onConfigChanged(); }
     public boolean isDynamicResolutionEnabled() { return dynamicResolutionEnabled; }
-    public void setDynamicResolutionEnabled(boolean v) { this.dynamicResolutionEnabled = v; }
+    public void setDynamicResolutionEnabled(boolean v) { this.dynamicResolutionEnabled = v; onConfigChanged(); }
 
     private volatile RenderiumConfigSnapshot cachedSnapshot;
 
     public void commitSnapshot() {
         cachedSnapshot = new RenderiumConfigSnapshot.Builder().fromConfig(this).build();
+    }
+
+    /**
+     * 配置变更通知：setter 调用后自动触发快照更新。
+     * <p>
+     * 修复 Issue: 所有 config.setXxx() 调用缺少 commitSnapshot()，
+     * 导致渲染线程可能一直看到旧的配置快照。
+     * 在每个 setter 末尾调用此方法，确保配置变更后快照自动更新。
+     */
+    private void onConfigChanged() {
+        commitSnapshot();
     }
 
     public RenderiumConfigSnapshot getSnapshot() {
@@ -639,7 +662,7 @@ public final class RenderiumConfig {
     public boolean isBatchingEnabled() { return batchingEnabled; }
 
     /** 设置批量渲染启用状态 */
-    public void setBatchingEnabled(boolean batchingEnabled) { this.batchingEnabled = batchingEnabled; }
+    public void setBatchingEnabled(boolean batchingEnabled) { this.batchingEnabled = batchingEnabled; onConfigChanged(); }
 
     /** 是否启用实例化渲染 */
     public boolean isInstancingEnabled() { return instancingEnabled; }
@@ -647,6 +670,7 @@ public final class RenderiumConfig {
     /** 设置实例化渲染启用状态 */
     public void setInstancingEnabled(boolean instancingEnabled) {
         this.instancingEnabled = instancingEnabled;
+        onConfigChanged();
     }
 
     /** 获取 GPU 使用率阈值 */
@@ -660,6 +684,7 @@ public final class RenderiumConfig {
     public void setGpuUsageThreshold(float threshold) {
         this.gpuUsageThreshold = Math.max(ConfigConstants.MIN_GPU_THRESHOLD,
             Math.min(ConfigConstants.MAX_GPU_THRESHOLD, threshold));
+        onConfigChanged();
     }
 
     // ==================== AlgorithmConfig 内部类 ====================

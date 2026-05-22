@@ -2,7 +2,7 @@ package com.ranecc.renderium.feature.shader.settings;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import com.ranecc.renderium.feature.pipeline.parameter.ParameterKnob;
+import com.ranecc.renderium.feature.shader.pipeline.parameter.ParameterKnob;
 
 /**
  * 着色器参数注册表

@@ -17,7 +17,7 @@
 
 package com.ranecc.renderium.infrastructure.nativeLib;
 
-import com.ranecc.renderium.feature.pipeline.strategy.BfsOcclusion;
+import com.ranecc.renderium.feature.shader.pipeline.strategy.BfsOcclusion;
 import com.ranecc.renderium.infrastructure.gpu.NativeLibraryLoader;
 import com.ranecc.renderium.infrastructure.nativeLib.binding.*;
 import java.lang.foreign.Arena;
