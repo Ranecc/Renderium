@@ -24,6 +24,7 @@ import com.ranecc.renderium.feature.shader.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.shader.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.*;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.Arena;
 import java.lang.foreign.ValueLayout;
 import java.util.logging.Logger;
 import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
@@ -639,9 +640,8 @@ public class ShadowStyleNode extends AbstractPipelineNode {
         if (!VulkanFFMBinding.isFfmLoaded()) return -1;
         long physicalDevice = VulkanDeviceHolder.getInstance().getVkPhysicalDevice();
         if (physicalDevice == 0L) return -1;
-        // 修复: 使用 confined arena 替代 global arena，方法结束后自动释放，避免内存泄漏
-        try {
-            MemorySegment memProps = PerFrameArena.allocate(16L);
+        try (Arena confined = Arena.ofConfined()) {
+            MemorySegment memProps = confined.allocate(16L);
             VulkanAPIRegistry.invoke("vkGetPhysicalDeviceMemoryProperties",
                     physicalDevice, memProps.address());
             int memoryTypeCount = memProps.get(ValueLayout.JAVA_INT, 0);

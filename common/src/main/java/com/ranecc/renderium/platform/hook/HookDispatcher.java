@@ -12,6 +12,9 @@ import com.ranecc.renderium.infrastructure.sanitizer.AutoCleanScheduler;
 import com.ranecc.renderium.infrastructure.gpu.FrameCommandContext;
 import com.ranecc.renderium.infrastructure.gpu.VulkanDeviceHolder;
 import com.ranecc.renderium.infrastructure.gpu.RenderiumProfiler;
+import com.ranecc.renderium.infrastructure.gpu.AdaptivePipelineBalancer;
+import com.ranecc.renderium.infrastructure.gpu.AsyncComputeDispatcher;
+import com.ranecc.renderium.infrastructure.gpu.DAGNodeScheduler;
 
 /**
  * 热路径调度核心 — 高性能 Hook 分发器
@@ -395,6 +398,24 @@ public final class HookDispatcher {
         }
         FrameCommandContext.beginFrame();
         RenderiumProfiler.beginFrame();
+
+        // 自适应负载均衡：记录 CPU 帧开始时间
+        AdaptivePipelineBalancer.onFrameBegin();
+
+        // Async Compute 初始化（延迟到首帧，确保 VulkanDeviceHolder 就绪）
+        if (!AsyncComputeDispatcher.isAvailable()) {
+            AsyncComputeDispatcher.initialize();
+        }
+
+        // DAG 调度器初始化
+        if (DAGNodeScheduler.computeTopologyLayers() == null
+                || DAGNodeScheduler.computeTopologyLayers().isEmpty()) {
+            DAGNodeScheduler.registerBuiltinDependencies();
+        }
+
+        // Async Compute 帧开始
+        AsyncComputeDispatcher.beginFrame();
+        DAGNodeScheduler.beginFrame();
     }
 
     /**
@@ -412,6 +433,12 @@ public final class HookDispatcher {
     public static void onFrameEnd(FrameContext ctx) {
         RenderiumProfiler.endFrame();
         FrameCommandContext.endFrame();
+
+        // Async Compute 帧结束：提交 Compute Queue 命令
+        AsyncComputeDispatcher.endFrame();
+
+        // 自适应负载均衡：记录帧结束时间 + 更新策略
+        AdaptivePipelineBalancer.onFrameEnd();
 
         Object scope = ctx.getDirtyFrameScope();
         if (scope instanceof DirtyFrameScope) {
