@@ -287,7 +287,7 @@ public class DepthOfFieldEnhancedNode extends AbstractPipelineNode {
         if (LOGGER.isLoggable(Level.FINE)) {
             double elapsedMicros = RenderiumProfiler.getNodeTime(10) / 1000.0;
             LOGGER.fine(String.format(
-                    "[DOF] 完成 | focalDist=%.2f aperture=f/%.1f samples=%d focalLen=%.1fmm | pipeline=0x%X | %.1f\u00b5s",
+                    "[DOF] 完成 | focalDist=%.2f aperture=f/%.1f samples=%d focalLen=%.1fmm | pipeline=0x%X | %.1fµs",
                 curFocalDist, curAperture, curSamples, curFocalLen, computePipeline, elapsedMicros
             ));
         }

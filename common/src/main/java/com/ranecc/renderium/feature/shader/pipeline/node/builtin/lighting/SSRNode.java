@@ -329,7 +329,7 @@ public class SSRNode extends AbstractPipelineNode {
         if (LOGGER.isLoggable(Level.FINE)) {
             double elapsedMicros = RenderiumProfiler.getNodeTime(7) / 1000.0;
             LOGGER.fine(String.format(
-                    "[SSR] 完成 | quality=%d maxSteps=%d thickness=%.3f bias=%.3f halfRes=%b | %.1f\u00b5s",
+                    "[SSR] 完成 | quality=%d maxSteps=%d thickness=%.3f bias=%.3f halfRes=%b | %.1fµs",
                     curQuality, curMaxSteps, curThickness, curBruteForceBias, curHalfResolution, elapsedMicros
             ));
         }

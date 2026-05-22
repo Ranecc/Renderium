@@ -287,7 +287,7 @@ public class LensFlareNode extends AbstractPipelineNode {
         RenderiumProfiler.recordEnd(8);
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format(
-                    "[LensFlare] 完成 | intensity=%.2f ghosts=%d streak=%.2f threshold=%.2f | %.1f\u00b5s",
+                    "[LensFlare] 完成 | intensity=%.2f ghosts=%d streak=%.2f threshold=%.2f | %.1fµs",
                 curIntensity, curGhostCount, curStreakLength, curThreshold, elapsedMicros
             ));
         }

@@ -268,7 +268,7 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
         double elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000.0;
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format(
-                    "[ChromaticAberration] 完成 | strength=%.4f radial=%b center=(%.2f,%.2f) | %.1f\u00b5s",
+                    "[ChromaticAberration] 完成 | strength=%.4f radial=%b center=(%.2f,%.2f) | %.1fµs",
                 curStrength, curRadial, curCenterOffsetX, curCenterOffsetY, elapsedMicros
         ));
         }

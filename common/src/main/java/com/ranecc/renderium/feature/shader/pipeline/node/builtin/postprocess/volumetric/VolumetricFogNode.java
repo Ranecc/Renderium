@@ -302,7 +302,7 @@ public class VolumetricFogNode extends AbstractPipelineNode {
         double elapsedMicros = RenderiumProfiler.getNodeTime(14) / 1000.0;
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format(
-                    "[VolFog] 完成 | density=%.2f falloff=%.4f steps=%d aniso=%.2f | pipeline=0x%X | %.1f\u00b5s",
+                    "[VolFog] 完成 | density=%.2f falloff=%.4f steps=%d aniso=%.2f | pipeline=0x%X | %.1fµs",
                 curDensity, curFalloff, curSteps, curAniso, computePipeline, elapsedMicros
             ));
         }

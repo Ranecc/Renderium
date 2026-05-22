@@ -276,7 +276,7 @@ public class TemporalAANode extends AbstractPipelineNode {
         if (LOGGER.isLoggable(Level.FINE)) {
             double elapsedMicros = RenderiumProfiler.getNodeTime(11) / 1000.0;
             LOGGER.fine(String.format(
-                    "[TAA] 完成 | blend=%.2f sharpness=%.2f clamp=%b velReject=%b | outputView=0x%X prevHistory=0x%X | %.1f\u00b5s",
+                    "[TAA] 完成 | blend=%.2f sharpness=%.2f clamp=%b velReject=%b | outputView=0x%X prevHistory=0x%X | %.1fµs",
                     curBlendWeight, curSharpness, curClamp, curVelReject, outputImageView, previousHistory, elapsedMicros
             ));
         }

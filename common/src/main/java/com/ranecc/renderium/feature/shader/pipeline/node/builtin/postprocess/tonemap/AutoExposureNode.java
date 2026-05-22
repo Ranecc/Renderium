@@ -341,7 +341,7 @@ public class AutoExposureNode extends AbstractPipelineNode {
         double elapsedMicros = RenderiumProfiler.getNodeTime(6) / 1000.0;
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format(
-                    "[AutoExposure] 完成 | targetLum=%.2f rate=%.2f minExp=%.1f maxExp=%.1f mode=%d prevExp=%.2f | %.1f\u00b5s",
+                    "[AutoExposure] 完成 | targetLum=%.2f rate=%.2f minExp=%.1f maxExp=%.1f mode=%d prevExp=%.2f | %.1fµs",
                 curTargetLuminance, curAdaptationRate, curMinExposure, curMaxExposure,
                 curMeteringMode, this.prevExposure, elapsedMicros
             ));

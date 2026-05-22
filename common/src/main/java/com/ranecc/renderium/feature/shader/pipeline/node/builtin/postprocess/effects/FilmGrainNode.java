@@ -222,7 +222,7 @@ public class FilmGrainNode extends AbstractPipelineNode {
         double elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000.0;
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format(
-                    "[FilmGrain] 完成 | strength=%.4f seed=%.2f | %.1f\u00b5s",
+                    "[FilmGrain] 完成 | strength=%.4f seed=%.2f | %.1fµs",
                     curStrength, curSeed, elapsedMicros
             ));
         }

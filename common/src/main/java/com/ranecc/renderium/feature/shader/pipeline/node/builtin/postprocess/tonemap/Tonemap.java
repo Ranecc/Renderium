@@ -563,7 +563,7 @@ public class Tonemap extends AbstractPipelineNode {
         double elapsedMicros = (System.nanoTime() - startTimeNanos) / 1000.0;
         if (LOGGER.isLoggable(Level.FINE)) {
             LOGGER.fine(String.format(
-                    "[Tonemap] 完成 | type=%s exp=%.2f gamma=%.2f sat=%.2f con=%.2f vig=%.2f | %.1f\u00b5s",
+                    "[Tonemap] 完成 | type=%s exp=%.2f gamma=%.2f sat=%.2f con=%.2f vig=%.2f | %.1fµs",
                 tonemapType.name(), curExposure, curGamma, curSaturation,
                 curContrast, curVignetteStrength, elapsedMicros
         ));

@@ -281,7 +281,7 @@ public class MotionBlurEnhancedNode extends AbstractPipelineNode {
         if (LOGGER.isLoggable(Level.FINE)) {
             double elapsedMicros = RenderiumProfiler.getNodeTime(13) / 1000.0;
             LOGGER.fine(String.format(
-                    "[MotionBlur] 完成 | strength=%.2f sampleCount=%d velocityScale=%.2f | pipeline=0x%X | %.1f\u00b5s",
+                    "[MotionBlur] 完成 | strength=%.2f sampleCount=%d velocityScale=%.2f | pipeline=0x%X | %.1fµs",
                 curStrength, curSampleCount, curVelocityScale, computePipeline, elapsedMicros
             ));
         }
