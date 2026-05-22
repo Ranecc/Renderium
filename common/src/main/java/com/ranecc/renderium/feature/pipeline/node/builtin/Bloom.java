@@ -206,14 +206,14 @@ public class Bloom extends AbstractPipelineNode {
 
     // ==================== 着色器资源路径 ====================
 
-    /** Brightness 提取 Compute Shader SPIR-V 路径 */
-    private static final String SHADER_BRIGHT_PATH = "/shaders/bloom_bright.spv";
-    /** Downsample Compute Shader SPIR-V 路径 */
-    private static final String SHADER_DOWN_PATH = "/shaders/bloom_downsample.spv";
-    /** Gaussian Blur Compute Shader SPIR-V 路径 */
-    private static final String SHADER_BLUR_PATH = "/shaders/bloom_blur.spv";
-    /** Upsample Compute Shader SPIR-V 路径 */
-    private static final String SHADER_UP_PATH = "/shaders/bloom_upsample.spv";
+    /** Brightness 提取 Compute Shader SPIR-V 路径（DDD分层：pipeline/postprocess/bloom） */
+    private static final String SHADER_BRIGHT_PATH = "/shaders/pipeline/postprocess/bloom/bloom_bright.spv";
+    /** Downsample Compute Shader SPIR-V 路径（DDD分层：pipeline/postprocess/bloom） */
+    private static final String SHADER_DOWN_PATH = "/shaders/pipeline/postprocess/bloom/bloom_downsample.spv";
+    /** Gaussian Blur Compute Shader SPIR-V 路径（DDD分层：pipeline/postprocess/bloom） */
+    private static final String SHADER_BLUR_PATH = "/shaders/pipeline/postprocess/bloom/bloom_blur.spv";
+    /** Upsample Compute Shader SPIR-V 路径（DDD分层：pipeline/postprocess/bloom） */
+    private static final String SHADER_UP_PATH = "/shaders/pipeline/postprocess/bloom/bloom_upsample.spv";
 
     // ==================== Compute Pipeline 句柄 ====================
 
@@ -1616,7 +1616,7 @@ public class Bloom extends AbstractPipelineNode {
     /**
      * 从 classpath 加载 SPIR-V 字节码
      *
-     * @param resourcePath 资源路径（如 "/shaders/bloom_bright.spv"）
+     * @param resourcePath 资源路径（如 "/shaders/pipeline/postprocess/bloom/bloom_bright.spv"）
      * @return SPIR-V 字节数组，加载失败返回空数组
      */
     private static byte[] loadSPIRV(String resourcePath) {

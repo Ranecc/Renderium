@@ -49,6 +49,9 @@ run/
 *.so
 libs/
 
+# SPIR-V 编译产物（由 .comp 编译生成，不进 Git）
+*.spv
+
 # Other
 .context/
 crash-reports/

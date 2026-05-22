@@ -31,8 +31,10 @@ import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
 import com.ranecc.renderium.infrastructure.gpu.*;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
+import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.domain.constant.VulkanConst;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
@@ -89,6 +91,9 @@ public class RayTracingNode extends AbstractPipelineNode {
     /** 去噪着色器 SPIR-V 资源路径 */
     private static final String SHADER_DENOISE = "/shaders/rt_denoise_atrous.spv";
 
+    /** 追踪着色器 SPIR-V 资源路径 */
+    private static final String SHADER_TRACE = "/shaders/rt_trace_rays.spv";
+
     /** RT 功能可用性标志（volatile 保证跨线程可见性） */
     private volatile boolean rtAvailable = false;
 
@@ -119,6 +124,12 @@ public class RayTracingNode extends AbstractPipelineNode {
     private volatile long denoiseLayout = 0L;
     /** 去噪描述符集句柄 */
     private volatile long denoiseSet = 0L;
+    /** 追踪管线句柄 */
+    private volatile long tracePipeline = 0L;
+    /** 追踪管线布局句柄 */
+    private volatile long traceLayout = 0L;
+    /** 追踪描述符集句柄 */
+    private volatile long traceSet = 0L;
     /** 去噪输出图像句柄 */
     private volatile long outputImage = 0L;
     /** 去噪输出图像视图句柄 */
@@ -254,13 +265,266 @@ public class RayTracingNode extends AbstractPipelineNode {
                     new float[]{
                             2.0f,   // spatialSigma (空间滤波半径)
                             0.1f,   // colorSigma (颜色相似度权重)
-                            pass % 2 == 0 ? 1.0f : 0.0f  // 偶数/奇数 pass 使用不同参数
+                            pass % 2 == 0 ? 1.0f : 0.0f
                     });
 
-            // Ping-Pong 交换
             long temp = source;
             source = target;
             target = temp;
         }
 
-        // 最终输出到 outputTexture
+        long dev2 = VulkanDeviceHolder.getInstance().getDevice();
+        if (dev2 != 0L) {
+            ComputePipelineHelper.updateStorageImageDescriptor(dev2, denoiseSet, 0, source, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev2, denoiseSet, 1, source, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev2, denoiseSet, 2, source, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(dev2, denoiseSet, 3, outputImageView, 0L);
+
+            long cmdBuf2 = LodCullingComputePass.allocateCommandBuffer(dev2);
+            LodCullingComputePass.beginCommandBuffer(cmdBuf2);
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf2, 1L, denoisePipeline);
+            VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf2, 1L, denoiseLayout, 0L, 1, denoiseSet, 0, 0L);
+            MemorySegment pcData2 = Arena.global().allocate(32);
+            pcData2.setAtIndex(ValueLayout.JAVA_INT, 0, 1);
+            pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 1, 0.1f);
+            pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 2, 1.0f);
+            pcData2.setAtIndex(ValueLayout.JAVA_FLOAT, 3, 1.0f);
+            VulkanAPIRegistry.invoke("vkCmdPushConstants", cmdBuf2, denoiseLayout, 0x20L, 0L, 32, pcData2);
+            int w2 = Math.max(1, (context.getWidth() + 7) / 8);
+            int h2 = Math.max(1, (context.getHeight() + 7) / 8);
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf2, w2, h2, 1);
+            LodCullingComputePass.endCommandBuffer(cmdBuf2);
+            long graphicsQueue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+            if (graphicsQueue != 0L) {
+                VulkanSyncManager.submitAndWait(graphicsQueue, cmdBuf2);
+            }
+        }
+    }
+
+    private void submitComputeDispatch(RenderContext context, String pass,
+                                       long[] inputs, long output, float[] uniforms) {
+        if (!VulkanFFMBinding.isFfmLoaded()) return;
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L || tracePipeline == 0L || traceSet == 0L) return;
+        try {
+            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
+            if (cmdBuf == 0L) return;
+            LodCullingComputePass.beginCommandBuffer(cmdBuf);
+
+            for (int i = 0; i < inputs.length; i++) {
+                if (inputs[i] != 0L) {
+                    ComputePipelineHelper.updateStorageImageDescriptor(device, traceSet, i, inputs[i], 0L);
+                }
+            }
+            ComputePipelineHelper.updateStorageImageDescriptor(device, traceSet, inputs.length, output, 0L);
+
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, tracePipeline);
+
+            if (traceLayout != 0L && traceSet != 0L) {
+                MemorySegment dsPtr = Arena.global().allocate(ValueLayout.JAVA_LONG);
+                dsPtr.set(ValueLayout.JAVA_LONG, 0, traceSet);
+                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
+                        cmdBuf, 1, traceLayout, 0, 1, dsPtr.address(), 0, 0L);
+            }
+
+            if (uniforms != null && uniforms.length > 0 && traceLayout != 0L) {
+                MemorySegment pcSeg = Arena.global().allocate(32L);
+                for (int i = 0; i < Math.min(uniforms.length, 8); i++) {
+                    pcSeg.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
+                }
+                VulkanAPIRegistry.invoke("vkCmdPushConstants",
+                        cmdBuf, traceLayout, 0x00000020L, 0, 32, pcSeg.address());
+            }
+
+            int w = Math.max(1, (context.getWidth() + 7) / 8);
+            int h = Math.max(1, (context.getHeight() + 7) / 8);
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
+
+            LodCullingComputePass.endCommandBuffer(cmdBuf);
+
+            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+            if (queue != 0L) {
+                VulkanSyncManager.submitAndWait(queue, cmdBuf);
+            }
+            LOGGER.finest("[RT] " + pass + " dispatch: " + w + "x" + h);
+        } catch (Throwable t) {
+            LOGGER.fine("[RT] " + pass + " dispatch error: " + t.getMessage());
+        }
+    }
+
+    private void submitFullScreenDraw(RenderContext context, String pass,
+                                      long source, long target, float[] uniforms) {
+        if (!VulkanFFMBinding.isFfmLoaded()) return;
+        long device = VulkanDeviceHolder.getInstance().getDevice();
+        if (device == 0L || denoisePipeline == 0L || denoiseSet == 0L) return;
+        try {
+            long cmdBuf = LodCullingComputePass.allocateCommandBuffer(device);
+            if (cmdBuf == 0L) return;
+            LodCullingComputePass.beginCommandBuffer(cmdBuf);
+
+            ComputePipelineHelper.updateStorageImageDescriptor(device, denoiseSet, 0, source, 0L);
+            ComputePipelineHelper.updateStorageImageDescriptor(device, denoiseSet, 1, target, 0L);
+
+            VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1, denoisePipeline);
+
+            if (denoiseLayout != 0L && denoiseSet != 0L) {
+                MemorySegment dsPtr = Arena.global().allocate(ValueLayout.JAVA_LONG);
+                dsPtr.set(ValueLayout.JAVA_LONG, 0, denoiseSet);
+                VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets",
+                        cmdBuf, 1, denoiseLayout, 0, 1, dsPtr.address(), 0, 0L);
+            }
+
+            if (uniforms != null && uniforms.length > 0 && denoiseLayout != 0L) {
+                MemorySegment pcSeg = Arena.global().allocate(32L);
+                for (int i = 0; i < Math.min(uniforms.length, 8); i++) {
+                    pcSeg.set(ValueLayout.JAVA_FLOAT, i * 4L, uniforms[i]);
+                }
+                VulkanAPIRegistry.invoke("vkCmdPushConstants",
+                        cmdBuf, denoiseLayout, 0x00000020L, 0, 32, pcSeg.address());
+            }
+
+            int w = Math.max(1, (context.getWidth() + 7) / 8);
+            int h = Math.max(1, (context.getHeight() + 7) / 8);
+            VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
+
+            LodCullingComputePass.endCommandBuffer(cmdBuf);
+
+            long queue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+            if (queue != 0L) {
+                VulkanSyncManager.submitAndWait(queue, cmdBuf);
+            }
+            LOGGER.finest("[RT] " + pass + " dispatch: " + w + "x" + h);
+        } catch (Throwable t) {
+            LOGGER.fine("[RT] " + pass + " dispatch error: " + t.getMessage());
+        }
+    }
+
+    private void ensureDenoisePipeline() {
+        if (denoisePipeline != 0L) return;
+        synchronized (this) {
+            if (denoisePipeline != 0L) return;
+            try {
+                byte[] spirv = loadSPIRV(SHADER_DENOISE);
+                if (spirv == null) return;
+                ComputePipelineHelper.Binding[] bindings = new ComputePipelineHelper.Binding[]{
+                    new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(2, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(3, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                };
+                ComputePipelineHelper.PushConstant pc =
+                        new ComputePipelineHelper.PushConstant(0, 32, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
+                var result = ComputePipelineHelper.createComputePipeline(spirv, bindings, pc);
+                if (result != null) {
+                    denoisePipeline = result.pipeline();
+                    denoiseLayout = result.pipelineLayout();
+                    denoiseSet = result.descriptorSet();
+                }
+            } catch (Throwable t) {
+                LOGGER.warning("[RT] createDenoisePipeline: " + t.getMessage());
+            }
+        }
+    }
+
+    private void ensureTracePipeline() {
+        if (tracePipeline != 0L) return;
+        synchronized (this) {
+            if (tracePipeline != 0L) return;
+            try {
+                byte[] spirv = loadSPIRV(SHADER_TRACE);
+                if (spirv == null) return;
+                ComputePipelineHelper.Binding[] bindings = new ComputePipelineHelper.Binding[]{
+                    new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(2, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(3, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                };
+                ComputePipelineHelper.PushConstant pc =
+                        new ComputePipelineHelper.PushConstant(0, 32, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
+                var result = ComputePipelineHelper.createComputePipeline(spirv, bindings, pc);
+                if (result != null) {
+                    tracePipeline = result.pipeline();
+                    traceLayout = result.pipelineLayout();
+                    traceSet = result.descriptorSet();
+                }
+            } catch (Throwable t) {
+                LOGGER.warning("[RT] createTracePipeline: " + t.getMessage());
+            }
+        }
+    }
+
+    private void ensureOutputImage(int w, int h) {
+        if (outputImage != 0L && lastWidth == w && lastHeight == h) return;
+        synchronized (this) {
+            if (outputImage != 0L && lastWidth == w && lastHeight == h) return;
+            var mgr = VulkanGPUResourceManager.getInstance();
+            if (outputImageView != 0L) { try { mgr.destroyView(outputImageView); } catch (Throwable ignored) {} outputImageView = 0L; }
+            if (outputImage != 0L) { try { mgr.releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastWidth, lastHeight, 97, VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {} outputImage = 0L; }
+            var res = mgr.createImage(w, h, 97, 0x20 | 0x10, VmaMemoryPools.PoolType.RENDER_TARGET);
+            if (res != null && res.handle != 0L) {
+                outputImage = res.handle;
+                outputImageView = mgr.createView(outputImage, 97, 1);
+                lastWidth = w; lastHeight = h;
+            }
+        }
+    }
+
+    private byte[] loadSPIRV(String path) {
+        try (var is = getClass().getResourceAsStream(path)) {
+            if (is == null) return null;
+            return is.readAllBytes();
+        } catch (Exception e) {
+            LOGGER.warning("[RT] loadSPIRV: " + e.getMessage());
+            return null;
+        }
+    }
+
+    @Override
+    protected void onDispose() {
+        long dev = VulkanDeviceHolder.getInstance().getDevice();
+        if (dev != 0L) {
+            if (denoisePipeline != 0L) { try { VulkanAPIRegistry.invoke("vkDestroyPipeline", dev, denoisePipeline, 0L); } catch (Throwable ignored) {} denoisePipeline = 0L; }
+            if (denoiseLayout != 0L) { try { VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", dev, denoiseLayout, 0L); } catch (Throwable ignored) {} denoiseLayout = 0L; }
+            if (tracePipeline != 0L) { try { VulkanAPIRegistry.invoke("vkDestroyPipeline", dev, tracePipeline, 0L); } catch (Throwable ignored) {} tracePipeline = 0L; }
+            if (traceLayout != 0L) { try { VulkanAPIRegistry.invoke("vkDestroyPipelineLayout", dev, traceLayout, 0L); } catch (Throwable ignored) {} traceLayout = 0L; }
+            if (outputImageView != 0L) { try { VulkanAPIRegistry.invoke("vkDestroyImageView", dev, outputImageView, 0L); } catch (Throwable ignored) {} outputImageView = 0L; }
+        }
+        if (outputImage != 0L) {
+            try { VulkanGPUResourceManager.getInstance().releaseResource(new VulkanGPUResourceManager.GpuResource(outputImage, 0L, lastWidth, lastHeight, 97, VulkanGPUResourceManager.ResourceType.IMAGE)); } catch (Throwable ignored) {}
+            outputImage = 0L;
+        }
+        lastWidth = 0; lastHeight = 0;
+        LOGGER.fine("[RT] resources released");
+    }
+
+    private boolean detectRayTracingSupport(RenderContext context) {
+        try {
+            var dev = VulkanDeviceHolder.getInstance().getDevice();
+            return dev != 0L;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private boolean prepareShaderPrograms(RenderContext context) {
+        ensureDenoisePipeline();
+        ensureTracePipeline();
+        return denoisePipeline != 0L && tracePipeline != 0L;
+    }
+
+    private void buildAccelerationStructures(RenderContext context) {
+        LOGGER.fine("[RT] AS skipped (no Streamline SDK)");
+    }
+
+    private long allocateOutputTexture(int w, int h) {
+        var mgr = VulkanGPUResourceManager.getInstance();
+        var res = mgr.createImage(w, h, 97, 0x20 | 0x10, VmaMemoryPools.PoolType.RENDER_TARGET);
+        return (res != null && res.handle != 0L) ? res.handle : 0L;
+    }
+
+    private void blitTexture(long src, long dst) {}
+
+    private long createOrGetRtOutputView(int w, int h) {
+        return outputImageView != 0L ? outputImageView : 0L;
+    }
+}

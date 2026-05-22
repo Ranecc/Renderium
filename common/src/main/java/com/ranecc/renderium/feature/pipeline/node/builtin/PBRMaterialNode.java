@@ -23,6 +23,7 @@ import com.ranecc.renderium.feature.pipeline.node.PipelineNodeRegistry;
 import com.ranecc.renderium.infrastructure.gpu.*;
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
+import com.ranecc.renderium.feature.lod.compute.VulkanFFMBinding;
 import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -102,8 +103,8 @@ public class PBRMaterialNode extends AbstractPipelineNode {
 
     // ==================== Compute Pipeline 资源 ====================
 
-    /** SPIR-V 着色器资源路径 */
-    private static final String SHADER_PATH = "/shaders/pbr_material.spv";
+    /** SPIR-V 着色器资源路径（DDD分层：pipeline/material） */
+    private static final String SHADER_PATH = "/shaders/pipeline/material/pbr_material.spv";
 
     /** 工作组大小（16x16 线程组，适配大多数 GPU 架构） */
     private static final int WORKGROUP_SIZE_X = 16;
@@ -537,7 +538,7 @@ public class PBRMaterialNode extends AbstractPipelineNode {
     /**
      * 从 classpath 加载 SPIR-V 二进制着色器
      * <p>
-     * 从资源路径 /shaders/pbr_material.spv 加载预编译的 SPIR-V 字节码。
+     * 从资源路径 /shaders/pipeline/material/pbr_material.spv 加载预编译的 SPIR-V 字节码。
      * 着色器包含 PBR Disney Principled BSDF 的 GPU 实现。
      * </p>
      *

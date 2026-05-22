@@ -98,8 +98,8 @@ public class SSRNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(SSRNode.class.getName());
 
-    /** SPIR-V 着色器资源路径 */
-    private static final String SHADER_PATH = "/shaders/ssr.spv";
+    /** SPIR-V 着色器资源路径（DDD分层：pipeline/lighting） */
+    private static final String SHADER_PATH = "/shaders/pipeline/lighting/ssr.spv";
 
     // ==================== 参数边界 ====================
 
@@ -575,7 +575,7 @@ public class SSRNode extends AbstractPipelineNode {
      * 从 classpath 加载 SPIR-V 二进制资源
      *
      * 【方法参数】
-     * @param path String - 资源路径（如 "/shaders/ssr.spv"）
+     * @param path String - 资源路径（如 "/shaders/pipeline/lighting/ssr.spv"）
      *
      * 【返回值】
      * @return byte[] - SPIR-V 字节数组，加载失败返回 null

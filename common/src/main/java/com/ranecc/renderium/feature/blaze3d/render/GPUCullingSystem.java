@@ -135,7 +135,7 @@ private static byte[] FRUSTUM_CULLING_SPIRV;
     private void loadSPIRV() {
         try {
             ClassLoader cl = getClass().getClassLoader();
-            try (InputStream is = cl.getResourceAsStream("shaders/compute/frustum_culling.comp")) {
+            try (InputStream is = cl.getResourceAsStream("shaders-src/compute/culling/frustum_culling.comp")) {
                 if (is != null) compileGLSL(new String(is.readAllBytes(), StandardCharsets.UTF_8));
             }
         } catch (Exception e) { LOGGER.warning("SPIR-V 加载失败: " + e.getMessage()); }

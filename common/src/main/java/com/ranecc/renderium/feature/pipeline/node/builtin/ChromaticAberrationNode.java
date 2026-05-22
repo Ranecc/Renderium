@@ -83,8 +83,8 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(ChromaticAberrationNode.class.getName());
 
-    /** SPIR-V 着色器资源路径 */
-    private static final String SHADER_PATH = "/shaders/chromatic_aberration.spv";
+    /** SPIR-V 着色器资源路径（DDD分层：pipeline/postprocess/effects） */
+    private static final String SHADER_PATH = "/shaders/pipeline/postprocess/effects/chromatic_aberration.spv";
 
     // ==================== 参数边界 ====================
 
@@ -452,7 +452,7 @@ public class ChromaticAberrationNode extends AbstractPipelineNode {
      * 从 classpath 加载 SPIR-V 二进制资源
      *
      * 【方法参数】
-     * @param path String - 资源路径（如 "/shaders/chromatic_aberration.spv"）
+     * @param path String - 资源路径（如 "/shaders/pipeline/postprocess/effects/chromatic_aberration.spv"）
      *
      * 【返回值】
      * @return byte[] - SPIR-V 字节数组，加载失败返回 null

@@ -11,8 +11,7 @@
     "MixinLevelRendererACL",
     "MixinChunkManagerACL",
     "MixinGameRendererACL",
-    "MixinRenderSystemACL",
-    "VideoOptionsScreenMixin"
+    "MixinRenderSystemACL"
   ],
   "injectors": {
     "defaultRequire": 1

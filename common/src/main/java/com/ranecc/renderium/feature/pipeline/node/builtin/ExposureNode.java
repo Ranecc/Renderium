@@ -15,6 +15,7 @@
 
 package com.ranecc.renderium.feature.pipeline.node.builtin;
 
+import com.ranecc.renderium.feature.blaze3d.memory.VmaMemoryPools;
 import com.ranecc.renderium.feature.intercept.base.RenderContext;
 import com.ranecc.renderium.feature.pipeline.node.AbstractPipelineNode;
 import com.ranecc.renderium.feature.pipeline.node.PipelineNode;
@@ -23,6 +24,7 @@ import com.ranecc.renderium.infrastructure.gpu.VulkanGraphicsHelper;
 import com.ranecc.renderium.infrastructure.gpu.*;
 import com.ranecc.renderium.domain.constant.VulkanConst;
 import com.ranecc.renderium.feature.lod.compute.LodCullingComputePass;
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
@@ -81,7 +83,8 @@ public class ExposureNode extends AbstractPipelineNode {
     private long outputTextureHandle = 0L;
 
     // GPU compute 资源
-    private static final String SHADER_PATH = "/shaders/exposure_tonemap.spv";
+    /** SPIR-V 着色器资源路径（DDD分层：pipeline/postprocess/tonemap） */
+    private static final String SHADER_PATH = "/shaders/pipeline/postprocess/tonemap/exposure_tonemap.spv";
     private volatile long computePipeline = 0L;
     private volatile long pipelineLayout = 0L;
     private volatile long descriptorSet = 0L;
@@ -246,7 +249,7 @@ public class ExposureNode extends AbstractPipelineNode {
             VulkanAPIRegistry.invoke("vkCmdBindPipeline", cmdBuf, 1L, computePipeline);
             VulkanAPIRegistry.invoke("vkCmdBindDescriptorSets", cmdBuf, 1L, pipelineLayout, 0L, 1, descriptorSet, 0, 0L);
 
-            MemorySegment pcData = PerFrameArena.allocate(32);
+            MemorySegment pcData = Arena.global().allocate(32);
             pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 0, exposure);
             pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 1, minExp);
             pcData.setAtIndex(ValueLayout.JAVA_FLOAT, 2, maxExp);
@@ -258,7 +261,8 @@ public class ExposureNode extends AbstractPipelineNode {
             VulkanAPIRegistry.invoke("vkCmdDispatch", cmdBuf, w, h, 1);
 
             LodCullingComputePass.endCommandBuffer(cmdBuf);
-            VulkanSyncManager.submitAndWait(cmdBuf);
+            long gfxQueue = VulkanDeviceHolder.getInstance().getGraphicsQueue();
+            VulkanSyncManager.submitAndWait(gfxQueue, cmdBuf);
         } catch (Throwable t) {
             LOGGER.warning("[ExposureNode] dispatch error: " + t.getMessage());
         }
@@ -272,14 +276,15 @@ public class ExposureNode extends AbstractPipelineNode {
                 byte[] spirv = loadSPIRV(SHADER_PATH);
                 if (spirv == null) { LOGGER.warning("Failed to load SPIR-V"); return; }
 
-                int[] bindings = {
-                    0, 10, 1,  // binding 0: STORAGE_IMAGE (readonly)
-                    1, 10, 1   // binding 1: STORAGE_IMAGE (writeonly)
+                var bindings = new ComputePipelineHelper.Binding[]{
+                    new ComputePipelineHelper.Binding(0, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE),
+                    new ComputePipelineHelper.Binding(1, ComputePipelineHelper.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                 };
-                var result = ComputePipelineHelper.createComputePipeline(spirv, bindings, 32);
-                computePipeline = result.pipeline;
-                pipelineLayout = result.layout;
-                descriptorSet = result.descriptorSet;
+                var pc = new ComputePipelineHelper.PushConstant(0, 32, ComputePipelineHelper.VK_SHADER_STAGE_COMPUTE_BIT);
+                var result = ComputePipelineHelper.createComputePipeline(spirv, bindings, pc);
+                computePipeline = result.pipeline();
+                pipelineLayout = result.pipelineLayout();
+                descriptorSet = result.descriptorSet();
             } catch (Throwable t) {
                 LOGGER.warning("[ExposureNode] createPipeline error: " + t.getMessage());
             }

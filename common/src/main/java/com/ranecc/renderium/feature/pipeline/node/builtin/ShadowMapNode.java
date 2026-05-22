@@ -140,8 +140,8 @@ public class ShadowMapNode extends AbstractPipelineNode {
     /** 有效分辨率列表（必须为 2 的幂次） */
     public static final int[] VALID_RESOLUTIONS = {512, 1024, 2048, 4096};
 
-    /** SPIR-V 着色器资源路径 */
-    private static final String SHADER_PATH = "/shaders/shadow_cascade.spv";
+    /** SPIR-V 着色器资源路径（DDD分层：pipeline/lighting） */
+    private static final String SHADER_PATH = "/shaders/pipeline/lighting/shadow_cascade.spv";
 
     // ==================== GPU 运行时资源 ====================
 
@@ -1181,7 +1181,7 @@ public class ShadowMapNode extends AbstractPipelineNode {
      * 从 classpath 加载 SPIR-V 二进制资源
      *
      * 【方法参数】
-     * @param path String - 资源路径（如 "/shaders/shadow_cascade.spv"）
+     * @param path String - 资源路径（如 "/shaders/pipeline/lighting/shadow_cascade.spv"）
      *
      * 【返回值】
      * @return byte[] - SPIR-V 字节数组，加载失败返回 null

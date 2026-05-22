@@ -246,7 +246,7 @@ public class GPUEntityCollisionSystem implements AutoCloseable {
         try {
             long dev = device;
             GlslangCompiler compiler = GlslangCompiler.getInstance();
-            String source = loadShaderSource("/shaders/compute/collision_detect.comp");
+            String source = loadShaderSource("/shaders-src/compute/collision/collision_detect.comp");
             if (source == null) { LOGGER.fine("着色器未找到，跳过 GPU 管线"); return; }
             byte[] spirv = compiler.compile(source, GlslangCompiler.Stage.COMPUTE, GlslangCompiler.SourceLanguage.GLSL);
             if (spirv == null || spirv.length == 0) { LOGGER.fine("着色器编译失败，跳过 GPU 管线"); return; }

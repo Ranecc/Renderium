@@ -150,10 +150,11 @@ public class CullingPipeline {
     private void loadIndirectGenSPIRV() {
         try {
             ClassLoader cl = getClass().getClassLoader();
-            try (var is = cl.getResourceAsStream("shaders/compute/indirect_draw_gen.spv")) {
+            try (var is = cl.getResourceAsStream("shaders/compute/culling/indirect_draw_gen.spv")) {
                 if (is != null) { INDIRECT_DRAW_GEN_SPIRV = is.readAllBytes(); return; }
             }
-            try (var is = cl.getResourceAsStream("shaders/compute/indirect_draw_gen.comp")) {
+            // .comp 源码回退路径（DDD分层：shaders-src/compute/culling）
+            try (var is = cl.getResourceAsStream("shaders-src/compute/culling/indirect_draw_gen.comp")) {
                 if (is != null) {
                     String src = new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
                     INDIRECT_DRAW_GEN_SPIRV = compileGLSL(src, "indirect_draw_gen");

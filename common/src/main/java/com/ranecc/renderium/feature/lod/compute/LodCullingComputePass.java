@@ -236,7 +236,7 @@ public final class LodCullingComputePass {
     private static volatile long fence = 0L;
 
     static long getVkDevice() { return vkDevice; }
-    static long getCommandPool() { return commandPool; }
+   public static long getCommandPool() { return commandPool; }
     public static long getFence() { return fence; }
 
     public static long getHizBuildPipeline() { return hizBuildPipeline; }
@@ -910,9 +910,9 @@ public final class LodCullingComputePass {
      *   <li>两者都失败则记录错误并返回 null</li>
      * </ul>
      *
-     * 【资源路径】
-     * - hiz_build.spv: shaders/compute/hiz_build.spv
-     * - hiz_occlusion_query.spv: shaders/compute/hiz_occlusion_query.spv
+     * 【资源路径】（DDD分层结构）
+     * - hiz_build.spv: shaders/compute/culling/hiz_build.spv
+     * - hiz_occlusion_query.spv: shaders/compute/culling/hiz_occlusion_query.spv
      *
      * 【返回值】void（副作用：设置 HIZ_BUILD_SPIRV 和 HIZ_OCCLUSION_SPIRV 字段）
      *
@@ -921,13 +921,13 @@ public final class LodCullingComputePass {
     private static void loadSPIRVBinaries() throws IOException {
         ClassLoader loader = LodCullingComputePass.class.getClassLoader();
 
-        // 尝试加载 Hi-Z Build 着色器
-        HIZ_BUILD_SPIRV = loadShaderResource(loader, "shaders/compute/hiz_build.spv",
-                "shaders/compute/hiz_build.comp", "HiZ Build");
+        // 尝试加载 Hi-Z Build 着色器（DDD分层：compute/culling）
+        HIZ_BUILD_SPIRV = loadShaderResource(loader, "shaders/compute/culling/hiz_build.spv",
+                "shaders-src/compute/culling/hiz_build.comp", "HiZ Build");
 
-        // 尝试加载 Occlusion Query 着色器
-        HIZ_OCCLUSION_SPIRV = loadShaderResource(loader, "shaders/compute/hiz_occlusion_query.spv",
-                "shaders/compute/hiz_occlusion_query.comp", "Occlusion Query");
+        // 尝试加载 Occlusion Query 着色器（DDD分层：compute/culling）
+        HIZ_OCCLUSION_SPIRV = loadShaderResource(loader, "shaders/compute/culling/hiz_occlusion_query.spv",
+                "shaders-src/compute/culling/hiz_occlusion_query.comp", "Occlusion Query");
 
         LOGGER.info(String.format("[LodCulling] SPIR-V 加载完成 | HiZBuild=%d bytes, Occlusion=%d bytes",
                 HIZ_BUILD_SPIRV != null ? HIZ_BUILD_SPIRV.length : 0,
@@ -1627,11 +1627,11 @@ public final class LodCullingComputePass {
         }
 
         {
-            // ==================== Step 1: 加载 LOD Compute Shader SPIR-V ====================
+            // ==================== Step 1: 加载 LOD Compute Shader SPIR-V（DDD分层：compute/lod） ====================
             ClassLoader loader = LodCullingComputePass.class.getClassLoader();
             LOD_COMPUTE_SPIRV = loadShaderResource(loader,
-                    "shaders/compute/lod_compute.spv",
-                    "shaders/compute/lod_compute.comp",
+                    "shaders/compute/lod/lod_compute.spv",
+                    "shaders-src/compute/lod/lod_compute.comp",
                     "LOD Compute");
 
             if (LOD_COMPUTE_SPIRV == null) {

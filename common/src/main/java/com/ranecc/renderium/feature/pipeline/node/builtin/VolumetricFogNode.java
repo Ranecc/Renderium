@@ -86,8 +86,8 @@ public class VolumetricFogNode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(VolumetricFogNode.class.getName());
 
-    /** SPIR-V 着色器资源路径 */
-    private static final String SHADER_PATH = "/shaders/volumetric_fog.spv";
+    /** SPIR-V 着色器资源路径（DDD分层：pipeline/postprocess/volumetric） */
+    private static final String SHADER_PATH = "/shaders/pipeline/postprocess/volumetric/volumetric_fog.spv";
 
     // ==================== Froxel 配置 ====================
 
@@ -530,7 +530,7 @@ public class VolumetricFogNode extends AbstractPipelineNode {
     /**
      * 从 classpath 加载 SPIR-V 二进制资源
      *
-     * @param path 资源路径（如 "/shaders/volumetric_fog.spv"）
+     * @param path 资源路径（如 "/shaders/pipeline/postprocess/volumetric/volumetric_fog.spv"）
      * @return SPIR-V 字节数组，加载失败返回 null
      */
     private static byte[] loadSPIRVResource(String path) {

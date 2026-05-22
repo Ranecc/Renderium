@@ -108,8 +108,8 @@ public class Tonemap extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(Tonemap.class.getName());
 
-    /** SPIR-V 着色器资源路径 */
-    private static final String SHADER_PATH = "/shaders/tonemap.spv";
+    /** SPIR-V 着色器资源路径（DDD分层：pipeline/postprocess/tonemap） */
+    private static final String SHADER_PATH = "/shaders/pipeline/postprocess/tonemap/tonemap.spv";
 
     // ==================== 常量定义 ====================
 

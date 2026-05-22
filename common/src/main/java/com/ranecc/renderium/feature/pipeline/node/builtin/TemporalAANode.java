@@ -83,8 +83,8 @@ public class TemporalAANode extends AbstractPipelineNode {
 
     private static final Logger LOGGER = Logger.getLogger(TemporalAANode.class.getName());
 
-    /** SPIR-V 着色器资源路径 */
-    private static final String SHADER_PATH = "/shaders/taa_resolve.spv";
+    /** SPIR-V 着色器资源路径（DDD分层：pipeline/postprocess/antialiasing） */
+    private static final String SHADER_PATH = "/shaders/pipeline/postprocess/antialiasing/taa_resolve.spv";
 
     // ==================== 参数边界 ====================
 
@@ -505,7 +505,7 @@ public class TemporalAANode extends AbstractPipelineNode {
     /**
      * 从 classpath 加载 SPIR-V 二进制资源
      *
-     * @param path 资源路径（如 "/shaders/taa_resolve.spv"）
+     * @param path 资源路径（如 "/shaders/pipeline/postprocess/antialiasing/taa_resolve.spv"）
      * @return SPIR-V 字节数组，加载失败返回 null
      */
     private static byte[] loadSPIRVResource(String path) {

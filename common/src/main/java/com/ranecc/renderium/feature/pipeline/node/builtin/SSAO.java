@@ -120,11 +120,11 @@ public class SSAO extends AbstractPipelineNode {
     /** 预生成的噪声纹理尺寸（N x N） */
     private static final int NOISE_TEXTURE_SIZE = 4;
 
-    /** SSAO Compute Shader SPIR-V 路径 */
-    private static final String SHADER_PATH = "/shaders/ssao.spv";
+    /** SSAO Compute Shader SPIR-V 路径（DDD分层：pipeline/lighting） */
+    private static final String SHADER_PATH = "/shaders/pipeline/lighting/ssao.spv";
 
-    /** 双边滤波 Compute Shader SPIR-V 路径 */
-    private static final String SHADER_BLUR_PATH = "/shaders/ssao_blur.spv";
+    /** 双边滤波 Compute Shader SPIR-V 路径（DDD分层：pipeline/lighting） */
+    private static final String SHADER_BLUR_PATH = "/shaders/pipeline/lighting/ssao_blur.spv";
 
     /** SSAO PushConstant 大小（半径+强度+偏差+样本数+inv宽+inv高 = 24字节 → 对齐32） */
     private static final int PC_SSAO_SIZE = 32;
@@ -890,7 +890,7 @@ public class SSAO extends AbstractPipelineNode {
      * SPIR-V 着色器由外部 GLSL 编译工具链生成，存放在资源目录的 shaders/ 路径下。
      *
      * 【方法参数】
-     * @param path String - 资源路径（如 "/shaders/ssao.spv"）
+     * @param path String - 资源路径（如 "/shaders/pipeline/lighting/ssao.spv"）
      *
      * 【返回值】
      * @return byte[] - SPIR-V 字节数组，加载失败返回 null

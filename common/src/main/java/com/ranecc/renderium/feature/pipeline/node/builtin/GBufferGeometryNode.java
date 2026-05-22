@@ -82,6 +82,8 @@ import java.util.logging.Logger;
  *   <tr><td>6</td><td>STORAGE_IMAGE</td><td>Material 输出纹理</td></tr>
  * </table>
  *
+ * TODO: 超级类，需拆分
+ * 
  * @see BatchTransformEngineV3
  * @see MCRenderBridge#getCurrentFrameData()
  * @see ComputePipelineHelper
@@ -105,8 +107,8 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
     /** 性能诊断日志输出间隔（帧数） */
     private static final int DIAGNOSTIC_LOG_INTERVAL = 200;
 
-    /** SPIR-V 着色器资源路径 */
-    private static final String SHADER_PATH = "/shaders/gbuffer_fill.spv";
+    /** SPIR-V 着色器资源路径（DDD分层：pipeline/geometry） */
+    private static final String SHADER_PATH = "/shaders/pipeline/geometry/gbuffer_fill.spv";
 
     // ==================== 动态参数（volatile 字段，支持运行时热更新） ====================
 
@@ -893,7 +895,7 @@ public class GBufferGeometryNode extends AbstractPipelineNode {
     /**
      * 从 classpath 加载 SPIR-V 二进制着色器资源
      *
-     * @param path String - 资源路径（如 "/shaders/gbuffer_fill.spv"）
+     * @param path String - 资源路径（如 "/shaders/pipeline/geometry/gbuffer_fill.spv"）
      * @return byte[] - SPIR-V 字节数组，加载失败返回 null
      */
     private static byte[] loadSPIRVResource(String path) {

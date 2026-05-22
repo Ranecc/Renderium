@@ -37,6 +37,11 @@ dependencies {
 
 tasks.test { useJUnitPlatform() }
 
+// 排除 shader 源码（仅保留 shaders/ 下的 .spv 编译产物进入 release JAR）
+tasks.processResources {
+    exclude("shaders-src/**")
+}
+
 loom {
     accessWidenerPath = file("src/main/resources/renderium-common.accesswidener")
     mixin { useLegacyMixinAp = false }
